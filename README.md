@@ -232,6 +232,17 @@ uv run python -m openadapt_ml.scripts.train \
   --config configs/qwen3vl_synthetic_dev.yaml
 ```
 
+Example training log excerpt (Qwen3-VL-2B hardened dev):
+
+```text
+Loaded 32 episodes and 224 SFT samples.
+Starting training (adapter.prepare_inputs/compute_loss must be implemented)...
+step=10  loss=1.23
+step=20  loss=0.87
+step=30  loss=0.64
+...
+```
+
 **Eval base vs fine-tuned:**
 
 ```bash
@@ -476,8 +487,9 @@ Planned near-term improvements include:
 - **Evaluation CLI** to measure next-action accuracy on synthetic episodes.
 - **Stronger prompting and examples** to stabilize `CLICK(...)` / `DONE()`
   style outputs.
-- **Assistant-only label masking** and support for small batches > 1 in
-  `QwenVLAdapter` when running on GPUs.
+- Generalize **assistant-only label masking** and support for small
+  batches > 1 in `QwenVLAdapter` (currently validated for Qwen3-VL with
+  `batch_size=1`, next step is GPU-friendly multi-sample batches).
 - **Additional synthetic UI scenarios** beyond login.
 - **GPU / QLoRA config examples** for CUDA environments, while keeping
   Apple Silicon configs in full/mixed precision.
