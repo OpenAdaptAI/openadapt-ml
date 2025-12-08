@@ -12,3 +12,11 @@ local_context_openadapt_ml_internal.md
 
 # Ephemeral synthetic assets (frames, debug sessions, etc.)
 synthetic/
+
+# Local OS cruft
+.DS_Store
+
+# Ephemeral training/eval artifacts
+logs/
+checkpoints/
+plots/
