@@ -9,3 +9,6 @@ wheels/
 # Virtual environments
 .venv
 local_context_openadapt_ml_internal.md
+
+# Ephemeral synthetic assets (frames, debug sessions, etc.)
+synthetic/

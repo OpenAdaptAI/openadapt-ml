@@ -38,7 +38,8 @@ def main(config_path: str) -> None:
     synth_cfg = cfg.get("synthetic_data", {})
     num_sessions = synth_cfg.get("num_sessions", 10)
     seed = synth_cfg.get("seed")
-    output_dir = synth_cfg.get("output_dir", "synthetic_train")
+    default_output_dir = str(Path("synthetic") / "train")
+    output_dir = synth_cfg.get("output_dir", default_output_dir)
 
     sessions = generate_synthetic_sessions(
         num_sessions=num_sessions,

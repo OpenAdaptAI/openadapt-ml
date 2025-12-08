@@ -117,6 +117,10 @@ def main(
         print(f"  episode_success_rate: {metrics.episode_success_rate:.4f}")
     else:
         print("  episode_success_rate: N/A")
+    if metrics.click_hit_rate is not None:
+        print(f"  click_hit_rate: {metrics.click_hit_rate:.4f}")
+    else:
+        print("  click_hit_rate: N/A")
 
     if output_json is not None:
         payload = {
@@ -129,6 +133,7 @@ def main(
                 "mean_coord_error": metrics.mean_coord_error,
                 "coord_error_count": metrics.coord_error_count,
                 "episode_success_rate": metrics.episode_success_rate,
+                "click_hit_rate": metrics.click_hit_rate,
             },
         }
         with open(output_json, "w", encoding="utf-8") as f:

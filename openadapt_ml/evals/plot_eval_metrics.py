@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 METRIC_KEYS = [
     ("action_type_accuracy", "Action Type Accuracy"),
     ("mean_coord_error", "Mean Coord Error"),
+    ("click_hit_rate", "Click Hit Rate"),
     ("episode_success_rate", "Episode Success Rate"),
 ]
 
@@ -36,6 +37,10 @@ def plot_eval_metrics(
     num_metrics = len(METRIC_KEYS)
 
     fig, axes = plt.subplots(1, num_metrics, figsize=(4 * num_metrics, 4))
+    fig.suptitle(
+        "Qwen-VL base vs fine-tuned (FT = LoRA fine-tuned model)",
+        fontsize=10,
+    )
     if num_metrics == 1:
         axes = [axes]
 

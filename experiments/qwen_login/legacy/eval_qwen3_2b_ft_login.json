@@ -1,0 +1,12 @@
+{
+  "config_path": "configs/qwen3vl_synthetic_dev.yaml",
+  "backend": "qwen3",
+  "metrics": {
+    "num_episodes": 4,
+    "num_steps": 28,
+    "action_type_accuracy": 0.14285714285714285,
+    "mean_coord_error": null,
+    "coord_error_count": 0,
+    "episode_success_rate": 0.0
+  }
+}

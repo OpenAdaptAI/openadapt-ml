@@ -7,7 +7,7 @@ from openadapt_ml.ingest.synthetic import generate_synthetic_sessions
 
 
 def main() -> None:
-    output_dir = Path("synthetic_debug")
+    output_dir = Path("synthetic") / "debug"
     sessions = generate_synthetic_sessions(num_sessions=2, seed=42, output_dir=output_dir)
 
     print(f"Generated {len(sessions)} sessions into {output_dir.resolve()}")

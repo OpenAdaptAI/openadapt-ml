@@ -14,7 +14,7 @@ lora:
   weights_path: checkpoints/qwen3vl2b_login_lora
 
 synthetic_data:
-  num_sessions: 4
+  num_sessions: 32
   seed: 123
   output_dir: synthetic_train_dev
 

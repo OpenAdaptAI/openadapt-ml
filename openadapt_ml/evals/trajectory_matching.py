@@ -16,6 +16,8 @@ class EpisodeMetrics:
     coord_errors: List[float]
     success_pred: bool
     success_gt: Optional[bool]
+    click_hits: int
+    click_total: int
 
 
 @dataclass
@@ -26,6 +28,7 @@ class AggregateMetrics:
     mean_coord_error: Optional[float]
     coord_error_count: int
     episode_success_rate: Optional[float]
+    click_hit_rate: Optional[float]
 
 
 def compute_coordinate_error(pred_action: Action, gt_action: Action) -> Optional[float]:
@@ -69,6 +72,8 @@ def evaluate_episode(
     step_total = 0
     coord_errors: List[float] = []
     success_pred = True
+    click_hits = 0
+    click_total = 0
 
     sample_idx = start_idx
 
@@ -96,6 +101,9 @@ def evaluate_episode(
             coord_error = compute_coordinate_error(pred_action, gt_action)
             if coord_error is not None:
                 coord_errors.append(coord_error)
+                click_total += 1
+                if coord_error < 0.05:
+                    click_hits += 1
 
         # Ensure DONE is correct at the DONE step.
         if gt_action.type == "done" and pred_action.type != "done":
@@ -149,6 +157,8 @@ def evaluate_episode(
         coord_errors=coord_errors,
         success_pred=success_pred,
         success_gt=episode.success,
+        click_hits=click_hits,
+        click_total=click_total,
     )
     return metrics, sample_idx, logged_count
 
@@ -185,6 +195,13 @@ def aggregate_metrics(episodes_metrics: List[EpisodeMetrics]) -> AggregateMetric
     else:
         episode_success_rate = None
 
+    total_click_hits = sum(m.click_hits for m in episodes_metrics)
+    total_click_total = sum(m.click_total for m in episodes_metrics)
+    if total_click_total > 0:
+        click_hit_rate: Optional[float] = total_click_hits / total_click_total
+    else:
+        click_hit_rate = None
+
     return AggregateMetrics(
         num_episodes=num_episodes,
         num_steps=num_steps,
@@ -192,6 +209,7 @@ def aggregate_metrics(episodes_metrics: List[EpisodeMetrics]) -> AggregateMetric
         mean_coord_error=mean_coord_error,
         coord_error_count=len(all_coord_errors),
         episode_success_rate=episode_success_rate,
+        click_hit_rate=click_hit_rate,
     )
 
 

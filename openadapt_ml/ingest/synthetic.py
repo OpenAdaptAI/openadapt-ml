@@ -52,7 +52,7 @@ class LoginUIElements:
 
 
 def _draw_login_screen(username: str = "", password: str = "") -> tuple[Image.Image, LoginUIElements]:
-    """Draw a simple deterministic login screen.
+    """Draw a simple login screen with slight layout jitter and a decoy button.
 
     Returns the image and absolute pixel bounds for key interactive elements.
     Bounds are (x, y, w, h).
@@ -68,6 +68,14 @@ def _draw_login_screen(username: str = "", password: str = "") -> tuple[Image.Im
     ty = 80
     draw.text((tx, ty), title_text, fill="black", font=FONT_TITLE)
 
+    # Small jitter helper to keep elements within bounds.
+    def _jitter(x: int, y: int, max_offset: int = 10) -> tuple[int, int]:
+        dx = random.randint(-max_offset, max_offset)
+        dy = random.randint(-max_offset, max_offset)
+        jx = max(0, min(IMG_WIDTH, x + dx))
+        jy = max(0, min(IMG_HEIGHT, y + dy))
+        return jx, jy
+
     # Username label and box
     label_x = 200
     uname_label_y = 160
@@ -75,41 +83,55 @@ def _draw_login_screen(username: str = "", password: str = "") -> tuple[Image.Im
     uname_box_y = uname_label_y + 24
 
     draw.text((label_x, uname_label_y), "Username:", fill="black", font=FONT)
+
+    uname_x, uname_y = _jitter(label_x, uname_box_y)
+    uname_x = max(20, min(IMG_WIDTH - box_w - 20, uname_x))
+    uname_y = max(uname_label_y + 10, min(IMG_HEIGHT - box_h - 100, uname_y))
+
     draw.rectangle(
         [
-            (label_x, uname_box_y),
-            (label_x + box_w, uname_box_y + box_h),
+            (uname_x, uname_y),
+            (uname_x + box_w, uname_y + box_h),
         ],
         outline="black",
         fill="white",
     )
     if username:
-        draw.text((label_x + 8, uname_box_y + 10), username, fill="black", font=FONT)
+        draw.text((uname_x + 8, uname_y + 10), username, fill="black", font=FONT)
 
-    username_box = (label_x, uname_box_y, box_w, box_h)
+    username_box = (uname_x, uname_y, box_w, box_h)
 
     # Password label and box
-    pw_label_y = uname_box_y + box_h + 30
+    pw_label_y = uname_y + box_h + 30
     pw_box_y = pw_label_y + 24
     draw.text((label_x, pw_label_y), "Password:", fill="black", font=FONT)
+
+    pw_x, pw_y = _jitter(label_x, pw_box_y)
+    pw_x = max(20, min(IMG_WIDTH - box_w - 20, pw_x))
+    pw_y = max(pw_label_y + 10, min(IMG_HEIGHT - box_h - 80, pw_y))
+
     draw.rectangle(
         [
-            (label_x, pw_box_y),
-            (label_x + box_w, pw_box_y + box_h),
+            (pw_x, pw_y),
+            (pw_x + box_w, pw_y + box_h),
         ],
         outline="black",
         fill="white",
     )
     if password:
         masked = "*" * len(password)
-        draw.text((label_x + 8, pw_box_y + 10), masked, fill="black", font=FONT)
+        draw.text((pw_x + 8, pw_y + 10), masked, fill="black", font=FONT)
 
-    password_box = (label_x, pw_box_y, box_w, box_h)
+    password_box = (pw_x, pw_y, box_w, box_h)
 
     # Login button
     btn_w, btn_h = 140, 45
-    btn_x = (IMG_WIDTH - btn_w) // 2
-    btn_y = pw_box_y + box_h + 50
+    base_btn_x = (IMG_WIDTH - btn_w) // 2
+    base_btn_y = pw_y + box_h + 50
+    btn_x, btn_y = _jitter(base_btn_x, base_btn_y)
+    btn_x = max(20, min(IMG_WIDTH - btn_w - 20, btn_x))
+    btn_y = max(pw_y + box_h + 20, min(IMG_HEIGHT - btn_h - 40, btn_y))
+
     draw.rectangle(
         [
             (btn_x, btn_y),
@@ -128,6 +150,27 @@ def _draw_login_screen(username: str = "", password: str = "") -> tuple[Image.Im
     )
 
     login_button = (btn_x, btn_y, btn_w, btn_h)
+
+    # Decoy clickable button (e.g., Help) in the lower-right area.
+    decoy_w, decoy_h = 110, 35
+    decoy_x = IMG_WIDTH - decoy_w - 40
+    decoy_y = btn_y
+    draw.rectangle(
+        [
+            (decoy_x, decoy_y),
+            (decoy_x + decoy_w, decoy_y + decoy_h),
+        ],
+        outline="black",
+        fill=(180, 180, 180),
+    )
+    decoy_text = "Help"
+    dtw, dth = _text_size(draw, decoy_text, FONT)
+    draw.text(
+        (decoy_x + (decoy_w - dtw) // 2, decoy_y + (decoy_h - dth) // 2),
+        decoy_text,
+        fill="black",
+        font=FONT,
+    )
 
     elements = LoginUIElements(
         username_box=username_box,
@@ -308,7 +351,10 @@ def generate_synthetic_sessions(
         random.seed(seed)
 
     if output_dir is None:
-        output_root = Path("synthetic_data")
+        # Centralize synthetic assets under a single top-level directory.
+        # Callers can still override this, but by default we write to
+        # `synthetic/data` instead of scattering `synthetic_*` folders.
+        output_root = Path("synthetic") / "data"
     else:
         output_root = Path(output_dir)
 
