@@ -34,7 +34,9 @@ File: `openadapt_ml/ingest/synthetic.py`
     - Step 4: type password
     - Step 5: click login button
     - Step 6: logged-in screen + `done`
-  - Uses deterministic coordinates (no jitter) for all UI elements.
+  - The **original v1/v2 generator** used deterministic coordinates (no jitter) for
+    all UI elements. The current hardened version (see §5.2.2 and §7) introduces
+    per-episode layout jitter and a decoy `Help` button.
 
 - `generate_synthetic_sessions`:
   - Generates `num_sessions` sessions, each with a single login episode.
@@ -307,10 +309,11 @@ Logs (v2) show:
   - Many `failed` actions (unparseable text) or wrong types.
   - Very few valid clickable predictions compared to base.
 
-This indicates:
+This indicates (for the tiny, pre-hardened v2 setup):
 
 - Infra is solid (train → eval → log → plot all work).
-- The **training objective** and/or **task design** are not yet well aligned with the eval.
+- The **training objective** and/or **task design** were not yet well aligned with the eval,
+  motivating the later hardened setup in §5.2 and the results in §7.
 
 ---
 
@@ -529,46 +532,52 @@ Putting the options together, a concrete plan:
 
 With assistant-only labels, a hardened synthetic environment (layout jitter + a decoy `Help` button), and an added `click_hit_rate` metric, we now have a concrete **base vs fine-tuned** story.
 
-### 7.1 Qwen3-VL-2B dev (hardened synthetic login)
+### 7.1 Qwen3-VL-2B dev (hardened synthetic login, v2)
 
 Config: `configs/qwen3vl_synthetic_dev.yaml` with:
 
 - `num_sessions: 32` (32 episodes, 224 steps).
 - Jittered username/password fields and login button.
 - A decoy `Help` button per screen.
+- Thought/Action prompt format with semantically meaningful per-step thoughts.
+- Assistant-only label masking for Qwen3.
 
-Metrics (from `eval_qwen3_2b_base_login_hardened.json` and `eval_qwen3_2b_ft_login_hardened.json`):
+Metrics (from `eval_qwen3_2b_base_login_hardened_v2.json` and `eval_qwen3_2b_ft_login_hardened_v2.json`):
 
 | Model           | action_type_accuracy | mean_coord_error | click_hit_rate | episode_success_rate |
 |----------------|----------------------|------------------|----------------|----------------------|
-| Qwen3-VL-2B    | 0.210                | 0.1378           | 0.40           | 0.0                  |
-| Qwen3-VL-2B FT | 0.518                | 0.0380           | 0.81           | 0.0                  |
+| Qwen3-VL-2B    | 0.143                | N/A              | N/A            | 0.0                  |
+| Qwen3-VL-2B FT | 0.469                | 0.0514           | 0.85           | 0.0                  |
 
 - **FT > base** on all step-level metrics:
-  - Type accuracy more than doubles (≈ 0.21 → 0.52).
-  - Coord error improves by ~3.6× (0.138 → 0.038).
-  - Click hit rate roughly doubles (0.40 → 0.81).
+  - Type accuracy improves by ~3.3× (≈ 0.14 → 0.47).
+  - Fine-tuned model produces many valid clicks; base emits almost none in this run (hence N/A coord metrics for base).
+  - Coord error for FT is low (≈ 0.05) with a high click hit rate (~0.85).
 
-Plot: `plots/qwen3_2b_base_vs_ft_hardened.png` (generated via `plot_eval_metrics.py`).
+Plot: `plots/qwen3_2b_base_vs_ft_hardened_v2.png` (generated via `plot_eval_metrics.py`).
 
-### 7.2 Qwen3-VL-8B benchmark (hardened synthetic login)
+### 7.2 Qwen3-VL-8B benchmark (hardened synthetic login, v2)
 
-Config: `configs/qwen3vl_synthetic.yaml` with `num_sessions: 4` (4 episodes, 28 steps) and the same hardened generator.
+Config: `configs/qwen3vl_synthetic.yaml` with:
 
-Metrics (from `eval_qwen3_8b_base_login_hardened.json` and `eval_qwen3_8b_ft_login_hardened.json`):
+- `num_sessions: 32` (32 episodes, 224 steps).
+- Same hardened generator (per-episode layout jitter + decoy `Help` button).
+- Thought/Action prompt format with semantically meaningful per-step thoughts.
+- Assistant-only label masking for Qwen3.
+
+Metrics (from `eval_qwen3_8b_base_login_hardened_v2.json` and `eval_qwen3_8b_ft_login_hardened_v2.json`):
 
 | Model           | action_type_accuracy | mean_coord_error | click_hit_rate | episode_success_rate |
 |----------------|----------------------|------------------|----------------|----------------------|
-| Qwen3-VL-8B    | 0.250                | 0.0465           | 0.67           | 0.0                  |
-| Qwen3-VL-8B FT | 0.321                | 0.0216           | 1.00           | 0.0                  |
+| Qwen3-VL-8B    | 0.143                | N/A              | N/A            | 0.0                  |
+| Qwen3-VL-8B FT | 0.286                | 0.0038           | 1.00           | 0.0                  |
 
-Even on this small 8B eval:
+- **FT > base** again, with stronger spatial precision than 2B:
+  - Type accuracy roughly doubles over base (≈ 0.14 → 0.29).
+  - Fine-tuned 8B produces valid clicks on all evaluated steps (click_hit_rate = 1.0).
+  - Coord error is extremely low (~0.004), indicating very accurate localization of UI elements.
 
-- Type accuracy improves (≈ 0.25 → 0.32).
-- Coord error roughly halves (0.0465 → 0.0216).
-- Click hit rate improves from ~2/3 to **1.0**.
-
-Plot: `plots/qwen3_8b_base_vs_ft_hardened.png`.
+Plot: `plots/qwen3_8b_base_vs_ft_hardened_v2.png`.
 
 These results confirm that, on a non-trivial synthetic login task with jitter and decoys, a lightweight LoRA adapter can reliably outperform the base Qwen3-VL on both 2B and 8B variants.
 

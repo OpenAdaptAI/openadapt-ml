@@ -221,7 +221,7 @@ environment (layout jitter + a decoy "Help" button).
 FT = **LoRA fine-tuned Qwen3-VL** on synthetic login.
 Base = **frozen pretrained Qwen3-VL**.
 
-#### 4.3.1 Fast dev loop: Qwen3-VL-2B (hardened)
+#### 4.3.1 Fast dev loop: Qwen3-VL-2B (hardened, v2)
 
 Config: `configs/qwen3vl_synthetic_dev.yaml` (32 sessions, hardened generator).
 
@@ -238,7 +238,9 @@ Example training log excerpt (Qwen3-VL-2B hardened dev):
 Loaded 32 episodes and 224 SFT samples.
 Starting training (adapter.prepare_inputs/compute_loss must be implemented)...
 step=10  loss=1.23
+...
 step=20  loss=0.87
+...
 step=30  loss=0.64
 ...
 ```
@@ -251,16 +253,16 @@ uv run python -m openadapt_ml.scripts.eval_policy \
   --config configs/qwen3vl_synthetic_dev.yaml \
   --backend qwen3 \
   --ignore-lora \
-  --output-json eval_qwen3_2b_base_login_hardened.json \
-  --log-samples logs/qwen3_2b_base_eval_hardened.jsonl \
+  --output-json eval_qwen3_2b_base_login_hardened_v2.json \
+  --log-samples logs/qwen3_2b_base_eval_hardened_v2.jsonl \
   --log-limit 500
 
 # Fine-tuned (with LoRA)
 uv run python -m openadapt_ml.scripts.eval_policy \
   --config configs/qwen3vl_synthetic_dev.yaml \
   --backend qwen3 \
-  --output-json eval_qwen3_2b_ft_login_hardened.json \
-  --log-samples logs/qwen3_2b_ft_eval_hardened.jsonl \
+  --output-json eval_qwen3_2b_ft_login_hardened_v2.json \
+  --log-samples logs/qwen3_2b_ft_eval_hardened_v2.jsonl \
   --log-limit 500
 ```
 
@@ -268,9 +270,9 @@ uv run python -m openadapt_ml.scripts.eval_policy \
 
 ```bash
 uv run python -m openadapt_ml.evals.plot_eval_metrics \
-  --files eval_qwen3_2b_base_login_hardened.json eval_qwen3_2b_ft_login_hardened.json \
+  --files eval_qwen3_2b_base_login_hardened_v2.json eval_qwen3_2b_ft_login_hardened_v2.json \
   --labels base ft \
-  --output plots/qwen3_2b_base_vs_ft_hardened.png
+  --output plots/qwen3_2b_base_vs_ft_hardened_v2.png
 ```
 
 The example above writes plots and eval JSONs to top-level paths for
@@ -295,15 +297,15 @@ error, click hit rate). For a non-expert, it visually answers "did the
 fine-tuned model get better at clicking the right place and finishing
 the login?":
 
-![Qwen3-VL-2B hardened synthetic login benchmark](experiments/qwen_login/2b_dev/plots/qwen3_2b_base_vs_ft_hardened.png)
+![Qwen3-VL-2B hardened synthetic login benchmark (v2)](plots/qwen3_2b_base_vs_ft_hardened_v2.png)
 
 On this hardened dev setup, LoRA significantly improves action accuracy,
 coordinate error, and click hit rate; see
-`docs/state_and_next_steps_qwen_login.md` §7.1 for exact numbers.
+`docs/state_and_next_steps_qwen_login.md` §7.1 for exact numbers from the v2 run.
 
-#### 4.3.2 Hero run: Qwen3-VL-8B (hardened)
+#### 4.3.2 Hero run: Qwen3-VL-8B (hardened, v2)
 
-Config: `configs/qwen3vl_synthetic.yaml` (4 sessions, hardened generator).
+Config: `configs/qwen3vl_synthetic.yaml` (32 sessions, hardened generator).
 
 **Train:**
 
@@ -320,16 +322,16 @@ uv run python -m openadapt_ml.scripts.eval_policy \
   --config configs/qwen3vl_synthetic.yaml \
   --backend qwen3 \
   --ignore-lora \
-  --output-json eval_qwen3_8b_base_login_hardened.json \
-  --log-samples logs/qwen3_8b_base_eval_hardened.jsonl \
+  --output-json eval_qwen3_8b_base_login_hardened_v2.json \
+  --log-samples logs/qwen3_8b_base_eval_hardened_v2.jsonl \
   --log-limit 500
 
 # Fine-tuned
 uv run python -m openadapt_ml.scripts.eval_policy \
   --config configs/qwen3vl_synthetic.yaml \
   --backend qwen3 \
-  --output-json eval_qwen3_8b_ft_login_hardened.json \
-  --log-samples logs/qwen3_8b_ft_eval_hardened.jsonl \
+  --output-json eval_qwen3_8b_ft_login_hardened_v2.json \
+  --log-samples logs/qwen3_8b_ft_eval_hardened_v2.jsonl \
   --log-limit 500
 ```
 
@@ -337,9 +339,9 @@ uv run python -m openadapt_ml.scripts.eval_policy \
 
 ```bash
 uv run python -m openadapt_ml.evals.plot_eval_metrics \
-  --files eval_qwen3_8b_base_login_hardened.json eval_qwen3_8b_ft_login_hardened.json \
+  --files eval_qwen3_8b_base_login_hardened_v2.json eval_qwen3_8b_ft_login_hardened_v2.json \
   --labels base ft \
-  --output plots/qwen3_8b_base_vs_ft_hardened.png
+  --output plots/qwen3_8b_base_vs_ft_hardened_v2.png
 ```
 
 As with the 2B dev loop, the canonical 8B hero artifacts are collected
@@ -348,12 +350,21 @@ the README.
 The 8B hardened comparison plot extends the same story to the larger
 Qwen3-VL-8B model:
 
-![Qwen3-VL-8B hardened synthetic login benchmark](experiments/qwen_login/8b_hero/plots/qwen3_8b_base_vs_ft_hardened.png)
+![Qwen3-VL-8B hardened synthetic login benchmark (v2)](plots/qwen3_8b_base_vs_ft_hardened_v2.png)
 
-The resulting plots (`plots/qwen3_2b_base_vs_ft_hardened.png` and
-`plots/qwen3_8b_base_vs_ft_hardened.png`) show Qwen3-VL fine-tuning improving
+The resulting plots (`plots/qwen3_2b_base_vs_ft_hardened_v2.png` and
+`plots/qwen3_8b_base_vs_ft_hardened_v2.png`) show Qwen3-VL fine-tuning improving
 step-level metrics on the synthetic login task. See
-`docs/state_and_next_steps_qwen_login.md` §7 for detailed tables.
+`docs/state_and_next_steps_qwen_login.md` §7 for detailed tables from the v2 runs.
+
+For convenience, here is a condensed summary of the hardened v2 results:
+
+| Model           | action_type_accuracy | mean_coord_error | click_hit_rate |
+|----------------|----------------------|------------------|----------------|
+| Qwen3-VL-2B    | 0.143                | N/A              | N/A            |
+| Qwen3-VL-2B FT | 0.469                | 0.0514           | 0.85           |
+| Qwen3-VL-8B    | 0.143                | N/A              | N/A            |
+| Qwen3-VL-8B FT | 0.286                | 0.0038           | 1.00           |
 
 ---
 

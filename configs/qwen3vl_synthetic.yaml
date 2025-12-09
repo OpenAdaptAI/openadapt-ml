@@ -11,18 +11,18 @@ lora:
     - q_proj
     - v_proj
   task_type: CAUSAL_LM
-  weights_path: checkpoints/qwen3vl_login_lora
+  weights_path: checkpoints/qwen3vl8b_login_lora_epjit_v2
 
 synthetic_data:
-  num_sessions: 4
+  num_sessions: 32
   seed: 123
   output_dir: synthetic_train
 
 training:
-  num_train_epochs: 1
+  num_train_epochs: 2
   per_device_train_batch_size: 1
   gradient_accumulation_steps: 1
-  learning_rate: 2.0e-4
+  learning_rate: 1.0e-4
   warmup_ratio: 0.03
   weight_decay: 0.0
   max_grad_norm: 1.0

@@ -61,6 +61,12 @@ def train_supervised(
             inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
 
             loss = adapter.compute_loss(inputs)
+
+            # Guard against invalid losses to avoid propagating NaNs/Infs
+            if torch.isnan(loss) or torch.isinf(loss):
+                print(f"Encountered invalid loss at epoch={epoch} step={total_steps + 1}: {loss.item()}")
+                return
+
             loss.backward()
 
             if (total_steps + 1) % config.gradient_accumulation_steps == 0:

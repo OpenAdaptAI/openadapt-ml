@@ -34,7 +34,7 @@ class AgentPolicy:
             "compatible with the adapter's `generate` method."
         )
 
-    def _parse_action(self, text: str) -> Action:
+    def _parse_action(self, text: str) -> Tuple[Action, Optional[str]]:
         # Prefer explicit CLICK(...) if present
         m = _CLICK_RE.search(text)
         if m:
@@ -60,5 +60,19 @@ class AgentPolicy:
         """
 
         text = self.adapter.generate(sample, max_new_tokens=max_new_tokens)
-        action = self._parse_action(text)
-        return action, None
+
+        # Support "Thought: ...\nAction: ..." format while remaining backward compatible
+        thought: Optional[str] = None
+        thought_match = re.search(r"Thought:\s*(.+?)(?=Action:|$)", text, re.DOTALL)
+        action_match = re.search(r"Action:\s*(.+)$", text, re.DOTALL)
+
+        if thought_match:
+            thought = thought_match.group(1).strip()
+
+        if action_match:
+            action_text = action_match.group(1).strip()
+        else:
+            action_text = text.strip()
+
+        action = self._parse_action(action_text)
+        return action, thought

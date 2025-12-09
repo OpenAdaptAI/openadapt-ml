@@ -4,7 +4,7 @@ import os
 import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -51,7 +51,64 @@ class LoginUIElements:
     login_button: Tuple[int, int, int, int]
 
 
-def _draw_login_screen(username: str = "", password: str = "") -> tuple[Image.Image, LoginUIElements]:
+def _compute_login_layout(max_offset: int = 10, jitter: bool = True) -> LoginUIElements:
+    """Sample a login UI layout, optionally with jitter.
+
+    This computes absolute pixel bounds for all key elements once, so that a
+    single layout can be reused across all frames in an episode.
+    """
+
+    # Username label and box base geometry
+    label_x = 200
+    uname_label_y = 160
+    box_w, box_h = 360, 40
+    uname_box_y = uname_label_y + 24
+
+    def _maybe_jitter(x: int, y: int) -> tuple[int, int]:
+        if not jitter:
+            return x, y
+        dx = random.randint(-max_offset, max_offset)
+        dy = random.randint(-max_offset, max_offset)
+        jx = max(0, min(IMG_WIDTH, x + dx))
+        jy = max(0, min(IMG_HEIGHT, y + dy))
+        return jx, jy
+
+    # Username box position
+    uname_x, uname_y = _maybe_jitter(label_x, uname_box_y)
+    uname_x = max(20, min(IMG_WIDTH - box_w - 20, uname_x))
+    uname_y = max(uname_label_y + 10, min(IMG_HEIGHT - box_h - 100, uname_y))
+    username_box = (uname_x, uname_y, box_w, box_h)
+
+    # Password label and box
+    pw_label_y = uname_y + box_h + 30
+    pw_box_y = pw_label_y + 24
+    pw_x, pw_y = _maybe_jitter(label_x, pw_box_y)
+    pw_x = max(20, min(IMG_WIDTH - box_w - 20, pw_x))
+    pw_y = max(pw_label_y + 10, min(IMG_HEIGHT - box_h - 80, pw_y))
+    password_box = (pw_x, pw_y, box_w, box_h)
+
+    # Login button
+    btn_w, btn_h = 140, 45
+    base_btn_x = (IMG_WIDTH - btn_w) // 2
+    base_btn_y = pw_y + box_h + 50
+    btn_x, btn_y = _maybe_jitter(base_btn_x, base_btn_y)
+    btn_x = max(20, min(IMG_WIDTH - btn_w - 20, btn_x))
+    btn_y = max(pw_y + box_h + 20, min(IMG_HEIGHT - btn_h - 40, btn_y))
+    login_button = (btn_x, btn_y, btn_w, btn_h)
+
+    return LoginUIElements(
+        username_box=username_box,
+        password_box=password_box,
+        login_button=login_button,
+    )
+
+
+def _draw_login_screen(
+    username: str = "",
+    password: str = "",
+    layout: Optional[LoginUIElements] = None,
+    jitter: bool = True,
+) -> tuple[Image.Image, LoginUIElements]:
     """Draw a simple login screen with slight layout jitter and a decoy button.
 
     Returns the image and absolute pixel bounds for key interactive elements.
@@ -68,26 +125,17 @@ def _draw_login_screen(username: str = "", password: str = "") -> tuple[Image.Im
     ty = 80
     draw.text((tx, ty), title_text, fill="black", font=FONT_TITLE)
 
-    # Small jitter helper to keep elements within bounds.
-    def _jitter(x: int, y: int, max_offset: int = 10) -> tuple[int, int]:
-        dx = random.randint(-max_offset, max_offset)
-        dy = random.randint(-max_offset, max_offset)
-        jx = max(0, min(IMG_WIDTH, x + dx))
-        jy = max(0, min(IMG_HEIGHT, y + dy))
-        return jx, jy
+    # Determine layout once; if not provided, sample it (optionally with jitter).
+    if layout is None:
+        layout = _compute_login_layout(jitter=jitter)
 
     # Username label and box
     label_x = 200
     uname_label_y = 160
     box_w, box_h = 360, 40
-    uname_box_y = uname_label_y + 24
-
     draw.text((label_x, uname_label_y), "Username:", fill="black", font=FONT)
 
-    uname_x, uname_y = _jitter(label_x, uname_box_y)
-    uname_x = max(20, min(IMG_WIDTH - box_w - 20, uname_x))
-    uname_y = max(uname_label_y + 10, min(IMG_HEIGHT - box_h - 100, uname_y))
-
+    uname_x, uname_y, _, _ = layout.username_box
     draw.rectangle(
         [
             (uname_x, uname_y),
@@ -99,16 +147,10 @@ def _draw_login_screen(username: str = "", password: str = "") -> tuple[Image.Im
     if username:
         draw.text((uname_x + 8, uname_y + 10), username, fill="black", font=FONT)
 
-    username_box = (uname_x, uname_y, box_w, box_h)
-
     # Password label and box
-    pw_label_y = uname_y + box_h + 30
-    pw_box_y = pw_label_y + 24
+    pw_x, pw_y, _, _ = layout.password_box
+    pw_label_y = pw_y - 24
     draw.text((label_x, pw_label_y), "Password:", fill="black", font=FONT)
-
-    pw_x, pw_y = _jitter(label_x, pw_box_y)
-    pw_x = max(20, min(IMG_WIDTH - box_w - 20, pw_x))
-    pw_y = max(pw_label_y + 10, min(IMG_HEIGHT - box_h - 80, pw_y))
 
     draw.rectangle(
         [
@@ -122,15 +164,8 @@ def _draw_login_screen(username: str = "", password: str = "") -> tuple[Image.Im
         masked = "*" * len(password)
         draw.text((pw_x + 8, pw_y + 10), masked, fill="black", font=FONT)
 
-    password_box = (pw_x, pw_y, box_w, box_h)
-
     # Login button
-    btn_w, btn_h = 140, 45
-    base_btn_x = (IMG_WIDTH - btn_w) // 2
-    base_btn_y = pw_y + box_h + 50
-    btn_x, btn_y = _jitter(base_btn_x, base_btn_y)
-    btn_x = max(20, min(IMG_WIDTH - btn_w - 20, btn_x))
-    btn_y = max(pw_y + box_h + 20, min(IMG_HEIGHT - btn_h - 40, btn_y))
+    btn_x, btn_y, btn_w, btn_h = layout.login_button
 
     draw.rectangle(
         [
@@ -173,8 +208,8 @@ def _draw_login_screen(username: str = "", password: str = "") -> tuple[Image.Im
     )
 
     elements = LoginUIElements(
-        username_box=username_box,
-        password_box=password_box,
+        username_box=layout.username_box,
+        password_box=layout.password_box,
         login_button=login_button,
     )
 
@@ -206,7 +241,13 @@ def _center(bounds: Tuple[int, int, int, int]) -> Tuple[float, float]:
     return _normalize(cx, cy)
 
 
-def _script_login_episode(root: Path, episode_id: str, username: str, password: str) -> Episode:
+def _script_login_episode(
+    root: Path,
+    episode_id: str,
+    username: str,
+    password: str,
+    jitter: bool = True,
+) -> Episode:
     """Create a scripted login episode with a fixed sequence of steps.
 
     Steps:
@@ -221,8 +262,11 @@ def _script_login_episode(root: Path, episode_id: str, username: str, password: 
 
     steps: List[Step] = []
 
+    # Sample a single layout for the entire episode (controls jitter vs no-jitter).
+    layout = _compute_login_layout(jitter=jitter)
+
     # Step 0: initial blank login screen
-    img0, elems0 = _draw_login_screen()
+    img0, _ = _draw_login_screen(layout=layout, jitter=False)
     img0_path = root / f"{episode_id}_step_0.png"
     _save_image(img0, img0_path)
     obs0 = Observation(image_path=str(img0_path))
@@ -237,8 +281,8 @@ def _script_login_episode(root: Path, episode_id: str, username: str, password: 
     )
 
     # Step 1: click username field
-    cx, cy = _center(elems0.username_box)
-    img1, elems1 = _draw_login_screen()
+    cx, cy = _center(layout.username_box)
+    img1, _ = _draw_login_screen(layout=layout, jitter=False)
     img1_path = root / f"{episode_id}_step_1.png"
     _save_image(img1, img1_path)
     obs1 = Observation(image_path=str(img1_path))
@@ -252,7 +296,7 @@ def _script_login_episode(root: Path, episode_id: str, username: str, password: 
     )
 
     # Step 2: username typed
-    img2, elems2 = _draw_login_screen(username=username)
+    img2, _ = _draw_login_screen(username=username, layout=layout, jitter=False)
     img2_path = root / f"{episode_id}_step_2.png"
     _save_image(img2, img2_path)
     obs2 = Observation(image_path=str(img2_path))
@@ -266,8 +310,8 @@ def _script_login_episode(root: Path, episode_id: str, username: str, password: 
     )
 
     # Step 3: click password field
-    cx_pw, cy_pw = _center(elems2.password_box)
-    img3, elems3 = _draw_login_screen(username=username)
+    cx_pw, cy_pw = _center(layout.password_box)
+    img3, _ = _draw_login_screen(username=username, layout=layout, jitter=False)
     img3_path = root / f"{episode_id}_step_3.png"
     _save_image(img3, img3_path)
     obs3 = Observation(image_path=str(img3_path))
@@ -281,7 +325,7 @@ def _script_login_episode(root: Path, episode_id: str, username: str, password: 
     )
 
     # Step 4: password typed (masked visually)
-    img4, elems4 = _draw_login_screen(username=username, password=password)
+    img4, _ = _draw_login_screen(username=username, password=password, layout=layout, jitter=False)
     img4_path = root / f"{episode_id}_step_4.png"
     _save_image(img4, img4_path)
     obs4 = Observation(image_path=str(img4_path))
@@ -295,8 +339,8 @@ def _script_login_episode(root: Path, episode_id: str, username: str, password: 
     )
 
     # Step 5: click login button
-    cx_btn, cy_btn = _center(elems4.login_button)
-    img5, elems5 = _draw_login_screen(username=username, password=password)
+    cx_btn, cy_btn = _center(layout.login_button)
+    img5, _ = _draw_login_screen(username=username, password=password, layout=layout, jitter=False)
     img5_path = root / f"{episode_id}_step_5.png"
     _save_image(img5, img5_path)
     obs5 = Observation(image_path=str(img5_path))
@@ -339,6 +383,7 @@ def generate_synthetic_sessions(
     num_sessions: int = 10,
     seed: int | None = None,
     output_dir: str | os.PathLike[str] | None = None,
+    jitter: bool = True,
 ) -> List[Session]:
     """Generate a list of synthetic Sessions with semantic login episodes.
 
@@ -368,7 +413,13 @@ def generate_synthetic_sessions(
         password = f"pass{i}123"
 
         session_dir = output_root / session_id
-        episode = _script_login_episode(session_dir, episode_id, username, password)
+        episode = _script_login_episode(
+            session_dir,
+            episode_id,
+            username,
+            password,
+            jitter=jitter,
+        )
 
         session = Session(id=session_id, episodes=[episode], meta={"scenario": "login"})
         sessions.append(session)
