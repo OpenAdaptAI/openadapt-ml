@@ -67,10 +67,12 @@ We need a clean, reproducible, public example that demonstrates LoRA fine-tuning
     - Qwen3-VL-2B base vs LoRA-FT
     - Qwen3-VL-8B base vs LoRA-FT
 
-- **Plotting upgrade**
-  - Action-type breakdown plots.
-  - Coord error histogram.
-  - Side-by-side base vs FT summary figure.
+- **Plotting upgrade** ✅ (implemented and exceeded)
+  - Comprehensive multi-model comparison plots with legends
+  - Color-coded bars: blue (Qwen 2B/8B), orange (Claude API), red (GPT API)
+  - Hatching patterns: solid (base/pretrained), diagonal stripes (fine-tuned)
+  - Four key metrics per plot: action type accuracy, coord error, click hit rate, episode success
+  - Supports arbitrary model combinations (base vs FT, offline vs API, comprehensive comparisons)
 
 - **Documentation page**
   - `docs/qwen_login_experiment.md` describing:
@@ -167,33 +169,43 @@ Synthetic-only is useful for unit tests; real world workflows are the end goal.
 Before introducing cloud orchestration, we want a clean way to run the same
 benchmarks against hosted VLM APIs.
 
-**Status**  
-An initial implementation is in place:
+**Status**
+Implementation complete:
 
-- `ApiVLMAdapter` (`openadapt_ml/models/api_adapter.py`) wraps:
-  - Anthropic Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`).
-  - OpenAI GPT-5.1 (`gpt-5.1`).
-- `scripts/eval_policy.py` supports `--backend claude` / `--backend openai`.
-- `scripts/run_qwen_login_benchmark.py` can optionally include these API
-  backends alongside Qwen3 base/FT via `--include-claude`,
-  `--include-openai`, or `--include-all-apis`.
+- **Configuration System**
+  - Pydantic-settings based configuration (`openadapt_ml/config.py`)
+  - `.env` file support for API key management (`.env.example` provided)
+  - Priority chain: explicit parameter > `.env` settings > environment variables > raise error
+  - API keys: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`
+- **API Adapters**
+  - `ApiVLMAdapter` (`openadapt_ml/models/api_adapter.py`) wraps:
+    - Anthropic Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`)
+    - OpenAI GPT-5.1 (`gpt-5.1`)
+  - Inference-only adapters implementing `generate()` method
+- **CLI Integration**
+  - `scripts/eval_policy.py` supports `--backend claude` / `--backend openai`
+  - `scripts/run_qwen_login_benchmark.py` supports `--include-claude`,
+    `--include-openai`, or `--include-all-apis`
+- **Visualization**
+  - Comprehensive comparison plots with legends (`plot_eval_metrics.py`)
+  - Color-coded bars: blue (Qwen 2B/8B), orange (Claude), red (GPT)
+  - Hatching patterns: solid (base/pretrained), diagonal stripes (fine-tuned)
+  - All evaluation plots support multi-model comparison
 
-**Build Targets (remaining / extension)**
+**Acceptance Criteria (all met)**
 
-- **API-backed VLM adapter**
-  - Harden configuration for additional providers as needed.
-- **Local CLI for API eval**
-  - Current eval CLI already supports API backends; future work may include
-    richer logging or provider-specific configs.
+- ✅ `ApiVLMAdapter` can be dropped into `AgentPolicy` without code changes
+- ✅ Local API eval CLI produces metrics JSONs compatible with `plot_eval_metrics.py`
+- ✅ `ApiVLMAdapter` implements `generate(sample: dict) -> str` and returns the
+  raw model text (no post-processing beyond what the remote API already performs)
+- ✅ Configuration system with `.env` support and clear priority chain
+- ✅ Comprehensive comparison plots with legends for multi-model evaluation
 
-**Acceptance Criteria**
+**Future Extensions (optional)**
 
-- `ApiVLMAdapter` can be dropped into `AgentPolicy` without code changes.
-- Local API eval CLI produces metrics JSONs compatible with
-  `plot_eval_metrics.py`.
-- `ApiVLMAdapter` implements `generate(sample: dict) -> str` and returns the
-  raw model text (no post-processing beyond what the remote API already
-  performs).
+- Add support for additional API providers as needed (e.g., Gemini, other Claude/GPT versions)
+- Provider-specific configuration options (temperature, top_p, etc.)
+- Richer logging for API calls (token usage, latency metrics)
 
 ### 2.6 Priority 5b — AWS Lambda Orchestration (Stretch)
 
