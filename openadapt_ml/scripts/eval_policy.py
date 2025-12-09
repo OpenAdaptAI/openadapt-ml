@@ -12,6 +12,7 @@ from openadapt_ml.evals.trajectory_matching import evaluate_policy_on_episodes
 from openadapt_ml.ingest.synthetic import generate_synthetic_sessions
 from openadapt_ml.models.dummy_adapter import DummyAdapter
 from openadapt_ml.models.qwen_vl import QwenVLAdapter
+from openadapt_ml.models.api_adapter import ApiVLMAdapter
 from openadapt_ml.runtime.policy import AgentPolicy
 
 
@@ -72,6 +73,10 @@ def main(
             lora_config=None,
             load_in_4bit=False,
         )
+    elif backend == "claude":
+        adapter = ApiVLMAdapter(provider="anthropic")
+    elif backend == "openai":
+        adapter = ApiVLMAdapter(provider="openai")
     else:
         raise ValueError(f"Unsupported backend: {backend}")
 
@@ -147,7 +152,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--backend",
         type=str,
-        choices=["dummy", "qwen3", "qwen2_5"],
+        choices=["dummy", "qwen3", "qwen2_5", "claude", "openai"],
         default="qwen2_5",
         help="Backend adapter to use for evaluation.",
     )

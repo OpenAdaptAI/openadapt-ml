@@ -10,6 +10,9 @@ wheels/
 .venv
 local_context_openadapt_ml_internal.md
 
+# Environment variables
+.env
+
 # Ephemeral synthetic assets (frames, debug sessions, etc.)
 synthetic/
 synthetic_train/
@@ -17,6 +20,13 @@ synthetic_train_dev/
 
 # Local OS cruft
 .DS_Store
+
+# Editor files
+*.swp
+*.swo
+*.swn
+*~
+.*.sw?
 
 # Ephemeral training/eval artifacts
 logs/

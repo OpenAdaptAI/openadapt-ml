@@ -167,16 +167,24 @@ Synthetic-only is useful for unit tests; real world workflows are the end goal.
 Before introducing cloud orchestration, we want a clean way to run the same
 benchmarks against hosted VLM APIs.
 
-**Build Targets**
+**Status**  
+An initial implementation is in place:
+
+- `ApiVLMAdapter` (`openadapt_ml/models/api_adapter.py`) wraps:
+  - Anthropic Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`).
+  - OpenAI GPT-5.1 (`gpt-5.1`).
+- `scripts/eval_policy.py` supports `--backend claude` / `--backend openai`.
+- `scripts/run_qwen_login_benchmark.py` can optionally include these API
+  backends alongside Qwen3 base/FT via `--include-claude`,
+  `--include-openai`, or `--include-all-apis`.
+
+**Build Targets (remaining / extension)**
 
 - **API-backed VLM adapter**
-  - `ApiVLMAdapter` wrapping, e.g.:
-    - OpenAI
-    - Anthropic
-    - (or other hosted VLMs)
+  - Harden configuration for additional providers as needed.
 - **Local CLI for API eval**
-  - Mirror `scripts/eval_policy.py` but using `ApiVLMAdapter`.
-  - Reuse the same trajectory-matching metrics and JSON schema.
+  - Current eval CLI already supports API backends; future work may include
+    richer logging or provider-specific configs.
 
 **Acceptance Criteria**
 

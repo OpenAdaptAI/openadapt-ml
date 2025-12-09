@@ -359,6 +359,37 @@ the Qwen-VL family via Hugging Face `transformers` + `peft`:
     refinement.
 - `compute_loss` and `generate` delegate to the underlying HF model.
 
+### 8.4 API-backed adapters and configuration
+
+`openadapt_ml/models/api_adapter.py` implements `ApiVLMAdapter` for hosted
+VLM APIs (Anthropic Claude and OpenAI GPT). This adapter is **inference-only**
+and supports `generate` but not `prepare_inputs` or `compute_loss`.
+
+Configuration is managed via `openadapt_ml/config.py`, which uses
+`pydantic-settings` to load API keys from:
+
+1. `.env` file in the repository root (recommended for local development).
+2. Environment variables (for CI/containers).
+3. Explicit `api_key` parameter passed to the adapter constructor.
+
+Priority order: explicit parameter > settings (from `.env`) > environment
+variables > raise error.
+
+Example `.env` file:
+
+```
+ANTHROPIC_API_KEY=your-anthropic-api-key-here
+OPENAI_API_KEY=your-openai-api-key-here
+```
+
+The settings are loaded once at import time and cached in a global `settings`
+object. This approach:
+
+- Eliminates the need to manually export environment variables during development.
+- Keeps sensitive keys out of the repository (`.env` is gitignored).
+- Supports both local `.env` workflow and traditional environment variable
+  injection for deployment.
+
 
 ## 9. Training Loop & Config
 

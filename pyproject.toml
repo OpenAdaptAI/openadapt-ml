@@ -14,3 +14,10 @@ dependencies = [
     "torchvision>=0.24.1",
     "transformers>=4.57.3",
 ]
+
+[project.optional-dependencies]
+api = [
+    "anthropic>=0.40.0",
+    "openai>=1.0.0",
+    "pydantic-settings>=2.0.0",
+]

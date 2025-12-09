@@ -48,14 +48,44 @@ uv run python -m openadapt_ml.scripts.run_qwen_login_benchmark \
   --out-dir experiments/qwen_login/2b_dev
 ```
 
-This will:
+This default invocation will:
 
 - Train a LoRA adapter on the hardened synthetic login scenario.
-- Evaluate both the base and fine-tuned models on fresh synthetic episodes.
-- Write eval JSONs and a comparison plot under `experiments/qwen_login/2b_dev/`.
+- Evaluate both the **base** and **fine-tuned** Qwen3-VL models on fresh
+  synthetic episodes.
+- Write eval JSONs and a comparison plot under
+  `experiments/qwen_login/2b_dev/`.
 
 The `qwen3vl_synthetic_dev` config is sized for small development runs on Apple
 Silicon / CPU, but will also run on CUDA GPUs.
+
+To additionally compare against hosted API backends (Claude Sonnet 4.5 and
+OpenAI GPT-5.1), first install the optional `api` extra and configure your API
+keys:
+
+```bash
+uv sync --extra api
+
+# Option 1: Use .env file (recommended)
+cp .env.example .env
+# Edit .env with your API keys
+
+# Option 2: Export environment variables (for CI/containers)
+export ANTHROPIC_API_KEY=...  # for Claude Sonnet 4.5
+export OPENAI_API_KEY=...     # for GPT-5.1
+```
+
+Then run:
+
+```bash
+uv run python -m openadapt_ml.scripts.run_qwen_login_benchmark \
+  --config configs/qwen3vl_synthetic_dev.yaml \
+  --out-dir experiments/qwen_login/2b_dev \
+  --include-all-apis
+```
+
+This will evaluate and plot **Qwen3 base**, **Qwen3 FT**, **Claude Sonnet 4.5**,
+and **GPT-5.1** on the same synthetic login benchmark.
 
 For more details on configs, adapters, and evaluation metrics, see the sections
 below and `docs/state_and_next_steps_qwen_login.md`.
@@ -280,8 +310,13 @@ vs LoRA-fine-tuned models behave on this benchmark:
 
 ![Qwen3-VL-8B hardened synthetic login benchmark (v2)](experiments/qwen_login/8b_hero/plots/qwen3_8b_base_vs_ft_hardened_v2.png)
 
+**API Comparison:** Qwen3-VL 2B vs Claude Sonnet 4.5 vs GPT-5.1:
+
+![Qwen3-VL-2B vs API models](experiments/qwen_login/2b_dev/plots/qwen_vs_apis.png)
+
 For a technical reader, they expose step-level metrics (action type accuracy,
 coordinate error, click hit rate). For a non-expert, they visually answer
+the question: "Does fine-tuning a small local model outperform large API models?"
 
 Condensed hardened v2 results:
 
@@ -291,6 +326,19 @@ Condensed hardened v2 results:
 | Qwen3-VL-2B FT | 0.469                | 0.0514           | 0.85           |
 | Qwen3-VL-8B    | 0.143                | N/A              | N/A            |
 | Qwen3-VL-8B FT | 0.286                | 0.0038           | 1.00           |
+
+API comparison results (Qwen3-VL-2B dev config):
+
+| Model                | action_type_accuracy | mean_coord_error | click_hit_rate |
+|---------------------|----------------------|------------------|----------------|
+| Qwen3-VL-2B base    | 0.143                | N/A              | N/A            |
+| Qwen3-VL-2B FT      | **0.255**            | **0.014**        | **0.974**      |
+| Claude Sonnet 4.5   | 0.121                | 0.757            | 0.000          |
+| GPT-5.1             | 0.183                | 0.057            | 0.600          |
+
+**Key finding:** The fine-tuned Qwen3-VL-2B significantly outperforms both
+Claude Sonnet 4.5 and GPT-5.1 on this domain-specific task, demonstrating
+the value of task-specific fine-tuning even with smaller models.
 
 ---
 
@@ -306,9 +354,33 @@ Current adapters include:
   Qwen2.5-VL.
 - `DummyAdapter` (`openadapt_ml/models/dummy_adapter.py`) for fast smoke
   tests without loading a real VLM.
+- `ApiVLMAdapter` (`openadapt_ml/models/api_adapter.py`) for hosted VLM
+  APIs (Anthropic Claude Sonnet 4.5 and OpenAI GPT-5.1). This adapter is
+  inference-only and implements `generate` using the respective SDKs.
 
 For full adapter internals and training-time vs runtime behavior, see
 `docs/design.md` §8.
+
+### 6.1 API-backed adapters
+
+To use the API-backed adapter from Python, you can configure API keys via `.env`
+file, environment variables, or pass them explicitly:
+
+```python
+from openadapt_ml.models.api_adapter import ApiVLMAdapter
+
+# Use .env file or environment variables (ANTHROPIC_API_KEY / OPENAI_API_KEY)
+claude_adapter = ApiVLMAdapter(provider="anthropic")
+gpt_adapter = ApiVLMAdapter(provider="openai")
+
+# Or pass API keys explicitly from your application's config
+claude_adapter = ApiVLMAdapter(provider="anthropic", api_key="...")
+gpt_adapter = ApiVLMAdapter(provider="openai", api_key="...")
+```
+
+The existing CLI scripts `scripts/demo_policy.py` and
+`scripts/eval_policy.py` expose these backends via the `--backend` flag
+(`claude` / `openai`).
 
 ---
 

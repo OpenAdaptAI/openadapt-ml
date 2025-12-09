@@ -59,6 +59,11 @@ def plot_eval_metrics(
         ax.set_title(title)
         ax.set_ylabel(key)
         ax.set_ylim(bottom=0.0)
+        # Rotate x-axis labels to prevent crowding
+        ax.tick_params(axis='x', labelrotation=45)
+        # Align labels to the right for better readability when rotated
+        for tick in ax.get_xticklabels():
+            tick.set_horizontalalignment('right')
 
     fig.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
