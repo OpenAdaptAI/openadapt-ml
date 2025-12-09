@@ -297,7 +297,7 @@ error, click hit rate). For a non-expert, it visually answers "did the
 fine-tuned model get better at clicking the right place and finishing
 the login?":
 
-![Qwen3-VL-2B hardened synthetic login benchmark (v2)](plots/qwen3_2b_base_vs_ft_hardened_v2.png)
+![Qwen3-VL-2B hardened synthetic login benchmark (v2)](experiments/qwen_login/2b_dev/plots/qwen3_2b_base_vs_ft_hardened_v2.png)
 
 On this hardened dev setup, LoRA significantly improves action accuracy,
 coordinate error, and click hit rate; see
@@ -350,10 +350,10 @@ the README.
 The 8B hardened comparison plot extends the same story to the larger
 Qwen3-VL-8B model:
 
-![Qwen3-VL-8B hardened synthetic login benchmark (v2)](plots/qwen3_8b_base_vs_ft_hardened_v2.png)
+![Qwen3-VL-8B hardened synthetic login benchmark (v2)](experiments/qwen_login/8b_hero/plots/qwen3_8b_base_vs_ft_hardened_v2.png)
 
-The resulting plots (`plots/qwen3_2b_base_vs_ft_hardened_v2.png` and
-`plots/qwen3_8b_base_vs_ft_hardened_v2.png`) show Qwen3-VL fine-tuning improving
+The resulting plots (`experiments/qwen_login/2b_dev/plots/qwen3_2b_base_vs_ft_hardened_v2.png` and
+`experiments/qwen_login/8b_hero/plots/qwen3_8b_base_vs_ft_hardened_v2.png`) show Qwen3-VL fine-tuning improving
 step-level metrics on the synthetic login task. See
 `docs/state_and_next_steps_qwen_login.md` §7 for detailed tables from the v2 runs.
 
