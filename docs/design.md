@@ -49,7 +49,7 @@ v1 explicitly does **not** implement:
 
 ## 4. Architecture Overview
 
-Directory layout (planned):
+Directory layout:
 
 - `openadapt_ml/`
   - `schemas/`
@@ -115,6 +115,12 @@ This schema is the **contract** between ingest, datasets, models, and runtime.
 - **Training unit**: dataset builders and training loops operate on `list[Episode]`.
   `Session` is primarily an ingest/container type for grouping episodes and metadata.
 
+- **Structured vs textual actions**:
+  - `Action` is the canonical, structured representation stored in episodes.
+  - The textual DSL (e.g. `CLICK(x=0.42, y=0.73)`) is **derived** from
+    `Action` for SFT samples and runtime prompts; it is not stored verbatim in
+    the `Episode`.
+
 - **DONE vs success semantics**:
   - Synthetic generators will include a terminal `Action(type="done")` once the scripted goal is achieved.
   - `Episode.success` records whether the goal was actually achieved in that episode.
@@ -138,7 +144,7 @@ We want synthetic data that:
 
 This follows the spirit of `omnimcp`'s `synthetic_ui.py` and matches patterns in VideoAgentTrek (task-oriented episodes).
 
-### 6.2 Planned synthetic scenarios
+### 6.2 Synthetic scenarios
 
 Initial synthetic UIs (v1):
 
@@ -181,25 +187,16 @@ Example (conceptual only):
 
 ### 6.4 API
 
-```python
-# openadapt_ml/ingest/synthetic.py
-
-def generate_synthetic_sessions(num_sessions: int = 10, seed: int | None = None) -> list[Session]:
-    """Generate a list of synthetic Sessions with semantic UIs and goals.
-
-    For v1, each Session may contain a small number of Episodes
-    (e.g. 1–3) drawn from a set of scenario templates.
-    """
-```
-
-We may later wrap this in a small metadata carrier if helpful for logging and reproducibility:
+`openadapt_ml/ingest/synthetic.py` exposes:
 
 ```python
-@dataclass
-class SyntheticDataset:
-    sessions: list[Session]
-    scenarios: dict[str, int]  # scenario_name -> count
-    seed: int | None
+def generate_synthetic_sessions(
+    num_sessions: int = 10,
+    seed: int | None = None,
+    output_dir: str | os.PathLike[str] | None = None,
+    jitter: bool = True,
+) -> list[Session]:
+    """Generate a list of synthetic Sessions with semantic login episodes."""
 ```
 
 All action coordinates are normalized **relative to the screenshot image** (range `[0, 1]`).
@@ -260,13 +257,42 @@ Later we may optionally include **history** and/or **thoughts** in the user cont
 
 ### 7.3 Dataset components
 
-Under `openadapt_ml/datasets/next_action.py` we will provide:
+Under `openadapt_ml/datasets/next_action.py` we provide:
 
-- A function to convert `list[Episode]` → `list[SFTSample]`.
-- A small `torch.utils.data.Dataset` implementation wrapping these samples.
-- Utilities for formatting `Action` objects into action strings.
+- `build_next_action_sft_samples(episodes: list[Episode]) -> list[dict]`.
+- `NextActionDataset`, a thin `torch.utils.data.Dataset` wrapper.
+- Utilities such as `format_action` for formatting `Action` objects into
+  action strings.
 
-### 7.4 Mapping Episodes to SFT Samples
+### 7.4 Action DSL & invariants (canonical)
+
+The action DSL is the contract between dataset builders, adapters, the runtime
+policy, and external agents. For v1 it is deliberately small and strict:
+
+- **Allowed actions**
+  - `CLICK(x=<float in [0,1]>, y=<float in [0,1]>)`
+  - `TYPE(text="...")`
+  - `WAIT()`
+  - `DONE()`
+- **Coordinate range**
+  - `x` and `y` are normalized to `[0, 1]` relative to the screenshot
+    resolution at the time of capture.
+- **Single action per response**
+  - Assistant outputs supervised during training contain exactly **one** DSL
+    action, optionally preceded by a `Thought:` line (ReAct-style) in
+    higher-level prompts.
+  - Runtime parsing in `AgentPolicy` extracts a single `Action` from the
+    model's text; additional text is ignored.
+- **Failure behavior**
+  - If parsing fails (no valid DSL action found), the policy returns
+    `Action(type="failed")` with the raw text attached in `Action.raw`.
+  - Downstream callers must treat `failed` as non-executable and may choose to
+    retry, fall back, or log.
+
+These invariants must remain stable unless the DSL is explicitly versioned and
+all adapters + parsers are updated in lockstep.
+
+### 7.5 Mapping Episodes to SFT Samples
 
 For an `Episode` with steps `[s0, s1, ..., sN]` we create **one SFT sample per step** that has both an observation and an action, including the terminal `DONE()` step (if present). This allows the model to learn termination behavior.
 
@@ -369,16 +395,13 @@ These will be represented in a small `TrainingConfig` dataclass and a correspond
 
 ### 9.2 Training loop
 
-`openadapt_ml/training/trainer.py` will expose a simple helper that:
+`openadapt_ml/training/trainer.py` exposes a simple helper that:
 
-1. Instantiates an optimizer (e.g. `AdamW` or `adamw_bnb_8bit` when available).
-2. Creates a scheduler from the config.
-3. Iterates over a `DataLoader` built from the SFT dataset.
-4. Uses the adapter to prepare inputs and compute loss.
-5. Supports gradient accumulation and basic logging.
-6. Saves LoRA weights and config at the end.
-
-We keep the loop intentionally compact and explicit so it can later be swapped for Hugging Face `Trainer` or `TRL` `SFTTrainer` if needed.
+1. Instantiates an optimizer (e.g. `AdamW`).
+2. Iterates over a `DataLoader` built from the SFT dataset.
+3. Uses the adapter to prepare inputs and compute loss.
+4. Supports gradient accumulation and basic logging.
+5. Saves LoRA weights and config at the end.
 
 v1 assumes **single-device training** (one CUDA GPU, MPS, or CPU) with small per-device batch sizes and gradient accumulation. Multi-GPU / distributed training and `accelerate` are future extensions.
 
@@ -467,132 +490,48 @@ For now, the priority is to get the v1 pipeline **working end-to-end** on synthe
 
 ## 12. Evaluation Strategy (Conceptual)
 
-Although v1 focuses on getting the training pipeline working, the design supports two complementary evaluation modes:
+The design supports two complementary evaluation modes:
 
-### 12.1 Interactive Environment Evaluation
+### 12.1 Interactive environment evaluation
 
-In an executable environment (e.g., a desktop automation arena or sandbox), we can:
+In an executable environment (e.g., a desktop automation arena), we can:
 
 - Execute actions predicted by `AgentPolicy` step-by-step.
 - Observe the resulting UI state.
-- Determine whether the **goal** was achieved by inspecting the final state.
+- Decide whether the goal was achieved.
 
 Typical metrics:
 
-- **Task success rate**: fraction of episodes where the agent achieves the goal within a step budget.
+- **Task success rate**: fraction of episodes where the agent achieves the goal
+  within a step budget.
 - **Step efficiency**: number of steps taken vs. scripted or optimal.
 
-This mode depends on an external environment and is not required for the initial synthetic, offline validation, but the `AgentPolicy` interface is designed to plug into such environments.
+This mode depends on an external environment and is not required for the
+initial synthetic, offline validation, but the `AgentPolicy` interface is
+designed to plug into such environments.
 
-### 12.2 Offline Trajectory Matching
+### 12.2 Offline trajectory matching
 
-For recorded interaction data (synthetic or real), where we have:
+For recorded interaction data (synthetic or real), where we have episodes with
+images and ground-truth actions, we can evaluate the policy **without executing
+actions** by:
 
-- An `Episode` with `goal` and a sequence of `Step`s.
-- Each `Step` has an `Observation.image_path` and ground-truth `Action`.
-
-We can evaluate the policy **without executing actions**, by:
-
-1. For each step `k` in an episode:
-   - Load the screenshot from `steps[k].observation.image_path`.
-   - Call `AgentPolicy.predict_action(image, goal)`.
-   - Compare the predicted `Action` to the ground-truth `steps[k].action`.
-2. Aggregate metrics across steps and episodes.
+1. For each step, calling `AgentPolicy.predict_action` on the screenshot + goal.
+2. Comparing the predicted `Action` to the ground-truth `Action`.
+3. Aggregating metrics across steps and episodes.
 
 Representative metrics:
 
-- **Action type accuracy**: percentage of steps where `pred.type == gt.type`.
-- **Coordinate error**: mean pixel distance between predicted and ground-truth coordinates for spatial actions (e.g., `click`, `drag`).
-- **Sequence match rate**: fraction of episodes where all steps match within a tolerance.
-- **Early termination rate**: fraction of episodes where the model predicts `DONE()` too early.
+- **Action type accuracy**.
+- **Coordinate error** for spatial actions.
+- **Episode success rate** (all steps correct and DONE at the right time).
 
-This can be implemented in a small evaluation helper (e.g., `openadapt_ml.evals.trajectory_matching`) and driven by a CLI script (e.g., `scripts/eval_trajectory.py`). Synthetic episodes provide an immediate, environment-free sanity check; other recorded episodes can be evaluated via the same interface once they are mapped into the `Episode` schema.
-
-A key goal is to **compare base vs. fine-tuned models** on the same synthetic
-benchmark (e.g., login), using identical evaluation code. For example, we can
-evaluate a frozen Qwen-VL checkpoint and a LoRA-tuned checkpoint on the same
-test episodes and visualize the difference in action accuracy and coordinate
-error.
-
-Over time, we can also:
-
-- Log **training and evaluation curves** (loss, accuracy) and generate simple
-  plots under `docs/` to visualize convergence across different models and
-  datasets.
-- Perform **cross-model comparisons** by running the same evaluation scripts
-  against different backends (e.g. Qwen-VL variants, or external APIs such as
-  OpenAI / Claude / Gemini via thin adapter wrappers) and summarizing results
-  in tables/figures. These external comparisons would live in separate
-  analysis notebooks or repos, while OpenAdapt-ML focuses on the common
-  data/model/runtime interfaces.
+`openadapt_ml.evals.trajectory_matching` and `scripts/eval_policy.py` implement
+this mode for the synthetic login benchmark and are reused for future
+scenarios.
 
 
-## 13. Quickstart (Conceptual)
+## 13. References
 
-**Generate synthetic data (optional script):**
-
-```bash
-python -m openadapt_ml.scripts.prepare_synthetic \
-  --num-sessions 100 \
-  --output data/synthetic
-```
-
-**Train a LoRA adapter on synthetic data:**
-
-```bash
-python -m openadapt_ml.scripts.train \
-  --config configs/qwen3vl_synthetic.yaml
-```
-
-**Run inference with a trained policy:**
-
-```python
-from PIL import Image
-from openadapt_ml.models.qwen_vl import QwenVLAdapter
-from openadapt_ml.runtime.policy import AgentPolicy
-
-adapter = QwenVLAdapter.from_pretrained(
-    "Qwen/Qwen3-VL-8B-Instruct",
-    lora_config=...,            # or load saved adapter config
-    # lora_weights_path will be handled by adapter/model-loading logic
-)
-policy = AgentPolicy(adapter, device=None)  # uses default device helper
-
-image = Image.open("screenshot.png")
-action, thought = policy.predict_action(
-    image=image,
-    goal="Clear the browser cache",
-)
-print(action, thought)
-```
-
-## 14. Roadmap (near-term)
-
-The initial v1 implementation focuses on validating the synthetic pipeline and
-Qwen-VL integration. Near-term priorities include:
-
-- **Evaluation CLI**
-  - Add a script (e.g. `scripts/eval_policy.py`) that runs `AgentPolicy` over
-    synthetic episodes and reports next-action accuracy and simple
-    episode-level success metrics. In later iterations this CLI can also
-    emit metrics logs suitable for plotting training/eval curves.
-- **Prompting & action format**
-  - Strengthen the system prompt and in-prompt examples so models reliably
-    emit a single `CLICK(...)` / `TYPE(...)` / `DONE()` command.
-  - Slightly harden `AgentPolicy` parsing to better handle noisy outputs.
-- **Label masking & batching**
-  - Move from full-sequence supervision to assistant-only masking in
-    `QwenVLAdapter.prepare_inputs`.
-  - Relax the `batch_size=1` constraint to support small batches when
-    running on GPUs.
-- **Additional synthetic UIs**
-  - Add at least one more semantic UI scenario (e.g. settings panel,
-    search/filter flow) to stress-test generality.
-- **GPU / QLoRA configs**
-  - Provide example configs for CUDA environments that enable
-    `load_in_4bit: true` and more realistic batch sizes, while keeping
-    Apple Silicon configs full/mixed-precision.
-- **CI and style tooling**
-  - Add a minimal CI workflow running `uv sync` and `pytest` on pushes/PRs.
-  - Standardize formatting/linting (e.g. `ruff`, `black`) and document the
-    expected style in the README.
+- High-level overview and Quickstart: see `README.md`.
+- Prioritized build plan and acceptance criteria: see `docs/roadmap.md`.

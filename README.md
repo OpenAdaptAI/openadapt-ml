@@ -19,7 +19,50 @@ The design is described in detail in [`docs/design.md`](docs/design.md).
 
 ---
 
-## 1. Repository Structure
+## 1. Quickstart
+
+### 1.1 Install dependencies
+
+From the repository root:
+
+```bash
+uv sync
+```
+
+### 1.2 Run a small demo policy
+
+Run a fast, model-free smoke test:
+
+```bash
+uv run python -m openadapt_ml.scripts.demo_policy --backend dummy
+```
+
+### 1.3 Run the synthetic login benchmark (end-to-end)
+
+On a machine with a suitable GPU, you can reproduce the Qwen3-VL synthetic
+login benchmark (train → eval base/FT → plot) with a single command:
+
+```bash
+uv run python -m openadapt_ml.scripts.run_qwen_login_benchmark \
+  --config configs/qwen3vl_synthetic_dev.yaml \
+  --out-dir experiments/qwen_login/2b_dev
+```
+
+This will:
+
+- Train a LoRA adapter on the hardened synthetic login scenario.
+- Evaluate both the base and fine-tuned models on fresh synthetic episodes.
+- Write eval JSONs and a comparison plot under `experiments/qwen_login/2b_dev/`.
+
+The `qwen3vl_synthetic_dev` config is sized for small development runs on Apple
+Silicon / CPU, but will also run on CUDA GPUs.
+
+For more details on configs, adapters, and evaluation metrics, see the sections
+below and `docs/state_and_next_steps_qwen_login.md`.
+
+---
+
+## 2. Repository Structure
 
 Key modules:
 
@@ -65,7 +108,7 @@ Configs and docs:
 
 ---
 
-## 2. Environment Setup
+## 3. Environment Setup
 
 OpenAdapt-ML targets **Python 3.12** and uses [`uv`](https://github.com/astral-sh/uv)
 for dependency management.
@@ -96,7 +139,7 @@ You can also run `pytest` or other tools via `uv run`.
 
 ---
 
-## 3. Synthetic Data & Datasets
+## 4. Synthetic Data & Datasets
 
 The v1 pipeline is validated on **synthetic, semantic UIs**, starting with a
 simple login flow.
@@ -144,9 +187,12 @@ Each sample has the form:
 These samples are wrapped in a simple `NextActionDataset` for use with the
 training loop.
 
+For the full, canonical definition of the action DSL (CLICK/TYPE/WAIT/DONE)
+and its invariants, see `docs/design.md` §7.4.
+
 ---
 
-## 4. Training
+## 5. Training
 
 Training is driven by `openadapt_ml/scripts/train.py` and YAML configs under
 `configs/`.
@@ -212,152 +258,32 @@ format expected by the Qwen2.5-VL processor.
 > Note: Both configs are sized for **small synthetic smoke runs**, not
 > large-scale production training.
 
-### 4.3 Qwen3-VL synthetic login benchmark (typical usage)
+### 4.3 Qwen3-VL synthetic login benchmark (hero example)
 
-OpenAdapt-ML ships a small **synthetic login** benchmark backed by Qwen3-VL,
+OpenAdapt-ML ships a **synthetic login** benchmark backed by Qwen3-VL,
 used to compare **base vs LoRA-fine-tuned** models on a hardened synthetic
 environment (layout jitter + a decoy "Help" button).
 
 FT = **LoRA fine-tuned Qwen3-VL** on synthetic login.
 Base = **frozen pretrained Qwen3-VL**.
 
-#### 4.3.1 Fast dev loop: Qwen3-VL-2B (hardened, v2)
-
-Config: `configs/qwen3vl_synthetic_dev.yaml` (32 sessions, hardened generator).
-
-**Train:**
-
-```bash
-uv run python -m openadapt_ml.scripts.train \
-  --config configs/qwen3vl_synthetic_dev.yaml
-```
-
-Example training log excerpt (Qwen3-VL-2B hardened dev):
-
-```text
-Loaded 32 episodes and 224 SFT samples.
-Starting training (adapter.prepare_inputs/compute_loss must be implemented)...
-step=10  loss=1.23
-...
-step=20  loss=0.87
-...
-step=30  loss=0.64
-...
-```
-
-**Eval base vs fine-tuned:**
-
-```bash
-# Base (ignore LoRA)
-uv run python -m openadapt_ml.scripts.eval_policy \
-  --config configs/qwen3vl_synthetic_dev.yaml \
-  --backend qwen3 \
-  --ignore-lora \
-  --output-json eval_qwen3_2b_base_login_hardened_v2.json \
-  --log-samples logs/qwen3_2b_base_eval_hardened_v2.jsonl \
-  --log-limit 500
-
-# Fine-tuned (with LoRA)
-uv run python -m openadapt_ml.scripts.eval_policy \
-  --config configs/qwen3vl_synthetic_dev.yaml \
-  --backend qwen3 \
-  --output-json eval_qwen3_2b_ft_login_hardened_v2.json \
-  --log-samples logs/qwen3_2b_ft_eval_hardened_v2.jsonl \
-  --log-limit 500
-```
-
-**Plot:**
-
-```bash
-uv run python -m openadapt_ml.evals.plot_eval_metrics \
-  --files eval_qwen3_2b_base_login_hardened_v2.json eval_qwen3_2b_ft_login_hardened_v2.json \
-  --labels base ft \
-  --output plots/qwen3_2b_base_vs_ft_hardened_v2.png
-```
-
-The example above writes plots and eval JSONs to top-level paths for
-convenience. For documentation and sharing, we copy the canonical
-artifacts into `experiments/qwen_login/2b_dev/**`:
-
-- `experiments/qwen_login/2b_dev/eval/`
-- `experiments/qwen_login/2b_dev/plots/`
-- `experiments/qwen_login/2b_dev/media/`
-
 Below is an example hardened 2B login episode, visualized as an animated
 GIF. It walks through the full scripted flow (blank screen → clicks →
-typing → successful login) and makes the task concrete even for readers
-who are not familiar with the underlying schemas:
+typing → successful login):
 
 ![Qwen3-VL-2B synthetic login demo](experiments/qwen_login/2b_dev/media/qwen3_2b_login_demo.gif)
 
-The corresponding 2B hardened comparison plot summarizes how the base
-vs LoRA-fine-tuned models behave on this benchmark. For a technical
-reader, it exposes step-level metrics (action type accuracy, coordinate
-error, click hit rate). For a non-expert, it visually answers "did the
-fine-tuned model get better at clicking the right place and finishing
-the login?":
+The corresponding hardened comparison plots summarize how the base
+vs LoRA-fine-tuned models behave on this benchmark:
 
 ![Qwen3-VL-2B hardened synthetic login benchmark (v2)](experiments/qwen_login/2b_dev/plots/qwen3_2b_base_vs_ft_hardened_v2.png)
 
-On this hardened dev setup, LoRA significantly improves action accuracy,
-coordinate error, and click hit rate; see
-`docs/state_and_next_steps_qwen_login.md` §7.1 for exact numbers from the v2 run.
-
-#### 4.3.2 Hero run: Qwen3-VL-8B (hardened, v2)
-
-Config: `configs/qwen3vl_synthetic.yaml` (32 sessions, hardened generator).
-
-**Train:**
-
-```bash
-uv run python -m openadapt_ml.scripts.train \
-  --config configs/qwen3vl_synthetic.yaml
-```
-
-**Eval base vs fine-tuned:**
-
-```bash
-# Base
-uv run python -m openadapt_ml.scripts.eval_policy \
-  --config configs/qwen3vl_synthetic.yaml \
-  --backend qwen3 \
-  --ignore-lora \
-  --output-json eval_qwen3_8b_base_login_hardened_v2.json \
-  --log-samples logs/qwen3_8b_base_eval_hardened_v2.jsonl \
-  --log-limit 500
-
-# Fine-tuned
-uv run python -m openadapt_ml.scripts.eval_policy \
-  --config configs/qwen3vl_synthetic.yaml \
-  --backend qwen3 \
-  --output-json eval_qwen3_8b_ft_login_hardened_v2.json \
-  --log-samples logs/qwen3_8b_ft_eval_hardened_v2.jsonl \
-  --log-limit 500
-```
-
-**Plot:**
-
-```bash
-uv run python -m openadapt_ml.evals.plot_eval_metrics \
-  --files eval_qwen3_8b_base_login_hardened_v2.json eval_qwen3_8b_ft_login_hardened_v2.json \
-  --labels base ft \
-  --output plots/qwen3_8b_base_vs_ft_hardened_v2.png
-```
-
-As with the 2B dev loop, the canonical 8B hero artifacts are collected
-under `experiments/qwen_login/8b_hero/**` for reference from docs and
-the README.
-The 8B hardened comparison plot extends the same story to the larger
-Qwen3-VL-8B model:
-
 ![Qwen3-VL-8B hardened synthetic login benchmark (v2)](experiments/qwen_login/8b_hero/plots/qwen3_8b_base_vs_ft_hardened_v2.png)
 
-The resulting plots (`experiments/qwen_login/2b_dev/plots/qwen3_2b_base_vs_ft_hardened_v2.png` and
-`experiments/qwen_login/8b_hero/plots/qwen3_8b_base_vs_ft_hardened_v2.png`) show Qwen3-VL fine-tuning improving
-step-level metrics on the synthetic login task. See
-`docs/state_and_next_steps_qwen_login.md` §7 for detailed tables from the v2 runs.
+For a technical reader, they expose step-level metrics (action type accuracy,
+coordinate error, click hit rate). For a non-expert, they visually answer
 
-For convenience, here is a condensed summary of the hardened v2 results:
+Condensed hardened v2 results:
 
 | Model           | action_type_accuracy | mean_coord_error | click_hit_rate |
 |----------------|----------------------|------------------|----------------|
@@ -368,45 +294,25 @@ For convenience, here is a condensed summary of the hardened v2 results:
 
 ---
 
-## 5. VLM Adapters
+## 6. VLM Adapters
 
-All VLM backends implement the `BaseVLMAdapter` interface in
-`openadapt_ml/models/base_adapter.py`:
+All VLM backends implement the shared `BaseVLMAdapter` interface in
+`openadapt_ml/models/base_adapter.py` (prepare inputs, compute loss, generate
+text from a sample).
 
-- `prepare_inputs(batch) -> dict`
-- `compute_loss(inputs) -> torch.Tensor`
-- `generate(sample, max_new_tokens=...) -> str`
+Current adapters include:
 
-### 5.1 QwenVLAdapter
+- `QwenVLAdapter` (`openadapt_ml/models/qwen_vl.py`) for Qwen3-VL and
+  Qwen2.5-VL.
+- `DummyAdapter` (`openadapt_ml/models/dummy_adapter.py`) for fast smoke
+  tests without loading a real VLM.
 
-`openadapt_ml/models/qwen_vl.py` implements `QwenVLAdapter`, which supports
-both **Qwen3-VL** and **Qwen2.5-VL**:
-
-- Detects the family from `model_name`.
-- Uses `AutoProcessor` for chat + vision.
-- For training:
-  - Converts SFT samples into Qwen-style multimodal `messages` where the user
-    turn includes both the image and the text.
-  - Uses full-sequence supervision (`labels = input_ids`) for v1 synthetic
-    experiments.
-- For generation:
-  - Feeds the screenshot + goal text as a user message.
-  - Lets the model generate the assistant continuation, which the runtime
-    policy then parses into an `Action`.
-
-> See `docs/design.md` §8.3 for more details on the adapter design.
-
-### 5.2 DummyAdapter
-
-`openadapt_ml/models/dummy_adapter.py` provides a trivial baseline adapter
-that ignores inputs and returns a fixed loss / text. It is used for:
-
-- Validating that the training loop runs without loading a large VLM.
-- Simple runtime policy demos.
+For full adapter internals and training-time vs runtime behavior, see
+`docs/design.md` §8.
 
 ---
 
-## 6. Runtime Policy & Demos
+## 7. Runtime Policy & Demos
 
 The runtime policy is implemented in `openadapt_ml/runtime/policy.py` as
 `AgentPolicy`.
@@ -454,7 +360,7 @@ Each invocation will:
 
 ---
 
-## 7. Testing
+## 8. Testing
 
 Basic tests are provided under `tests/`.
 
@@ -471,14 +377,12 @@ In particular:
 
 ---
 
-## 8. Limitations & Notes
+## 9. Limitations & Notes
 
 - **Apple Silicon / bitsandbytes**:
-  - On Apple Silicon (M1/M2/M3, macOS), `bitsandbytes` does not currently
-    provide GPU-based 4-bit quantization (QLoRA).
-  - All example configs set `load_in_4bit: false` for local runs.
-  - 4-bit QLoRA is expected to run on CUDA-capable GPUs in remote
-    environments.
+  - Example configs are sized for CPU / Apple Silicon development runs; see
+    `docs/design.md` §9.4 for details on QLoRA and platform-specific
+    considerations.
 - **Batching**:
   - For v1, `QwenVLAdapter` is implemented assuming `batch_size=1` for
     simplicity when handling multimodal inputs. The training configs are
@@ -491,22 +395,9 @@ For deeper architectural details, see [`docs/design.md`](docs/design.md).
 
 ---
 
-## 9. Roadmap (summary)
+## 10. Roadmap
 
-Planned near-term improvements include:
+For the up-to-date, prioritized roadmap (including concrete implementation
+targets and agent-executable acceptance criteria), see
+[`docs/roadmap.md`](docs/roadmap.md).
 
-- **Evaluation CLI** to measure next-action accuracy on synthetic episodes.
-- **Stronger prompting and examples** to stabilize `CLICK(...)` / `DONE()`
-  style outputs.
-- Generalize **assistant-only label masking** and support for small
-  batches > 1 in `QwenVLAdapter` (currently validated for Qwen3-VL with
-  `batch_size=1`, next step is GPU-friendly multi-sample batches).
-- **Additional synthetic UI scenarios** beyond login.
-- **GPU / QLoRA config examples** for CUDA environments, while keeping
-  Apple Silicon configs in full/mixed precision.
- - **CI and style tooling** such as a minimal GitHub Actions workflow
-   running `pytest`, plus documented formatter/linter expectations.
- - **Plots and comparisons** such as simple training/evaluation curves and
-   high-level comparisons between different models/datasets (including base
-   vs fine-tuned Qwen-VL checkpoints on the same synthetic benchmark, and,
-   in separate analysis code, external APIs like OpenAI/Claude/Gemini).

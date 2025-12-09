@@ -13,6 +13,16 @@ It focuses on:
 
 This is meant as an internal design/status note, not polished user-facing docs.
 
+For the **canonical benchmark entrypoint** and **Action DSL contract**, see:
+
+- `uv run python -m openadapt_ml.scripts.run_qwen_login_benchmark \
+  --config configs/qwen3vl_synthetic_dev.yaml \
+  --out-dir experiments/qwen_login/2b_dev`
+  - Single command that runs train → eval base/FT → plot for the 2B dev setup.
+- `docs/design.md` §7.4 *Action DSL & invariants (canonical)*
+  - CLICK/TYPE/WAIT/DONE grammar, normalized `[0,1]` coordinates, and
+    parser failure behavior.
+
 ---
 
 ## 2. Current pipeline and components
