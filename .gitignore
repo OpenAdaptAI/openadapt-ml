@@ -21,5 +21,5 @@ synthetic_train_dev/
 # Ephemeral training/eval artifacts
 logs/
 checkpoints/
-plots/
+/plots/
 eval_*.json
