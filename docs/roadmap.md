@@ -22,6 +22,67 @@ The next steps expand scale, generality, and real-world usefulness.
 
 This section is the canonical list of what to build, in order, with crisp acceptance criteria.
 
+### 2.0 Priority 0 — Fix Episode Success Rate (Critical Bug) ✅
+
+**Why**
+Episode success rate was 0% across ALL models (base, fine-tuned, and API) despite
+fine-tuned models achieving up to 100% click hit rate. This was a critical
+evaluation bug that masked the true performance of the system.
+
+**Root Causes Identified**
+
+1. **Missing TYPE and WAIT action parsing (BUG)**
+   - `AgentPolicy._parse_action()` in `runtime/policy.py` only handled `CLICK` and `DONE`
+   - `TYPE(text="...")` and `WAIT()` actions fell through to `Action(type="failed")`
+   - Evidence from logs: 0% accuracy on TYPE (64 steps) and WAIT (32 steps)
+
+2. **Overly strict episode success criterion**
+   - Any single action type mismatch fails the entire 7-step episode
+   - Even with perfect CLICK accuracy, TYPE/WAIT failures guarantee 0% episode success
+
+**Fixes Implemented**
+
+- ✅ Added `_TYPE_RE` regex pattern: `r'TYPE\(text="([^"\\]*(?:\\.[^"\\]*)*)"\)'`
+- ✅ Added `_WAIT_RE` regex pattern: `r"\bWAIT\s*\(\s*\)"`
+- ✅ Updated `_parse_action()` to handle all four DSL actions
+- ✅ Added `tests/test_action_parsing.py` with comprehensive regex and parsing tests
+
+**Acceptance Criteria**
+
+- ✅ `AgentPolicy._parse_action()` correctly parses all DSL actions: CLICK, TYPE, WAIT, DONE
+- ✅ TYPE action text is properly unescaped (handles `\"` and `\\`)
+- ✅ Unit tests cover all action types and edge cases
+- ✅ Re-run evaluation to measure true episode success rate
+
+**Post-Fix Evaluation Results (2B Fine-tuned)**
+
+| Metric | Before Fix | After Fix | Change |
+|--------|-----------|-----------|--------|
+| action_type_accuracy | 0.2545 | **0.4330** | +70% |
+| mean_coord_error | 0.0138 | 0.0112 | -19% |
+| click_hit_rate | 0.9737 | **1.0000** | Perfect |
+| episode_success_rate | 0.0 | 0.0 | No change |
+
+**Impact**
+
+The parser fix was **confirmed successful**:
+- Click hit rate improved to 100% (was 97.4%)
+- Action type accuracy improved by 70% (0.25 → 0.43)
+
+Episode success rate remains 0% because this is now a **model learning problem**, not a
+parsing problem. The model is not predicting the correct action type sequences (e.g.,
+predicting CLICK when ground truth is TYPE). With 43% action type accuracy, roughly
+3 of 7 steps match per episode, which is insufficient for complete episode success.
+
+**Next Steps**
+
+The remaining episode success issue requires:
+1. Analysis of per-action-type accuracy to identify which types the model struggles with
+2. Potential improvements to training data, loss weighting, or training duration
+3. See Priority 1 (batching/schedulers) for training infrastructure improvements
+
+---
+
 ### 2.1 Priority 1 — Training + Adapters Upgrade (Batching, Schedulers, Logging)
 
 **Why**  
@@ -266,13 +327,41 @@ inference, but not for GPU training.
 
 This is the order coding agents should follow unless explicitly overridden:
 
-1. Priority 1: Batching + schedulers + logging.
-2. Priority 2: Publishable login benchmark.
-3. Priority 3: Second synthetic scenario + generalization.
-4. Priority 4: Real-data ingestion + eval.
-5. Priority 5a: API adapter + local CLI.
-6. Priority 5b: Lambda orchestration (stretch).
-7. Priority 6: CI + tests + repo hygiene (continuous).
+### Critical Path (must achieve >0% episode success before other work)
+
+0. **Priority 0: Fix Episode Success Rate** ✅ (parsing fix DONE, but 0% success persists)
+1. **Priority 0.1: Validate prompts on known benchmark** ⚠️ NEW
+   - Test on one OSWorld or WebVoyager task to compare against published numbers
+   - Ensure prompts and action extraction are working correctly
+   - Reference: TTI repo (`scripts/prompts/create_prompt_json.py`)
+2. **Priority 0.2: Establish upper bound with larger models** ⚠️ NEW
+   - Prompt Qwen 32B and frontier APIs (Claude, GPT) on synthetic benchmark
+   - If larger models also fail, the problem is in prompts/action format
+   - If larger models succeed, smaller models need more training data or better architecture
+3. **Priority 0.3: Achieve >0% episode success** ⚠️ BLOCKING
+   - This is the gate for all other work
+   - Without task completion, all other metrics are noise
+
+### Post-Validation Priorities
+
+4. Priority 1: Batching + schedulers + logging.
+5. Priority 2: Publishable login benchmark (only after >0% success).
+6. Priority 3: Second synthetic scenario + generalization.
+7. Priority 4: Real-data ingestion + eval.
+8. Priority 5a: API adapter + local CLI ✅ (DONE).
+9. Priority 5b: Lambda orchestration (stretch).
+10. Priority 6: CI + tests + repo hygiene (continuous).
+
+### Lesson Learned
+
+We skipped the essential first step: validating prompts work on known benchmarks
+before fine-tuning. The correct order is:
+
+```
+prompts → API baselines → base model comparison → fine-tuning
+```
+
+See `docs/internal/vision-notes.md` for expert feedback details.
 
 ## 4. Agent Implementation Notes (Guardrails)
 

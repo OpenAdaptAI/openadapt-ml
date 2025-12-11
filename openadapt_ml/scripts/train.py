@@ -40,15 +40,17 @@ def main(config_path: str) -> None:
     seed = synth_cfg.get("seed")
     default_output_dir = str(Path("synthetic") / "train")
     output_dir = synth_cfg.get("output_dir", default_output_dir)
+    use_som = synth_cfg.get("use_som", False)
 
     sessions = generate_synthetic_sessions(
         num_sessions=num_sessions,
         seed=seed,
         output_dir=output_dir,
+        use_som=use_som,
     )
     episodes = [ep for sess in sessions for ep in sess.episodes]
 
-    samples = build_next_action_sft_samples(episodes)
+    samples = build_next_action_sft_samples(episodes, use_som=use_som)
     dataset = NextActionDataset(samples)
 
     # Adapter + model
@@ -71,17 +73,21 @@ def main(config_path: str) -> None:
         logging_steps=train_cfg_raw.get("logging_steps", 10),
     )
 
-    print(f"Loaded {len(episodes)} episodes and {len(samples)} SFT samples.")
+    som_label = " (SoM mode)" if use_som else " (coordinate mode)"
+    print(f"Loaded {len(episodes)} episodes and {len(samples)} SFT samples{som_label}.")
     print("Starting training (adapter.prepare_inputs/compute_loss must be implemented)...")
 
-    train_supervised(adapter, dataset, train_cfg)
+    training_success = train_supervised(adapter, dataset, train_cfg)
 
-    # Persist the trained adapter if a weights_path was provided.
+    # Persist the trained adapter if a weights_path was provided and training succeeded.
     if lora_weights_path:
-        save_path = Path(lora_weights_path)
-        save_path.mkdir(parents=True, exist_ok=True)
-        adapter.model.save_pretrained(save_path)  # type: ignore[arg-type]
-        print(f"Saved LoRA adapter to {save_path}")
+        if training_success:
+            save_path = Path(lora_weights_path)
+            save_path.mkdir(parents=True, exist_ok=True)
+            adapter.model.save_pretrained(save_path)  # type: ignore[arg-type]
+            print(f"Saved LoRA adapter to {save_path}")
+        else:
+            print("Training aborted due to invalid loss. Skipping checkpoint save to avoid corrupted weights.")
 
 
 if __name__ == "__main__":

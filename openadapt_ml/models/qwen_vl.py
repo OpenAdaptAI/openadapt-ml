@@ -127,10 +127,10 @@ class QwenVLAdapter(BaseVLMAdapter):
         """Convert SFT samples into model inputs for Qwen-VL.
 
         We reinterpret generic SFT samples into Qwen-style multimodal
-        messages, where the user content is a list mixing an image entry and
-        a text entry. For Qwen3-VL we use assistant-only supervision by
-        masking non-assistant tokens in the labels; for the Qwen2.5-VL path
-        we currently keep full-sequence supervision.
+        messages with proper chat format: user message followed by assistant
+        message. This matches the inference format where we generate from the
+        assistant turn. For Qwen3-VL we use assistant-only supervision by
+        masking non-assistant tokens in the labels.
         """
 
         if len(batch) != 1:
@@ -152,23 +152,25 @@ class QwenVLAdapter(BaseVLMAdapter):
             elif role == "assistant":
                 assistant_text = m.get("content", "")
 
-        combined_text = user_text
-        if assistant_text:
-            combined_text = f"{user_text}\n{assistant_text}"
-
         if self.version == "qwen3":
-            # Build messages for user+assistant (full) and user-only to
-            # determine where assistant tokens begin in the token sequence.
+            # Build proper chat format with user + assistant messages
+            # This matches inference format for consistent train/test behavior
             qwen_messages_full: List[Dict[str, Any]] = [
                 {
                     "role": "user",
                     "content": [
                         {"type": "image", "image": image_path},
-                        {"type": "text", "text": combined_text},
+                        {"type": "text", "text": user_text},
                     ],
-                }
+                },
             ]
+            if assistant_text:
+                qwen_messages_full.append({
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": assistant_text}],
+                })
 
+            # User-only messages (with generation prompt) for label masking
             qwen_messages_user_only: List[Dict[str, Any]] = [
                 {
                     "role": "user",
@@ -187,10 +189,12 @@ class QwenVLAdapter(BaseVLMAdapter):
                 return_tensors="pt",
             )
 
+            # Use add_generation_prompt=True for user-only to get the prefix
+            # that matches inference format
             inputs_user = self.processor.apply_chat_template(  # type: ignore[call-arg]
                 qwen_messages_user_only,
                 tokenize=True,
-                add_generation_prompt=False,
+                add_generation_prompt=True,
                 return_dict=True,
                 return_tensors="pt",
             )
@@ -203,8 +207,8 @@ class QwenVLAdapter(BaseVLMAdapter):
             labels = input_ids_full.clone()
 
             if assistant_text:
-                # Both tensors are shape [1, seq_len]. We expect the
-                # user-only sequence to be a prefix of the full sequence.
+                # Both tensors are shape [1, seq_len]. The user-only sequence
+                # (with generation prompt) should be a prefix of the full sequence.
                 full_ids_1d = input_ids_full[0]
                 user_ids_1d = input_ids_user[0]
                 user_len = user_ids_1d.size(0)
@@ -218,15 +222,21 @@ class QwenVLAdapter(BaseVLMAdapter):
             inputs_full["labels"] = labels
             return inputs_full
         else:  # qwen2_5
-            qwen_messages = [
+            # Use proper chat format with user + assistant messages
+            qwen_messages: List[Dict[str, Any]] = [
                 {
                     "role": "user",
                     "content": [
                         {"type": "image", "image": image_path},
-                        {"type": "text", "text": combined_text},
+                        {"type": "text", "text": user_text},
                     ],
                 }
             ]
+            if assistant_text:
+                qwen_messages.append({
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": assistant_text}],
+                })
 
             text = self.processor.apply_chat_template(  # type: ignore[call-arg]
                 qwen_messages,

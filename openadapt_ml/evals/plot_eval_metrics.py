@@ -14,7 +14,10 @@ METRIC_KEYS = [
     ("action_type_accuracy", "Action Type Accuracy"),
     ("mean_coord_error", "Mean Coord Error"),
     ("click_hit_rate", "Click Hit Rate"),
-    ("episode_success_rate", "Episode Success Rate"),
+    ("episode_success_rate", "Strict Episode Success"),
+    ("mean_episode_progress", "Episode Progress"),
+    ("mean_episode_step_score", "Step Score (Type+Click)"),
+    ("weak_episode_success_rate", "Weak Episode Success"),
 ]
 
 

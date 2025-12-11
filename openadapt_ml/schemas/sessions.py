@@ -31,6 +31,10 @@ class Action:
     y: Optional[float] = None
     text: Optional[str] = None
     raw: Optional[Dict[str, Any]] = None
+    # Bounding box for click targets: (x_min, y_min, x_max, y_max) in normalized coords
+    bbox: Optional[tuple[float, float, float, float]] = None
+    # Element index for Set-of-Marks (SoM) style actions: CLICK([1]), TYPE([2], "text")
+    element_index: Optional[int] = None
 
 
 @dataclass
