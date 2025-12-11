@@ -264,6 +264,7 @@ Under `openadapt_ml/datasets/next_action.py` we provide:
 - Utilities such as `format_action` for formatting `Action` objects into
   action strings.
 
+<a id="action-dsl"></a>
 ### 7.4 Action DSL & invariants (canonical)
 
 The action DSL is the contract between dataset builders, adapters, the runtime

@@ -34,12 +34,15 @@ def train_supervised(
     dataset: Dataset,
     config: TrainingConfig,
     optimizer: Optional[Optimizer] = None,
-) -> None:
+) -> bool:
     """Minimal supervised training loop skeleton.
 
     This assumes that `adapter.prepare_inputs` and `adapter.compute_loss` are
     implemented. For now, it is primarily a placeholder to validate the
     control flow; it will raise if those methods are not implemented.
+
+    Returns:
+        True if training completed successfully, False if aborted due to NaN/Inf loss.
     """
 
     device = adapter.device  # type: ignore[attr-defined]
@@ -65,7 +68,7 @@ def train_supervised(
             # Guard against invalid losses to avoid propagating NaNs/Infs
             if torch.isnan(loss) or torch.isinf(loss):
                 print(f"Encountered invalid loss at epoch={epoch} step={total_steps + 1}: {loss.item()}")
-                return
+                return False
 
             loss.backward()
 
@@ -78,3 +81,5 @@ def train_supervised(
 
             if config.logging_steps and total_steps % config.logging_steps == 0:
                 print(f"epoch={epoch} step={total_steps} loss={loss.item():.4f}")
+
+    return True

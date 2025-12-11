@@ -216,6 +216,78 @@ def _draw_login_screen(
     return img, elements
 
 
+def _overlay_som_marks(
+    img: Image.Image,
+    elements: List[Tuple[int, Tuple[int, int, int, int]]],
+) -> Image.Image:
+    """Overlay Set-of-Marks numbered labels on interactive elements.
+
+    Uses the style from the SoM paper: black squares with white numbers.
+    Labels are positioned at the top-left corner of each element.
+
+    Args:
+        img: The base screenshot image.
+        elements: List of (index, (x, y, w, h)) tuples for each interactive element.
+                  Index is the 1-based element number shown in the label.
+
+    Returns:
+        A copy of the image with [1], [2], [3], etc. labels overlaid.
+    """
+    img = img.copy()
+    draw = ImageDraw.Draw(img)
+
+    # Load a slightly larger font for SoM labels
+    try:
+        som_font = ImageFont.truetype("arial.ttf", 14)
+    except OSError:
+        som_font = ImageFont.load_default()
+
+    for idx, bounds in elements:
+        x, y, w, h = bounds
+        label = f"[{idx}]"
+
+        # Measure text size
+        text_bbox = draw.textbbox((0, 0), label, font=som_font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+
+        # Add padding for the box
+        padding = 4
+        box_width = text_width + padding * 2
+        box_height = text_height + padding * 2
+
+        # Position ABOVE and to the LEFT of the element (not inside)
+        # This ensures labels don't obscure content
+        box_x = x - 4
+        box_y = y - box_height - 2
+
+        # Ensure box stays within image bounds
+        if box_y < 0:
+            # If no room above, position to the left of the element
+            box_y = y + 4
+        if box_x < 0:
+            box_x = 4
+
+        # Draw black rectangle background (SoM paper style)
+        draw.rectangle(
+            [box_x, box_y, box_x + box_width, box_y + box_height],
+            fill="black",
+        )
+
+        # Draw white text centered in the box
+        text_x = box_x + padding
+        text_y = box_y + padding
+        draw.text((text_x, text_y), label, fill="white", font=som_font)
+
+    return img
+
+
+# Element index mapping for the login screen (1-based for human readability)
+SOM_USERNAME_FIELD = 1
+SOM_PASSWORD_FIELD = 2
+SOM_LOGIN_BUTTON = 3
+
+
 def _draw_logged_in_screen(username: str) -> Image.Image:
     """Simple logged-in confirmation screen."""
 
@@ -241,6 +313,16 @@ def _center(bounds: Tuple[int, int, int, int]) -> Tuple[float, float]:
     return _normalize(cx, cy)
 
 
+def _bbox_normalized(bounds: Tuple[int, int, int, int]) -> Tuple[float, float, float, float]:
+    """Convert pixel bounds (x, y, w, h) to normalized bbox (x_min, y_min, x_max, y_max)."""
+    x, y, w, h = bounds
+    x_min = x / IMG_WIDTH
+    y_min = y / IMG_HEIGHT
+    x_max = (x + w) / IMG_WIDTH
+    y_max = (y + h) / IMG_HEIGHT
+    return (x_min, y_min, x_max, y_max)
+
+
 def _script_login_episode(
     root: Path,
     episode_id: str,
@@ -250,14 +332,16 @@ def _script_login_episode(
 ) -> Episode:
     """Create a scripted login episode with a fixed sequence of steps.
 
-    Steps:
-    - Step 0: blank login screen.
-    - Step 1: click username field.
-    - Step 2: type username.
-    - Step 3: click password field.
-    - Step 4: type password.
-    - Step 5: click login.
-    - Step 6: DONE on logged-in screen.
+    Steps (6 total):
+    - Step 0: blank login screen → click username field.
+    - Step 1: username field focused → type username.
+    - Step 2: username typed → click password field.
+    - Step 3: password field focused → type password.
+    - Step 4: password typed → click login button.
+    - Step 5: logged-in screen → DONE.
+
+    Each step includes bounding boxes for clickable elements to support
+    bbox-based click hit evaluation.
     """
 
     steps: List[Step] = []
@@ -265,24 +349,28 @@ def _script_login_episode(
     # Sample a single layout for the entire episode (controls jitter vs no-jitter).
     layout = _compute_login_layout(jitter=jitter)
 
-    # Step 0: initial blank login screen
+    # Compute normalized bounding boxes for all elements
+    username_bbox = _bbox_normalized(layout.username_box)
+    password_bbox = _bbox_normalized(layout.password_box)
+    login_bbox = _bbox_normalized(layout.login_button)
+
+    # Step 0: blank login screen → click username field
+    cx, cy = _center(layout.username_box)
     img0, _ = _draw_login_screen(layout=layout, jitter=False)
     img0_path = root / f"{episode_id}_step_0.png"
     _save_image(img0, img0_path)
     obs0 = Observation(image_path=str(img0_path))
-    # No action yet; use a no-op wait
     steps.append(
         Step(
             t=0.0,
             observation=obs0,
-            action=Action(type="wait"),
-            thought="Initial login screen displayed.",
+            action=Action(type="click", x=cx, y=cy, bbox=username_bbox),
+            thought="Focus the username field.",
         )
     )
 
-    # Step 1: click username field
-    cx, cy = _center(layout.username_box)
-    img1, _ = _draw_login_screen(layout=layout, jitter=False)
+    # Step 1: username field focused → type username
+    img1, _ = _draw_login_screen(username="", layout=layout, jitter=False)
     img1_path = root / f"{episode_id}_step_1.png"
     _save_image(img1, img1_path)
     obs1 = Observation(image_path=str(img1_path))
@@ -290,12 +378,13 @@ def _script_login_episode(
         Step(
             t=1.0,
             observation=obs1,
-            action=Action(type="click", x=cx, y=cy),
-            thought="Focus the username field.",
+            action=Action(type="type", text=username),
+            thought="Type the username.",
         )
     )
 
-    # Step 2: username typed
+    # Step 2: username typed → click password field
+    cx_pw, cy_pw = _center(layout.password_box)
     img2, _ = _draw_login_screen(username=username, layout=layout, jitter=False)
     img2_path = root / f"{episode_id}_step_2.png"
     _save_image(img2, img2_path)
@@ -304,13 +393,12 @@ def _script_login_episode(
         Step(
             t=2.0,
             observation=obs2,
-            action=Action(type="type", text=username),
-            thought="Type the username.",
+            action=Action(type="click", x=cx_pw, y=cy_pw, bbox=password_bbox),
+            thought="Focus the password field.",
         )
     )
 
-    # Step 3: click password field
-    cx_pw, cy_pw = _center(layout.password_box)
+    # Step 3: password field focused → type password
     img3, _ = _draw_login_screen(username=username, layout=layout, jitter=False)
     img3_path = root / f"{episode_id}_step_3.png"
     _save_image(img3, img3_path)
@@ -319,12 +407,13 @@ def _script_login_episode(
         Step(
             t=3.0,
             observation=obs3,
-            action=Action(type="click", x=cx_pw, y=cy_pw),
-            thought="Focus the password field.",
+            action=Action(type="type", text=password),
+            thought="Type the password.",
         )
     )
 
-    # Step 4: password typed (masked visually)
+    # Step 4: password typed → click login button
+    cx_btn, cy_btn = _center(layout.login_button)
     img4, _ = _draw_login_screen(username=username, password=password, layout=layout, jitter=False)
     img4_path = root / f"{episode_id}_step_4.png"
     _save_image(img4, img4_path)
@@ -333,14 +422,13 @@ def _script_login_episode(
         Step(
             t=4.0,
             observation=obs4,
-            action=Action(type="type", text=password),
-            thought="Type the password.",
+            action=Action(type="click", x=cx_btn, y=cy_btn, bbox=login_bbox),
+            thought="Submit the login form.",
         )
     )
 
-    # Step 5: click login button
-    cx_btn, cy_btn = _center(layout.login_button)
-    img5, _ = _draw_login_screen(username=username, password=password, layout=layout, jitter=False)
+    # Step 5: logged-in screen → DONE
+    img5 = _draw_logged_in_screen(username=username)
     img5_path = root / f"{episode_id}_step_5.png"
     _save_image(img5, img5_path)
     obs5 = Observation(image_path=str(img5_path))
@@ -348,20 +436,6 @@ def _script_login_episode(
         Step(
             t=5.0,
             observation=obs5,
-            action=Action(type="click", x=cx_btn, y=cy_btn),
-            thought="Submit the login form.",
-        )
-    )
-
-    # Step 6: logged-in screen + DONE
-    img6 = _draw_logged_in_screen(username=username)
-    img6_path = root / f"{episode_id}_step_6.png"
-    _save_image(img6, img6_path)
-    obs6 = Observation(image_path=str(img6_path))
-    steps.append(
-        Step(
-            t=6.0,
-            observation=obs6,
             action=Action(type="done"),
             thought="Login successful; workflow complete.",
         )
@@ -379,17 +453,190 @@ def _script_login_episode(
     return episode
 
 
+def _script_login_episode_som(
+    root: Path,
+    episode_id: str,
+    username: str,
+    password: str,
+    jitter: bool = True,
+) -> Episode:
+    """Create a scripted login episode with Set-of-Marks (SoM) overlay.
+
+    This variant generates screenshots with numbered labels [1], [2], [3] on
+    interactive elements, and uses element_index instead of raw coordinates
+    for click actions.
+
+    Steps (6 total):
+    - Step 0: SoM login screen → click element [1] (username field)
+    - Step 1: username field focused → type username
+    - Step 2: username typed → click element [2] (password field)
+    - Step 3: password field focused → type password
+    - Step 4: password typed → click element [3] (login button)
+    - Step 5: logged-in screen → DONE
+    """
+
+    steps: List[Step] = []
+
+    # Sample a single layout for the entire episode
+    layout = _compute_login_layout(jitter=jitter)
+
+    # Compute normalized bounding boxes for all elements
+    username_bbox = _bbox_normalized(layout.username_box)
+    password_bbox = _bbox_normalized(layout.password_box)
+    login_bbox = _bbox_normalized(layout.login_button)
+
+    # Define element mapping for SoM overlay
+    som_elements = [
+        (SOM_USERNAME_FIELD, layout.username_box),
+        (SOM_PASSWORD_FIELD, layout.password_box),
+        (SOM_LOGIN_BUTTON, layout.login_button),
+    ]
+
+    # Step 0: SoM login screen → click username field [1]
+    cx, cy = _center(layout.username_box)
+    img0, _ = _draw_login_screen(layout=layout, jitter=False)
+    img0_som = _overlay_som_marks(img0, som_elements)
+    img0_path = root / f"{episode_id}_step_0.png"
+    _save_image(img0_som, img0_path)
+    obs0 = Observation(image_path=str(img0_path))
+    steps.append(
+        Step(
+            t=0.0,
+            observation=obs0,
+            action=Action(
+                type="click",
+                x=cx,
+                y=cy,
+                bbox=username_bbox,
+                element_index=SOM_USERNAME_FIELD,
+            ),
+            thought="Focus the username field by clicking element [1].",
+        )
+    )
+
+    # Step 1: username field focused → type username into element [1]
+    img1, _ = _draw_login_screen(username="", layout=layout, jitter=False)
+    img1_som = _overlay_som_marks(img1, som_elements)
+    img1_path = root / f"{episode_id}_step_1.png"
+    _save_image(img1_som, img1_path)
+    obs1 = Observation(image_path=str(img1_path))
+    steps.append(
+        Step(
+            t=1.0,
+            observation=obs1,
+            action=Action(type="type", text=username, element_index=SOM_USERNAME_FIELD),
+            thought="Type the username into element [1].",
+        )
+    )
+
+    # Step 2: username typed → click password field [2]
+    cx_pw, cy_pw = _center(layout.password_box)
+    img2, _ = _draw_login_screen(username=username, layout=layout, jitter=False)
+    img2_som = _overlay_som_marks(img2, som_elements)
+    img2_path = root / f"{episode_id}_step_2.png"
+    _save_image(img2_som, img2_path)
+    obs2 = Observation(image_path=str(img2_path))
+    steps.append(
+        Step(
+            t=2.0,
+            observation=obs2,
+            action=Action(
+                type="click",
+                x=cx_pw,
+                y=cy_pw,
+                bbox=password_bbox,
+                element_index=SOM_PASSWORD_FIELD,
+            ),
+            thought="Focus the password field by clicking element [2].",
+        )
+    )
+
+    # Step 3: password field focused → type password into element [2]
+    img3, _ = _draw_login_screen(username=username, layout=layout, jitter=False)
+    img3_som = _overlay_som_marks(img3, som_elements)
+    img3_path = root / f"{episode_id}_step_3.png"
+    _save_image(img3_som, img3_path)
+    obs3 = Observation(image_path=str(img3_path))
+    steps.append(
+        Step(
+            t=3.0,
+            observation=obs3,
+            action=Action(type="type", text=password, element_index=SOM_PASSWORD_FIELD),
+            thought="Type the password into element [2].",
+        )
+    )
+
+    # Step 4: password typed → click login button [3]
+    cx_btn, cy_btn = _center(layout.login_button)
+    img4, _ = _draw_login_screen(
+        username=username, password=password, layout=layout, jitter=False
+    )
+    img4_som = _overlay_som_marks(img4, som_elements)
+    img4_path = root / f"{episode_id}_step_4.png"
+    _save_image(img4_som, img4_path)
+    obs4 = Observation(image_path=str(img4_path))
+    steps.append(
+        Step(
+            t=4.0,
+            observation=obs4,
+            action=Action(
+                type="click",
+                x=cx_btn,
+                y=cy_btn,
+                bbox=login_bbox,
+                element_index=SOM_LOGIN_BUTTON,
+            ),
+            thought="Submit the login form by clicking element [3].",
+        )
+    )
+
+    # Step 5: logged-in screen → DONE (no SoM needed)
+    img5 = _draw_logged_in_screen(username=username)
+    img5_path = root / f"{episode_id}_step_5.png"
+    _save_image(img5, img5_path)
+    obs5 = Observation(image_path=str(img5_path))
+    steps.append(
+        Step(
+            t=5.0,
+            observation=obs5,
+            action=Action(type="done"),
+            thought="Login successful; workflow complete.",
+        )
+    )
+
+    episode = Episode(
+        id=episode_id,
+        goal=f"Log in with username '{username}' and password '{password}'",
+        steps=steps,
+        summary="Successful login via username and password (SoM mode).",
+        success=True,
+        workflow_id="login_basic_som",
+    )
+
+    return episode
+
+
 def generate_synthetic_sessions(
     num_sessions: int = 10,
     seed: int | None = None,
     output_dir: str | os.PathLike[str] | None = None,
     jitter: bool = True,
+    use_som: bool = False,
 ) -> List[Session]:
     """Generate a list of synthetic Sessions with semantic login episodes.
 
     Each Session currently contains a single login Episode. Images for all
     steps are written to `output_dir` (default: `synthetic_data/` under the
     current working directory).
+
+    Args:
+        num_sessions: Number of sessions to generate.
+        seed: Random seed for reproducibility.
+        output_dir: Directory to write images to.
+        jitter: Whether to apply slight position jitter to UI elements.
+        use_som: If True, generate Set-of-Marks (SoM) annotated screenshots
+                 with numbered element labels [1], [2], [3], and use element
+                 indices for click actions instead of raw coordinates.
     """
 
     if seed is not None:
@@ -399,7 +646,8 @@ def generate_synthetic_sessions(
         # Centralize synthetic assets under a single top-level directory.
         # Callers can still override this, but by default we write to
         # `synthetic/data` instead of scattering `synthetic_*` folders.
-        output_root = Path("synthetic") / "data"
+        suffix = "_som" if use_som else ""
+        output_root = Path("synthetic") / f"data{suffix}"
     else:
         output_root = Path(output_dir)
 
@@ -413,15 +661,25 @@ def generate_synthetic_sessions(
         password = f"pass{i}123"
 
         session_dir = output_root / session_id
-        episode = _script_login_episode(
-            session_dir,
-            episode_id,
-            username,
-            password,
-            jitter=jitter,
-        )
 
-        session = Session(id=session_id, episodes=[episode], meta={"scenario": "login"})
+        if use_som:
+            episode = _script_login_episode_som(
+                session_dir,
+                episode_id,
+                username,
+                password,
+                jitter=jitter,
+            )
+        else:
+            episode = _script_login_episode(
+                session_dir,
+                episode_id,
+                username,
+                password,
+                jitter=jitter,
+            )
+
+        session = Session(id=session_id, episodes=[episode], meta={"scenario": "login", "use_som": use_som})
         sessions.append(session)
 
     return sessions

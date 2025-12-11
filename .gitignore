@@ -33,3 +33,6 @@ logs/
 checkpoints/
 /plots/
 eval_*.json
+
+# Internal documentation (not for public repo)
+docs/internal/
