@@ -314,53 +314,129 @@ CLICK(x=460, y=340)
 
 **Current status**: Not blocking - we achieve 100% accuracy with action history. But worth addressing for production/generalization.
 
-### Pixel Coordinate Normalization
+### Coordinate Normalization Strategy
 
-When the model outputs apparent pixel coordinates (e.g., `CLICK(x=484, y=338)`), we should attempt to normalize them:
-- If x > 1 and x <= 1000: assume 0-1000 scale, divide by 1000
-- If x > 1000: assume actual pixels, divide by image dimensions
+**When fallback normalization is NOT needed:**
 
-This fallback could improve robustness without retraining.
+For fine-tuned models (Qwen3-VL-2B) and our training pipeline:
+1. **SoM mode avoids coordinates entirely** - Generalizes across layout changes
+2. **Coordinate mode uses action history** - Yields near-zero coordinate error
+3. **Both login and registration achieve 100% accuracy** without fallback logic
+
+**When fallback MAY be needed:**
+
+For uncontrolled frontier APIs (raw Gemini/GPT-4V outputs):
+- May output `CLICK(x=684, y=491)` in pixel-like values
+- Fallback: `if x > 1.0: x /= 1024.0` as temporary patch
+- Better: Add to prompt: *"Return coordinates normalized between 0 and 1"*
+
+**Recommended Approach by Use Case:**
+
+| Use Case | Mode | Normalization |
+|----------|------|---------------|
+| Fine-tuned models | Coordinate | Train on fixed resolution (800×600), normalize input images |
+| Fine-tuned models | SoM | No coordinates needed |
+| Real UIs | SoM | Use OmniParser/Gemini for bounding boxes |
+| Uncontrolled APIs | Coordinate | Add fallback normalization |
 
 ## Recommended Next Steps
 
-### 1. More Complex Synthetic UIs
-Before moving to real UIs, test on more challenging synthetic scenarios:
-- Multi-step forms (more than 6 steps)
-- Multiple buttons/fields with similar appearance
-- Navigation flows (back/forward, tabs)
-- Error handling (validation messages)
+### ✅ 1. Complex Synthetic UIs (DONE)
+Implemented registration form with 12 steps, 6 elements. Both login and registration achieve 100% accuracy.
 
-### 2. Phase 2: Real UIs
-Integrate element detection for real (non-synthetic) screenshots:
-- **OmniParser**: Microsoft's open-source UI element detector
-- **Gemini**: Google's native bounding box detection
-- **Florence-2**: Microsoft's vision model with UI detection capabilities
-
-### 3. Minimal Recording Implementation
+### 2. Minimal Recording Implementation (PRIORITY)
 Re-implement core recording functionality from `openadapt/record.py`:
-- Screen capture
-- Mouse/keyboard event capture
-- Action-observation pairing
-- Session serialization
 
-This enables training on real user workflows.
+**Core Components:**
+- Screen capture (periodic screenshots during workflow)
+- Mouse click/position tracking
+- Keyboard event capture (for TYPE actions)
+- Action-observation pairing (timestamp alignment)
+- Session serialization (to Episode/Step format)
+
+**Simplifications vs original openadapt:**
+- No complex event filtering/deduplication
+- No window/process tracking
+- No scrolling/drag detection (initially)
+- Focus on click → type → click workflows
+
+**Output Format:**
+```python
+Session(
+    episodes=[Episode(
+        goal="User-provided description",
+        steps=[Step(observation=..., action=...)]
+    )]
+)
+```
+
+### 3. Real UI Element Detection
+Integrate element detection for non-synthetic screenshots:
+- **OmniParser**: Microsoft's open-source UI element detector
+- **Gemini 1.5 Pro**: Native bounding box detection via API
+- **Florence-2**: Microsoft's vision model with UI detection
+
+Use SoM mode for real UIs where element positions vary between sessions.
 
 ### 4. Multi-Application Testing
-Extend beyond login flows to test:
-- Form filling
-- Navigation
-- Data entry
+Extend beyond login/registration flows:
+- Form filling (various field types)
+- Navigation (tabs, menus, back/forward)
+- Data entry (copy/paste, formatting)
 - Multi-window workflows
 
-### 4. Enterprise Deployment (GoTo Use Case)
+### 5. Enterprise Deployment
 - Train on real workflow recordings
 - Test generalization across UI variations
 - Measure inference latency on production hardware
+- Privacy-preserving local inference
+
+## Registration Scenario (Complex UI)
+
+### Overview
+
+To validate that the approach scales beyond the simple 6-step login workflow, we implemented a more complex **registration form scenario** with:
+
+- **12 steps** (vs 6 for login)
+- **6 interactive elements** (vs 3 for login)
+- Fields: First Name, Last Name, Email, Password, Confirm Password, Register button
+
+![Registration Demo](registration_demo.gif)
+
+### Training Results
+
+Training with early stopping:
+- Loss dropped from ~1.5 to ~0.0001 within the first epoch
+- Training stopped early at step ~280 due to loss threshold (early stopping added)
+- Total training time significantly reduced vs full 2 epochs
+
+### Evaluation Results
+
+| Metric | Qwen3-VL-2B (Registration) |
+|--------|---------------------------|
+| Action Type Accuracy | **100%** |
+| Element Accuracy | **100%** |
+| Episode Success Rate | **100%** |
+| Episodes / Steps | 32 / 384 |
+
+### Key Findings
+
+1. **Scales to complex workflows**: The model successfully learned the 12-step registration workflow with 6 elements
+2. **Element tracking works**: The model correctly tracks which element to interact with at each step
+3. **Action history essential**: The longer workflow (12 steps) requires accurate action history to track progress
+4. **Early stopping saves time**: Loss reached near-zero well before full training, making early stopping valuable
+
+### Files Added
+
+| File | Description |
+|------|-------------|
+| `configs/qwen3vl_synthetic_registration_som.yaml` | Training config for registration |
+| `experiments/qwen_login/registration_demo.gif` | Animated demo of registration flow |
+| `experiments/qwen_login/registration_som_eval.json` | Evaluation metrics |
 
 ## Conclusion
 
-**Key Achievement**: Fine-tuned Qwen3-VL-2B achieves 100% accuracy on the synthetic login benchmark, matching frontier API models.
+**Key Achievement**: Fine-tuned Qwen3-VL-2B achieves 100% accuracy on both synthetic login (6 steps) and registration (12 steps) benchmarks, matching frontier API models.
 
 **The Critical Bug**: A parsing bug in `parse_thought_state_action` was extracting the prompt template's `Action:` placeholder instead of the model's actual output. This caused all `DONE()` actions to be misclassified as `wait`, artificially lowering accuracy from 100% to ~40%.
 
@@ -378,5 +454,5 @@ Extend beyond login flows to test:
 
 ---
 *Report updated: 2025-12-11*
-*Benchmark: Synthetic Login (32 episodes, 192 steps)*
-*Parsing bug fixed: policy.py parse_thought_state_action()*
+*Benchmarks: Synthetic Login (32 ep, 192 steps) + Registration (32 ep, 384 steps)*
+*Features added: Early stopping, registration scenario, dynamic step counts*

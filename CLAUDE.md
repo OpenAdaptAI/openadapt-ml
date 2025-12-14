@@ -276,3 +276,38 @@ Failed to pull Docker image openadaptacr.azurecr.io/winarena:latest
 - Poll training.log alongside training_log.json
 
 **Priority**: Low - current dashboard shows key metrics (loss, epoch, step). Terminal output mainly useful for debugging.
+
+### Cloud Cost Estimation in Viewers
+**Status**: TODO
+
+**Goal**: Show estimated cloud costs in training dashboard and viewer.
+
+**Requirements**:
+- Display running cost based on instance type and elapsed time
+- Show estimated total cost for completion
+- Include cost breakdown by resource type (GPU, storage, transfer)
+
+**Implementation notes**:
+- Lambda Labs: $0.75/hr for A10, $1.29/hr for A100
+- Azure ML: Variable based on VM type
+- Should be visible in both dashboard.html and viewer.html
+
+### Current Working Capture
+**Path**: `/Users/abrichr/oa/src/openadapt-capture/turn-off-nightshift`
+**Task**: Turn off Night Shift in macOS System Settings
+**Screenshots**: 20 frames
+**Notes**: Real-world macOS settings navigation capture for training/evaluation
+
+### README API Documentation
+**Status**: TODO - needs review
+
+The README §7.1 API-backed adapters section has placeholder model names that should be updated:
+- "Claude Sonnet 4.5" → should reflect actual model (e.g., claude-3-5-sonnet, claude-3-opus)
+- "GPT-5.1" → should reflect actual model (e.g., gpt-4-turbo, gpt-4o)
+
+Check `openadapt_ml/models/api_adapter.py` for actual model names used and update README to match.
+
+Also verify:
+- API key environment variable names are correct
+- Example code snippets work
+- Backend flag options in CLI match actual implementations
