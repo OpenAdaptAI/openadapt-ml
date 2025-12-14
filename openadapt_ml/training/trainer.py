@@ -1681,6 +1681,10 @@ def _generate_unified_viewer_from_extracted_data(
     This is used when the original capture isn't available locally
     but we have comparison HTML files to extract from.
     """
+    # Get shared header components for consistent nav
+    shared_header_css = _get_shared_header_css()
+    shared_header_html = _generate_shared_header_html("viewer")
+
     # Build base HTML from extracted data (standalone, no openadapt-capture dependency)
     base_data_json = json.dumps(base_data)
     predictions_json = json.dumps(predictions_by_checkpoint)
@@ -1725,6 +1729,7 @@ def _generate_unified_viewer_from_extracted_data(
             margin: 0 auto;
             padding: 24px;
         }}
+        {shared_header_css}
         .nav-bar {{
             display: flex;
             gap: 8px;
@@ -2001,11 +2006,7 @@ def _generate_unified_viewer_from_extracted_data(
 </head>
 <body>
     <div class="container">
-        <nav class="nav-bar" id="nav-bar">
-            <span class="nav-label">Dashboards:</span>
-            <a href="dashboard.html" class="nav-link">Training</a>
-            <a href="viewer.html" class="nav-link active">Viewer</a>
-        </nav>
+        {shared_header_html}
 
         <div class="viewer-controls">
             <div class="control-group">

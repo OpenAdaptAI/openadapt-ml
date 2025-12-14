@@ -277,6 +277,23 @@ Failed to pull Docker image openadaptacr.azurecr.io/winarena:latest
 
 **Priority**: Low - current dashboard shows key metrics (loss, epoch, step). Terminal output mainly useful for debugging.
 
+### Early Termination Controls
+**Status**: TODO - HIGH PRIORITY
+
+**Problem**: Training runs until completion even when loss is low enough. Wastes GPU credits ($0.75/hr for A10).
+
+**Requirements**:
+1. **Auto-termination**: Stop training when loss drops below threshold (e.g., 0.5 or configurable)
+2. **Dashboard button**: "Stop Training" button in dashboard UI that terminates Lambda instance
+3. **Checkpoint download**: Auto-download best checkpoint before termination
+4. **Cost awareness**: Show running cost and prompt user when approaching budget
+
+**Implementation approach**:
+- Add `early_stop_loss` to training config (already exists but may not terminate instance)
+- Add terminate endpoint that dashboard can call
+- Modify Lambda monitor to download checkpoints on termination
+- Add "Stop Training" button to dashboard config section
+
 ### Cloud Cost Estimation in Viewers
 **Status**: TODO
 

@@ -626,7 +626,7 @@ def generate_comparison_html(
 
             const navBar = document.createElement('nav');
             navBar.className = 'nav-bar';
-            navBar.innerHTML = '<span class="nav-label">Dashboards:</span>';
+            navBar.innerHTML = '';
             container.insertBefore(navBar, container.firstChild);
 
             // Known dashboard patterns to look for
