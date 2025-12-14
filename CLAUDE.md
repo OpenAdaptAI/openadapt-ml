@@ -221,6 +221,7 @@ The training dashboard and capture viewer share UI components for visual consist
 - Don't mention specific clients by name in public docs
 - Don't over-engineer - keep solutions minimal
 - Don't use `os.environ` directly - use `config.settings` instead
+- Don't use `pip install` - always use `uv pip install` or `uv add` for consistency
 
 ## TODO / Known Issues
 
