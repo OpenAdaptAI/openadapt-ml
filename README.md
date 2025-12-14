@@ -604,11 +604,51 @@ The comparison viewer shows:
 
 ---
 
-## 11. Cloud GPU Training (Lambda Labs)
+## 11. Local Training (CUDA / Apple Silicon)
 
-For faster training, use Lambda Labs GPU instances. Full documentation: [`docs/cloud_gpu_training.md`](docs/cloud_gpu_training.md).
+Train locally on your own GPU. Auto-detects CUDA or Apple Silicon (MPS).
 
 ### 11.1 Quick start
+
+```bash
+# Train on a capture (auto-detects device and config)
+uv run python -m openadapt_ml.cloud.local train \
+  --capture ~/captures/turn-off-nightshift \
+  --open  # Opens dashboard in browser
+```
+
+### 11.2 Training workflow
+
+```bash
+# Check device and training status
+uv run python -m openadapt_ml.cloud.local status
+
+# Train on a capture
+uv run python -m openadapt_ml.cloud.local train --capture ~/captures/my-workflow --open
+
+# Check training health (loss progression, convergence)
+uv run python -m openadapt_ml.cloud.local check
+
+# Start dashboard server
+uv run python -m openadapt_ml.cloud.local serve --open
+
+# Regenerate viewer
+uv run python -m openadapt_ml.cloud.local viewer --open
+
+# Run human vs AI comparison
+uv run python -m openadapt_ml.cloud.local compare \
+  --capture ~/captures/my-workflow \
+  --checkpoint checkpoints/qwen3vl2b_capture_lora \
+  --open
+```
+
+---
+
+## 12. Cloud GPU Training (Lambda Labs)
+
+For faster training on powerful GPUs, use Lambda Labs. Full documentation: [`docs/cloud_gpu_training.md`](docs/cloud_gpu_training.md).
+
+### 12.1 Quick start
 
 ```bash
 # Set API key
@@ -620,7 +660,7 @@ uv run python -m openadapt_ml.cloud.lambda_labs train \
   --goal "Turn off Night Shift in System Settings"
 ```
 
-### 11.2 Manual workflow
+### 12.2 Manual workflow
 
 ```bash
 # List available instances and pricing
@@ -642,7 +682,7 @@ uv run python -m openadapt_ml.cloud.lambda_labs download <instance_id>
 uv run python -m openadapt_ml.cloud.lambda_labs terminate <instance_id>
 ```
 
-### 11.3 Training visualization
+### 12.3 Training visualization
 
 The training process generates:
 - **`training_output/dashboard.html`** - Real-time training dashboard with loss curves
@@ -670,7 +710,7 @@ Both dashboards have navigation links to switch between views.
 
 ---
 
-## 12. Limitations & Notes
+## 13. Limitations & Notes
 
 - **Apple Silicon / bitsandbytes**:
   - Example configs are sized for CPU / Apple Silicon development runs; see
@@ -688,7 +728,7 @@ For deeper architectural details, see [`docs/design.md`](docs/design.md).
 
 ---
 
-## 13. Roadmap
+## 14. Roadmap
 
 For the up-to-date, prioritized roadmap (including concrete implementation
 targets and agent-executable acceptance criteria), see
