@@ -671,7 +671,7 @@ def generate_comparison_html(
                         }} else if (file === 'comparison_preview.html') {{
                             link.textContent = 'Preview';
                         }} else if (file === 'viewer.html') {{
-                            link.textContent = 'Capture Viewer';
+                            link.textContent = 'Viewer';
                         }} else {{
                             link.textContent = file.replace('.html', '');
                         }}
