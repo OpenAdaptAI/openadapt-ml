@@ -1,0 +1,3 @@
+[submodule "vendor/WindowsAgentArena"]
+	path = vendor/WindowsAgentArena
+	url = https://github.com/microsoft/WindowsAgentArena.git

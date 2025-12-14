@@ -174,7 +174,42 @@ You can also run `pytest` or other tools via `uv run`.
 The v1 pipeline is validated on **synthetic, semantic UIs**, starting with a
 simple login flow.
 
-### 3.1 Synthetic sessions
+### 3.1 Synthetic scenarios
+
+OpenAdapt-ML includes synthetic UI generators for structured GUI automation benchmarks.
+Currently two scenarios are supported:
+
+#### Login Scenario (6 steps, 3 elements)
+
+A simple login form with username, password, and login button.
+
+![Login Demo](experiments/qwen_login/login_demo.gif)
+
+**Login SoM Evaluation Results:**
+
+| Metric | Qwen3-VL-2B FT |
+|--------|----------------|
+| Action Type Accuracy | **100%** |
+| Element Accuracy | **100%** |
+| Episode Success Rate | **100%** |
+| Episodes / Steps | 32 / 192 |
+
+#### Registration Scenario (12 steps, 6 elements)
+
+A more complex registration form with first name, last name, email, password, confirm password, and register button.
+
+![Registration Demo](experiments/qwen_login/registration_demo.gif)
+
+**Registration SoM Evaluation Results:**
+
+| Metric | Qwen3-VL-2B FT |
+|--------|----------------|
+| Action Type Accuracy | **100%** |
+| Element Accuracy | **100%** |
+| Episode Success Rate | **100%** |
+| Episodes / Steps | 32 / 384 |
+
+### 3.2 Generating synthetic data
 
 Synthetic data is generated on the fly by `generate_synthetic_sessions` in
 `openadapt_ml/ingest/synthetic.py` and used internally by the training
@@ -185,8 +220,17 @@ You can also call it directly from Python:
 ```python
 from openadapt_ml.ingest.synthetic import generate_synthetic_sessions
 
-sessions = generate_synthetic_sessions(num_sessions=2, seed=123, output_dir="synthetic_examples")
-print(len(sessions), "sessions")
+# Login scenario (default)
+sessions = generate_synthetic_sessions(num_sessions=2, seed=123, output_dir="synthetic_login")
+
+# Registration scenario
+sessions = generate_synthetic_sessions(
+    num_sessions=2,
+    seed=123,
+    output_dir="synthetic_registration",
+    scenario="registration",  # "login" or "registration"
+    use_som=True,  # Enable Set-of-Marks visual overlays
+)
 ```
 
 Each session contains episodes with:
@@ -196,7 +240,7 @@ Each session contains episodes with:
   - An observation (screenshot path).
   - An action (e.g. `CLICK`, `TYPE`, `DONE`).
 
-### 3.2 Next-action SFT samples
+### 3.3 Next-action SFT samples
 
 Episodes are converted into SFT-style samples by
 `build_next_action_sft_samples` in `openadapt_ml/datasets/next_action.py`.
@@ -297,13 +341,7 @@ environment (layout jitter + a decoy "Help" button).
 FT = **LoRA fine-tuned Qwen3-VL** on synthetic login.
 Base = **frozen pretrained Qwen3-VL**.
 
-Below is an example hardened 2B login episode, visualized as an animated
-GIF. It walks through the full scripted flow (blank screen → clicks →
-typing → successful login):
-
-![Qwen3-VL-2B synthetic login demo](experiments/qwen_login/2b_dev/media/qwen3_2b_login_demo.gif)
-
-**Comprehensive Model Comparison:** All models on the synthetic login benchmark:
+**Comprehensive Model Comparison (Login - 6 steps):**
 
 ![Comprehensive VLM Comparison](experiments/qwen_login/comprehensive_comparison.png)
 
@@ -331,21 +369,22 @@ It exposes step-level performance metrics, which let us visually answer the ques
 
 ### 4.4 Set-of-Marks (SoM) Mode: 100% Accuracy
 
-With **Set-of-Marks** visual prompting, fine-tuned Qwen3-VL-2B achieves **100% accuracy**, matching frontier API models:
+With **Set-of-Marks** visual prompting, fine-tuned Qwen3-VL-2B achieves **100% accuracy** on both login (6-step) and registration (12-step) scenarios:
 
-| Model | DSL Mode | Action Type Acc | Element Acc | Episode Success |
-|-------|----------|-----------------|-------------|-----------------|
-| Qwen3-VL-2B FT | SoM | **100%** | **100%** | **100%** |
-| Claude API | SoM | 100% | 100% | 100% |
-| GPT-4.1 API | SoM | 100% | 100% | 100% |
+| Scenario | Steps | Elements | Action Acc | Element Acc | Episode Success |
+|----------|-------|----------|------------|-------------|-----------------|
+| Login | 6 | 3 | **100%** | **100%** | **100%** |
+| Registration | 12 | 6 | **100%** | **100%** | **100%** |
 
-**Cost/Latency Comparison:**
+**Cost/Latency Comparison (SoM mode):**
 
-| Approach | Accuracy | Cost | Latency |
-|----------|----------|------|---------|
-| Claude API + SoM | 100% | ~$0.01/step | ~500ms |
-| GPT-4.1 API + SoM | 100% | ~$0.01/step | ~500ms |
-| **Qwen 2B + SoM** | **100%** | **Free (local)** | **~50ms** |
+| Approach | Login Accuracy | Registration Accuracy | Cost | Latency |
+|----------|----------------|----------------------|------|---------|
+| Claude API + SoM | 100% | 100%* | ~$0.01/step | ~500ms |
+| GPT-4.1 API + SoM | 100% | 100%* | ~$0.01/step | ~500ms |
+| **Qwen 2B + SoM** | **100%** | **100%** | **Free (local)** | **~50ms** |
+
+*API results on registration pending evaluation
 
 **How SoM works:** Instead of predicting precise coordinates (`CLICK(x=0.42, y=0.31)`), the model selects numbered UI elements (`CLICK([1])`). This reduces spatial reasoning to element selection, which small models handle well.
 
@@ -367,7 +406,56 @@ For the full SoM investigation report, see [`experiments/qwen_login/SOM_INVESTIG
 
 ---
 
-## 6. VLM Adapters
+## 6. Grounding Module
+
+OpenAdapt-ML includes a **grounding module** for locating UI elements on screenshots using natural language descriptions. This enables policy/grounding separation where the policy decides *what* to do and the grounder finds *where* to do it.
+
+### 6.1 GeminiGrounder Demo
+
+The `GeminiGrounder` uses Google's Gemini vision API to locate UI elements:
+
+![Grounding Demo](docs/images/grounding_demo.png)
+
+*Calculator button "2" located by GeminiGrounder with 99% confidence*
+
+```python
+from openadapt_ml.grounding import GeminiGrounder
+
+grounder = GeminiGrounder()  # Uses GOOGLE_API_KEY from .env
+candidates = grounder.ground(screenshot, "the login button", k=3)
+
+if candidates:
+    best = candidates[0]
+    print(f"Found at {best.centroid} with {best.confidence:.0%} confidence")
+```
+
+### 6.2 Available Grounders
+
+| Grounder | Description | Latency | Use Case |
+|----------|-------------|---------|----------|
+| `GeminiGrounder` | Google Gemini vision API | ~3s | Real UIs, zero-shot |
+| `OracleGrounder` | Ground-truth bboxes | ~0ms | Evaluation |
+| `DetectorGrounder` | Generic wrapper with backend selection | varies | Flexible |
+
+### 6.3 Grounding Evaluation
+
+The `openadapt_ml.evals.grounding` module provides metrics for evaluating grounding accuracy:
+
+```python
+from openadapt_ml.evals import GroundingMetrics, evaluate_grounder
+
+metrics = evaluate_grounder(grounder, test_cases, k=5)
+print(metrics)
+# Grounding Metrics (n=10):
+#   Mean IoU:           0.720
+#   Centroid Hit Rate:  0.900
+#   Oracle Hit @1:      0.800
+#   Mean Latency:       3150ms
+```
+
+---
+
+## 7. VLM Adapters
 
 All VLM backends implement the shared `BaseVLMAdapter` interface in
 `openadapt_ml/models/base_adapter.py` (prepare inputs, compute loss, generate
@@ -386,7 +474,7 @@ Current adapters include:
 For full adapter internals and training-time vs runtime behavior, see
 `docs/design.md` §8.
 
-### 6.1 API-backed adapters
+### 7.1 API-backed adapters
 
 To use the API-backed adapter from Python, you can configure API keys via `.env`
 file, environment variables, or pass them explicitly:
@@ -409,12 +497,12 @@ The existing CLI scripts `scripts/demo_policy.py` and
 
 ---
 
-## 7. Runtime Policy & Demos
+## 8. Runtime Policy & Demos
 
 The runtime policy is implemented in `openadapt_ml/runtime/policy.py` as
 `AgentPolicy`.
 
-### 6.1 AgentPolicy
+### 8.1 AgentPolicy
 
 `AgentPolicy` is initialized with a VLM adapter (dummy or real). Given an
 SFT-style sample, it:
@@ -425,7 +513,7 @@ SFT-style sample, it:
    - `DONE()`
 3. Returns a structured `Action` plus an optional free-form `thought`.
 
-### 6.2 Demo script
+### 8.2 Demo script
 
 `openadapt_ml/scripts/demo_policy.py` demonstrates how to use
 `AgentPolicy` with different backends.
@@ -457,7 +545,7 @@ Each invocation will:
 
 ---
 
-## 8. Testing
+## 9. Testing
 
 Basic tests are provided under `tests/`.
 
@@ -474,7 +562,97 @@ In particular:
 
 ---
 
-## 9. Limitations & Notes
+## 10. Training on Real Captures
+
+OpenAdapt-ML can train on real GUI recordings captured with [openadapt-capture](https://github.com/OpenAdaptAI/openadapt-capture).
+
+### 10.1 Capture a workflow
+
+```bash
+# Install openadapt-capture
+pip install openadapt-capture
+
+# Record a workflow (e.g., turning off Night Shift)
+openadapt-capture record --output ~/captures/turn-off-nightshift
+```
+
+### 10.2 Train on the capture
+
+```bash
+uv run python -m openadapt_ml.scripts.train \
+  --config configs/qwen3vl_capture_4bit.yaml \
+  --capture ~/captures/turn-off-nightshift \
+  --open  # Opens training dashboard in browser
+```
+
+The goal is automatically derived from the directory name (e.g., `"Turn off nightshift"`).
+
+### 10.3 Compare human vs AI predictions
+
+```bash
+uv run python -m openadapt_ml.scripts.compare \
+  --capture ~/captures/turn-off-nightshift \
+  --checkpoint checkpoints/qwen3vl2b_capture_lora \
+  --open  # Opens comparison viewer
+```
+
+The comparison viewer shows:
+- Side-by-side human actions vs model predictions
+- Click position overlays on screenshots
+- Accuracy metrics and distance calculations
+- Navigation between training dashboard and comparison viewer
+
+---
+
+## 11. Cloud GPU Training (Lambda Labs)
+
+For faster training, use Lambda Labs GPU instances. Full documentation: [`docs/cloud_gpu_training.md`](docs/cloud_gpu_training.md).
+
+### 11.1 Quick start
+
+```bash
+# Set API key
+export LAMBDA_API_KEY=your_key_here
+
+# Launch, train, download, and terminate in one command
+uv run python -m openadapt_ml.cloud.lambda_labs train \
+  --capture ~/captures/turn-off-nightshift \
+  --goal "Turn off Night Shift in System Settings"
+```
+
+### 11.2 Manual workflow
+
+```bash
+# List available instances and pricing
+uv run python -m openadapt_ml.cloud.lambda_labs list
+
+# Launch an A10 instance (~$0.75/hr)
+uv run python -m openadapt_ml.cloud.lambda_labs launch --type gpu_1x_a10
+
+# Check training status
+uv run python -m openadapt_ml.cloud.lambda_labs train-status
+
+# Check training health (loss progression, early stopping analysis)
+uv run python -m openadapt_ml.cloud.lambda_labs check <instance_id>
+
+# Download checkpoints and comparison results
+uv run python -m openadapt_ml.cloud.lambda_labs download <instance_id>
+
+# IMPORTANT: Terminate when done (billed by the hour!)
+uv run python -m openadapt_ml.cloud.lambda_labs terminate <instance_id>
+```
+
+### 11.3 Training visualization
+
+The training process generates:
+- **`training_output/dashboard.html`** - Real-time training dashboard with loss curves
+- **`training_output/comparison_epochN.html`** - Model predictions at each epoch
+
+Both dashboards have navigation links to switch between views.
+
+---
+
+## 12. Limitations & Notes
 
 - **Apple Silicon / bitsandbytes**:
   - Example configs are sized for CPU / Apple Silicon development runs; see
@@ -492,7 +670,7 @@ For deeper architectural details, see [`docs/design.md`](docs/design.md).
 
 ---
 
-## 10. Roadmap
+## 13. Roadmap
 
 For the up-to-date, prioritized roadmap (including concrete implementation
 targets and agent-executable acceptance criteria), see

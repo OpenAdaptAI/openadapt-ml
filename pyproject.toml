@@ -5,9 +5,15 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "azure-ai-ml>=1.30.0",
+    "azure-identity>=1.25.1",
+    "bitsandbytes>=0.41.0",  # For 4-bit quantization
+    "google-generativeai>=0.8.5",
     "matplotlib>=3.10.7",
+    "openadapt-capture>=0.1.0",
     "peft>=0.18.0",
     "pillow>=12.0.0",
+    "pydantic-settings>=2.0.0",
     "pytest>=9.0.2",
     "pyyaml>=6.0.3",
     "torch>=2.9.1",
@@ -20,4 +26,11 @@ api = [
     "anthropic>=0.40.0",
     "openai>=1.0.0",
     "pydantic-settings>=2.0.0",
+]
+azure = [
+    "azure-ai-ml>=1.0.0",
+    "azure-identity>=1.0.0",
+]
+lambda-labs = [
+    "requests>=2.28.0",
 ]
