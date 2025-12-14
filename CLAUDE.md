@@ -225,6 +225,14 @@ The training dashboard and capture viewer share UI components for visual consist
 
 ## TODO / Known Issues
 
+### PyPI Publishing
+**Status**: TODO
+
+openadapt-capture and openadapt-privacy are published to PyPI, but openadapt-ml is not yet. Should set up:
+- Package metadata in pyproject.toml
+- GitHub Actions workflow for publishing
+- Version management
+
 ### Azure WAA Evaluation - ACR Auth Issue
 **Status**: Blocked - needs fix before Azure eval will work
 
