@@ -2418,6 +2418,56 @@ def _enhance_comparison_to_unified_viewer(
 
     // Initialize on load
     setTimeout(initCheckpointDropdown, 200);
+
+    // Smart auto-scroll: scroll while playing, but stop if user scrolls up
+    (function() {{
+        let autoScrollEnabled = true;
+        let lastScrollTop = 0;
+
+        // Find the events list element
+        const eventsList = document.querySelector('.events-list');
+        if (!eventsList) return;
+
+        // Detect user scroll - disable auto-scroll if scrolling up
+        eventsList.addEventListener('scroll', function() {{
+            const currentScrollTop = eventsList.scrollTop;
+
+            // If user scrolled up, disable auto-scroll
+            if (currentScrollTop < lastScrollTop - 10) {{
+                autoScrollEnabled = false;
+            }}
+
+            // If user scrolled to bottom (within 50px), re-enable auto-scroll
+            const isAtBottom = eventsList.scrollHeight - eventsList.scrollTop - eventsList.clientHeight < 50;
+            if (isAtBottom) {{
+                autoScrollEnabled = true;
+            }}
+
+            lastScrollTop = currentScrollTop;
+        }});
+
+        // Override scrollIntoView behavior for event items
+        const originalScrollIntoView = Element.prototype.scrollIntoView;
+        Element.prototype.scrollIntoView = function(options) {{
+            // Only block scroll for event items when auto-scroll is disabled
+            if (!autoScrollEnabled && this.classList && this.classList.contains('event-item')) {{
+                return; // Skip scrollIntoView when user has scrolled up
+            }}
+            return originalScrollIntoView.call(this, options);
+        }};
+
+        // Add scroll lock indicator
+        const indicator = document.createElement('div');
+        indicator.id = 'scroll-lock-indicator';
+        indicator.style.cssText = 'position:fixed;bottom:20px;right:20px;padding:8px 12px;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:4px;font-size:0.75rem;color:var(--text-muted);opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:1000;';
+        indicator.textContent = '⏸ Auto-scroll paused (scroll to bottom to resume)';
+        document.body.appendChild(indicator);
+
+        // Show/hide indicator based on scroll state
+        setInterval(() => {{
+            indicator.style.opacity = autoScrollEnabled ? '0' : '1';
+        }}, 200);
+    }})();
     </script>
     '''
 
