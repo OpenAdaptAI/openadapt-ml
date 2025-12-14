@@ -42,6 +42,14 @@ openadapt-ml is a model-agnostic, domain-agnostic ML engine for GUI automation a
    - Cloud providers: Azure (primary, free tier available), Lambda Labs (GPU rental)
    - See `docs/live_inference_design.md` for async inference architecture
 
+7. **Stub Training Adapter (HIGH PRIORITY)** - Always implement stub/mock providers first:
+   - **Never wait on real training to test UI/code changes**
+   - Use `--stub` flag to simulate training progress without GPU
+   - Generates fake loss curves, evaluations, checkpoints in seconds
+   - Enables rapid iteration on dashboard, viewer, stop button, etc.
+   - See `docs/stub_training_adapter.md` for implementation details
+   - Usage: `uv run python -m openadapt_ml.cloud.lambda_labs monitor --stub --open`
+
 ## Expert Feedback
 
 1. **Prompting first** - Establish baselines with off-the-shelf models before fine-tuning
