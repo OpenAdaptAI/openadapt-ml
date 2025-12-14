@@ -55,14 +55,46 @@ def start_dashboard_server(output_dir: Path, port: int = DEFAULT_SERVER_PORT) ->
         (process, url): The server process and the dashboard URL
     """
     import webbrowser
+    import multiprocessing
 
-    # Start server in background
-    server_proc = subprocess.Popen(
-        [sys.executable, "-m", "http.server", str(port)],
-        cwd=str(output_dir),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    def run_server(directory: str, port: int):
+        """Run HTTP server with custom handler for /api/stop."""
+        import http.server
+        import os
+
+        os.chdir(directory)
+
+        class DashboardHandler(http.server.SimpleHTTPRequestHandler):
+            def do_POST(self):
+                if self.path == '/api/stop':
+                    # Create stop signal file
+                    stop_file = Path(directory) / "STOP_TRAINING"
+                    stop_file.touch()
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(b'{"status": "stop signal created"}')
+                else:
+                    self.send_error(404)
+
+            def do_OPTIONS(self):
+                # Handle CORS preflight
+                self.send_response(200)
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+                self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+                self.end_headers()
+
+            def log_message(self, format, *args):
+                pass  # Suppress logging
+
+        with http.server.HTTPServer(('', port), DashboardHandler) as httpd:
+            httpd.serve_forever()
+
+    # Start server in background process
+    server_proc = multiprocessing.Process(target=run_server, args=(str(output_dir), port))
+    server_proc.start()
 
     url = f"http://localhost:{port}/dashboard.html"
 
@@ -72,7 +104,7 @@ def start_dashboard_server(output_dir: Path, port: int = DEFAULT_SERVER_PORT) ->
     return server_proc, url
 
 
-def open_dashboard_in_browser(output_dir: Path, port: int = DEFAULT_SERVER_PORT) -> subprocess.Popen | None:
+def open_dashboard_in_browser(output_dir: Path, port: int = DEFAULT_SERVER_PORT):
     """Start HTTP server and open dashboard in browser.
 
     Args:
@@ -88,6 +120,7 @@ def open_dashboard_in_browser(output_dir: Path, port: int = DEFAULT_SERVER_PORT)
         server_proc, url = start_dashboard_server(output_dir, port)
         webbrowser.open(url)
         print(f"Dashboard: {url}")
+        print("  Stop Training button enabled in dashboard")
         return server_proc
     except Exception as e:
         print(f"Warning: Could not start dashboard server: {e}")
@@ -142,6 +175,44 @@ def rewrite_evaluation_paths(evaluations: list[dict], remote_prefix: str = "/hom
         if "image_path" in ev and ev["image_path"].startswith(remote_prefix):
             ev["image_path"] = ev["image_path"].replace(remote_prefix, "")
     return evaluations
+
+
+def download_checkpoints_from_instance(instance_ip: str, output_dir: Path, ssh_key: str | None = None) -> bool:
+    """Download checkpoints from Lambda instance.
+
+    Args:
+        instance_ip: IP address of Lambda instance
+        output_dir: Local directory to save checkpoints
+        ssh_key: Path to SSH key (uses default if not provided)
+
+    Returns:
+        True if download succeeded
+    """
+    checkpoints_dir = output_dir / "checkpoints"
+    checkpoints_dir.mkdir(parents=True, exist_ok=True)
+
+    ssh_key = ssh_key or str(Path.home() / ".ssh" / "lambda_id_ed25519")
+    ssh_opts = f"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {ssh_key}"
+
+    # Download checkpoints from remote
+    remote_path = f"ubuntu@{instance_ip}:~/openadapt-ml/checkpoints/"
+    local_path = str(checkpoints_dir) + "/"
+
+    cmd = f"rsync -avz --progress -e 'ssh {ssh_opts}' {remote_path} {local_path}"
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+
+    if result.returncode == 0:
+        return True
+    return False
+
+
+def check_stop_signal(output_dir: Path) -> bool:
+    """Check if stop signal file exists.
+
+    The dashboard can create this file to signal training should stop.
+    """
+    stop_file = output_dir / "STOP_TRAINING"
+    return stop_file.exists()
 
 
 @dataclass
@@ -813,6 +884,9 @@ def main():
     monitor_parser.add_argument("--open", action="store_true", help="Open dashboard in browser")
     monitor_parser.add_argument("--interval", type=int, default=5, help="Poll interval in seconds (default: 5)")
     monitor_parser.add_argument("--capture", type=str, help="Local capture path for screenshot symlink")
+    monitor_parser.add_argument("--auto-stop-loss", type=float, default=0.5, help="Auto-terminate when loss drops below this (default: 0.5)")
+    monitor_parser.add_argument("--download-checkpoints", action="store_true", default=True, help="Auto-download checkpoints each epoch")
+    monitor_parser.add_argument("--no-download-checkpoints", action="store_false", dest="download_checkpoints", help="Disable checkpoint download")
 
     # Refresh command - one-shot dashboard update
     refresh_parser = subparsers.add_parser("refresh", help="One-shot refresh of training dashboard")
@@ -1524,8 +1598,28 @@ def main():
             server_proc = open_dashboard_in_browser(output_dir)
 
         last_step = 0
+        last_epoch = -1
+        auto_stop_loss = getattr(args, 'auto_stop_loss', 0.5)
+        download_checkpoints = getattr(args, 'download_checkpoints', True)
+
+        print(f"  Auto-stop loss threshold: {auto_stop_loss}")
+        print(f"  Checkpoint download: {'enabled' if download_checkpoints else 'disabled'}")
+
         try:
             while True:
+                # Check for stop signal from dashboard
+                if check_stop_signal(output_dir):
+                    print("\n  Stop signal received from dashboard!")
+                    print("  Downloading final checkpoints...")
+                    if download_checkpoints:
+                        download_checkpoints_from_instance(instance.ip, output_dir)
+                    print(f"  Terminating instance {instance.id}...")
+                    client.terminate_instance(instance.id)
+                    # Remove stop signal
+                    (output_dir / "STOP_TRAINING").unlink(missing_ok=True)
+                    print("  Training stopped by user.")
+                    break
+
                 try:
                     # Fetch training log from remote
                     status = client.get_training_status(instance)
@@ -1601,6 +1695,27 @@ def main():
                             )
 
                             dashboard_path.write_text(generate_training_dashboard(state, config))
+
+                            # Download checkpoints on epoch change
+                            if download_checkpoints and epoch > last_epoch:
+                                print(f"  Epoch {epoch+1} completed - downloading checkpoints...")
+                                if download_checkpoints_from_instance(instance.ip, output_dir):
+                                    print(f"  Checkpoints saved to {output_dir}/checkpoints/")
+                                else:
+                                    print("  Warning: checkpoint download failed")
+                                last_epoch = epoch
+
+                            # Auto-terminate when loss is low enough
+                            if loss < auto_stop_loss and loss > 0:
+                                print(f"\n  Loss {loss:.4f} < threshold {auto_stop_loss}")
+                                print("  Downloading final checkpoints...")
+                                if download_checkpoints:
+                                    download_checkpoints_from_instance(instance.ip, output_dir)
+                                print(f"  Auto-terminating instance {instance.id}...")
+                                client.terminate_instance(instance.id)
+                                print("  Training completed (auto-stopped)!")
+                                break
+
                     else:
                         print("  Waiting for training to start...")
 

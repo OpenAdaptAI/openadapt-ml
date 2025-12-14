@@ -1006,6 +1006,25 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
                 <div class="config-item"><span class="key">Max grad norm:</span> <span class="value">{config.max_grad_norm}</span></div>
                 <div class="config-item"><span class="key">Early stop:</span> <span class="value">{config.early_stop_loss}</span></div>
             </div>
+            <div class="stop-training-section" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color);">
+                <button id="stop-training-btn" onclick="stopTraining()" style="
+                    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+                    color: white;
+                    border: none;
+                    padding: 12px 24px;
+                    border-radius: 8px;
+                    font-size: 0.9rem;
+                    font-weight: 600;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    transition: all 0.2s;
+                ">
+                    <span style="font-size: 1.1rem;">■</span> Stop Training
+                </button>
+                <p id="stop-status" style="margin-top: 8px; font-size: 0.75rem; color: var(--text-muted);"></p>
+            </div>
         </div>
 
         <div class="eval-panel" id="eval-panel" style="display: none;">
@@ -1023,6 +1042,38 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
         let lossChart, epochChart;
         let lastStep = {state.step};
         let lastLoss = {state.loss};
+
+        async function stopTraining() {{
+            const btn = document.getElementById('stop-training-btn');
+            const status = document.getElementById('stop-status');
+
+            btn.disabled = true;
+            btn.innerHTML = '<span style="font-size: 1.1rem;">⏳</span> Stopping...';
+            btn.style.background = '#666';
+
+            try {{
+                // Try to create stop signal via API
+                const response = await fetch('/api/stop', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }}
+                }});
+
+                if (response.ok) {{
+                    btn.innerHTML = '<span style="font-size: 1.1rem;">✓</span> Stop Signal Sent';
+                    btn.style.background = '#22c55e';
+                    status.textContent = 'Training will stop after current step. Checkpoints will be downloaded.';
+                    status.style.color = '#22c55e';
+                }} else {{
+                    throw new Error('Server returned ' + response.status);
+                }}
+            }} catch (e) {{
+                // Fallback: show manual command
+                btn.innerHTML = '<span style="font-size: 1.1rem;">!</span> Manual Stop Required';
+                btn.style.background = '#f59e0b';
+                status.innerHTML = 'Run this command to stop training:<br><code style="background: #1a1a24; padding: 4px 8px; border-radius: 4px; font-family: monospace;">touch training_output/STOP_TRAINING</code>';
+                status.style.color = '#f59e0b';
+            }}
+        }}
 
         function initCharts() {{
             const lossCtx = document.getElementById('lossChart').getContext('2d');
