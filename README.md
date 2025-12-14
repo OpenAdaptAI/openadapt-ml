@@ -570,7 +570,7 @@ OpenAdapt-ML can train on real GUI recordings captured with [openadapt-capture](
 
 ```bash
 # Install openadapt-capture
-pip install openadapt-capture
+uv pip install openadapt-capture
 
 # Record a workflow (e.g., turning off Night Shift)
 openadapt-capture record --output ~/captures/turn-off-nightshift

@@ -191,11 +191,19 @@ def cmd_check(args: argparse.Namespace) -> int:
     print("TRAINING HEALTH CHECK")
     print(f"{'='*50}")
 
-    losses = status.get("losses", [])
-    if not losses:
+    raw_losses = status.get("losses", [])
+    if not raw_losses:
         print("No training data found.")
         print("Run training first with: uv run python -m openadapt_ml.cloud.local train --capture <path>")
         return 1
+
+    # Extract loss values (handle both dict and float formats)
+    losses = []
+    for item in raw_losses:
+        if isinstance(item, dict):
+            losses.append(item.get("loss", 0))
+        else:
+            losses.append(float(item))
 
     print(f"Total steps: {len(losses)}")
     print(f"Current epoch: {status.get('epoch', 0)}")
