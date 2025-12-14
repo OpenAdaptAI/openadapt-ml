@@ -399,7 +399,7 @@ uv run python -m openadapt_ml.scripts.eval_policy \
   --config configs/qwen3vl_synthetic_som.yaml \
   --backend qwen3 \
   --dsl-mode som \
-  --eval-on-training-data  # Test memorization
+  --overfit  # Check memorization
 ```
 
 For the full SoM investigation report, see [`experiments/qwen_login/SOM_INVESTIGATION_REPORT.md`](experiments/qwen_login/SOM_INVESTIGATION_REPORT.md).

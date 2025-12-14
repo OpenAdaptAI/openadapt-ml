@@ -31,6 +31,7 @@ def main(
     dsl_mode: str = "coord",
     eval_on_training_data: bool = False,
     no_jitter: bool = False,
+    scenario: Optional[str] = None,
 ) -> None:
     cfg = _load_config(config_path)
 
@@ -59,6 +60,9 @@ def main(
     if no_jitter:
         print("[INFO] Jitter disabled - using deterministic layouts")
 
+    # Determine scenario: CLI arg takes precedence, then config, then default "login"
+    scenario_to_use = scenario if scenario else synth_cfg.get("scenario", "login")
+
     # Generate sessions with SoM if requested
     sessions = generate_synthetic_sessions(
         num_sessions=num_sessions,
@@ -66,7 +70,9 @@ def main(
         output_dir=output_dir,
         use_som=use_som,
         jitter=jitter,
+        scenario=scenario_to_use,
     )
+    print(f"[INFO] Scenario: {scenario_to_use}")
     episodes = [ep for sess in sessions for ep in sess.episodes]
 
     # Build samples with appropriate DSL mode
@@ -246,16 +252,24 @@ if __name__ == "__main__":
              "'som' for Set-of-Marks index-based (CLICK([1])). Default: coord.",
     )
     parser.add_argument(
-        "--eval-on-training-data",
+        "--overfit",
         action="store_true",
-        help="Evaluate on the exact training data (tests memorization). "
-             "If not set, generates fresh data (tests generalization).",
+        help="Evaluate on training data to check memorization/overfitting. "
+             "If not set, generates fresh data to test generalization.",
     )
     parser.add_argument(
         "--no-jitter",
         action="store_true",
         help="Disable jitter for deterministic UI layouts. "
              "Useful for testing memorization of fixed layouts.",
+    )
+    parser.add_argument(
+        "--scenario",
+        type=str,
+        choices=["login", "registration"],
+        default=None,
+        help="Scenario type: 'login' (6 steps, 3 elements) or 'registration' (12 steps, 6 elements). "
+             "Overrides config if provided.",
     )
     args = parser.parse_args()
 
@@ -267,6 +281,7 @@ if __name__ == "__main__":
         log_samples=args.log_samples,
         log_limit=args.log_limit,
         dsl_mode=args.dsl_mode,
-        eval_on_training_data=args.eval_on_training_data,
+        eval_on_training_data=args.overfit,
         no_jitter=args.no_jitter,
+        scenario=args.scenario,
     )
