@@ -650,6 +650,24 @@ The training process generates:
 
 Both dashboards have navigation links to switch between views.
 
+**Training Dashboard:**
+
+![Training Dashboard](docs/images/training-dashboard.png)
+
+*Shows training progress, loss curves, and key metrics. Use the navigation tabs to switch between Training and Viewer.*
+
+**Comparison Viewer:**
+
+![Comparison Viewer](docs/images/viewer-comparison.png)
+
+*Compare human actions vs model predictions frame-by-frame. Shows match/mismatch status, click overlays, and full event timeline.*
+
+**Keyboard shortcuts (Viewer):**
+- `Space` - Play/pause
+- `←` / `→` - Previous/next frame
+- `Home` / `End` - First/last frame
+- `O` - Toggle click overlay
+
 ---
 
 ## 12. Limitations & Notes
