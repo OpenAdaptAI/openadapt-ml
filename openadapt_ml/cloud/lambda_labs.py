@@ -853,6 +853,12 @@ def main():
     ssh_parser.add_argument("--cmd", "-c", help="Command to run (opens shell if not specified)")
     ssh_parser.add_argument("--timeout", "-t", type=int, default=60, help="Command timeout in seconds")
 
+    # Serve command - start dashboard server with stop button support
+    serve_parser = subparsers.add_parser("serve", help="Start dashboard server with stop button support")
+    serve_parser.add_argument("--output", "-o", default="training_output", help="Output directory (default: training_output)")
+    serve_parser.add_argument("--port", "-p", type=int, default=8765, help="Port (default: 8765)")
+    serve_parser.add_argument("--open", action="store_true", help="Open dashboard in browser")
+
     # Rsync command - copy files to/from Lambda instance
     rsync_parser = subparsers.add_parser("rsync", help="Rsync files to/from Lambda instance")
     rsync_parser.add_argument("source", help="Source path (prefix with 'remote:' for remote paths)")
@@ -887,6 +893,7 @@ def main():
     monitor_parser.add_argument("--auto-stop-loss", type=float, default=0.5, help="Auto-terminate when loss drops below this (default: 0.5)")
     monitor_parser.add_argument("--download-checkpoints", action="store_true", default=True, help="Auto-download checkpoints each epoch")
     monitor_parser.add_argument("--no-download-checkpoints", action="store_false", dest="download_checkpoints", help="Disable checkpoint download")
+    monitor_parser.add_argument("--stub", action="store_true", help="Use stub training provider (no GPU, instant simulation)")
 
     # Refresh command - one-shot dashboard update
     refresh_parser = subparsers.add_parser("refresh", help="One-shot refresh of training dashboard")
@@ -935,13 +942,6 @@ def main():
     results_parser.add_argument("--goal", "-g", help="Task goal description")
     results_parser.add_argument("--open", action="store_true", help="Open viewer in browser")
     results_parser.add_argument("instance_id", nargs="?", help="Instance ID")
-
-    # Serve command - start web server for dashboard with auto-refresh
-    serve_parser = subparsers.add_parser("serve", help="Start web server for live dashboard")
-    serve_parser.add_argument("--port", "-p", type=int, default=8080, help="Port to serve on (default: 8080)")
-    serve_parser.add_argument("--open", action="store_true", help="Open dashboard in browser")
-    serve_parser.add_argument("--refresh", action="store_true", help="Also poll Lambda for updates")
-    serve_parser.add_argument("--interval", "-i", type=int, default=5, help="Refresh interval in seconds (default: 5)")
 
     # Sync command - sync training output and regenerate navigation for file:// protocol
     sync_parser = subparsers.add_parser("sync", help="Sync training output from Lambda and regenerate navigation")
@@ -1526,6 +1526,66 @@ def main():
         import time as time_module
         from pathlib import Path
 
+        # Stub mode - simulate training without actual GPU
+        if getattr(args, 'stub', False):
+            from openadapt_ml.training.stub_provider import StubTrainingProvider
+            from openadapt_ml.training.trainer import (
+                TrainingState, TrainingConfig, generate_training_dashboard
+            )
+
+            print("\n[Stub Mode] Simulating training without GPU...")
+            output_dir = Path("training_output")
+            output_dir.mkdir(exist_ok=True)
+
+            # Start dashboard server if requested
+            server_proc = None
+            if args.open:
+                server_proc = open_dashboard_in_browser(output_dir)
+
+            # Run stub training
+            stub = StubTrainingProvider(
+                output_dir=output_dir,
+                epochs=5,
+                steps_per_epoch=10,
+                step_delay=0.3,  # Fast simulation
+            )
+
+            def update_dashboard(status):
+                """Regenerate dashboard after each step."""
+                state = TrainingState()
+                state.job_id = status.get("job_id", "")
+                state.hostname = status.get("hostname", "stub")
+                state.instance_ip = "127.0.0.1"
+                state.instance_type = "stub"
+                state.epoch = status.get("epoch", 0)
+                state.step = status.get("step", 0)
+                state.loss = status.get("loss", 0)
+                state.learning_rate = status.get("learning_rate", 5e-5)
+                state.losses = status.get("losses", [])
+                state.evaluations = status.get("evaluations", [])
+                state.cloud_provider = "stub"
+                state.setup_status = "training"
+
+                config = TrainingConfig(
+                    num_train_epochs=status.get("total_epochs", 5),
+                    learning_rate=state.learning_rate
+                )
+
+                dashboard_path = output_dir / "dashboard.html"
+                dashboard_path.write_text(generate_training_dashboard(state, config))
+
+            try:
+                stub.run(callback=update_dashboard)
+            except KeyboardInterrupt:
+                print("\n[Stub] Interrupted by user.")
+            finally:
+                if server_proc:
+                    server_proc.terminate()
+                    print("[Stub] Dashboard server stopped.")
+
+            print(f"\n[Stub] Results in: {output_dir}")
+            return
+
         instances = client.list_instances()
         if not instances:
             print("No running instances.")
@@ -2090,24 +2150,46 @@ def main():
             print("Warning: Failed to generate comparison viewer")
 
     elif args.command == "serve":
-        # Start web server for live dashboard
+        # Start web server for live dashboard with stop button support
         import http.server
         import socketserver
         import threading
         import time as time_module
         from pathlib import Path
 
-        output_dir = Path("training_output")
+        output_dir = Path(args.output) if hasattr(args, 'output') else Path("training_output")
         port = args.port
 
         if not output_dir.exists():
-            print("No training_output directory. Run 'refresh' first.")
+            print(f"No {output_dir} directory. Run 'refresh' first.")
             return
 
-        # Define handler that serves from training_output
+        # Define handler with /api/stop support
         class Handler(http.server.SimpleHTTPRequestHandler):
             def __init__(self, *args, **kwargs):
                 super().__init__(*args, directory=str(output_dir), **kwargs)
+
+            def do_POST(self):
+                if self.path == '/api/stop':
+                    # Create stop signal file
+                    stop_file = output_dir / "STOP_TRAINING"
+                    stop_file.touch()
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(b'{"status": "stop signal created"}')
+                    print(f"  Stop signal created: {stop_file}")
+                else:
+                    self.send_error(404)
+
+            def do_OPTIONS(self):
+                # Handle CORS preflight
+                self.send_response(200)
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+                self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+                self.end_headers()
 
             def log_message(self, format, *args):
                 pass  # Suppress log messages
