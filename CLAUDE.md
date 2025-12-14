@@ -298,6 +298,17 @@ Failed to pull Docker image openadaptacr.azurecr.io/winarena:latest
 **Screenshots**: 20 frames
 **Notes**: Real-world macOS settings navigation capture for training/evaluation
 
+### Evaluation Samples Display Enhancement
+**Status**: TODO - needs fleshing out
+
+**Current state**: Shows human/predicted coords, model thinking text, legend
+**Future improvements**:
+- Show the actual screenshot image (need to sync from Lambda or embed base64)
+- Visual overlay showing click positions on image
+- Side-by-side human vs predicted action comparison
+- Full model output (not truncated)
+- Filter/search evaluations by epoch or correctness
+
 ### README API Documentation
 **Status**: TODO - needs review
 
