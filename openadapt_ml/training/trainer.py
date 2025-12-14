@@ -1358,6 +1358,16 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
                     <span class="metric-label">Samples</span>
                     <span class="metric-value">${{evaluations.length}}</span>
                 </div>
+                <div class="legend" style="display: flex; gap: 16px; margin-left: auto; font-size: 0.75rem; align-items: center;">
+                    <span style="display: flex; align-items: center; gap: 4px;">
+                        <span style="width: 12px; height: 12px; border-radius: 50%; background: rgba(52, 211, 153, 0.8);"></span>
+                        Human
+                    </span>
+                    <span style="display: flex; align-items: center; gap: 4px;">
+                        <span style="width: 12px; height: 12px; border-radius: 50%; background: rgba(167, 139, 250, 0.8);"></span>
+                        Predicted
+                    </span>
+                </div>
             `;
 
             // Render gallery (show last 9 evaluations)
@@ -1393,10 +1403,7 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
                             </div>
                         </div>
                         ${{thought ? `
-                            <div class="thinking-toggle" onclick="document.getElementById('${{sampleId}}').style.display = document.getElementById('${{sampleId}}').style.display === 'none' ? 'block' : 'none'">
-                                ▸ Show model thinking
-                            </div>
-                            <div class="thinking" id="${{sampleId}}" style="display: none;">${{thought}}${{thought.length >= 200 ? '...' : ''}}</div>
+                            <div class="thinking">${{thought}}${{thought.length >= 200 ? '...' : ''}}</div>
                         ` : ''}}
                     </div>
                 `;
