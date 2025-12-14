@@ -55,46 +55,15 @@ def start_dashboard_server(output_dir: Path, port: int = DEFAULT_SERVER_PORT) ->
         (process, url): The server process and the dashboard URL
     """
     import webbrowser
-    import multiprocessing
+    import threading
 
-    def run_server(directory: str, port: int):
-        """Run HTTP server with custom handler for /api/stop."""
-        import http.server
-        import os
-
-        os.chdir(directory)
-
-        class DashboardHandler(http.server.SimpleHTTPRequestHandler):
-            def do_POST(self):
-                if self.path == '/api/stop':
-                    # Create stop signal file
-                    stop_file = Path(directory) / "STOP_TRAINING"
-                    stop_file.touch()
-                    self.send_response(200)
-                    self.send_header('Content-Type', 'application/json')
-                    self.send_header('Access-Control-Allow-Origin', '*')
-                    self.end_headers()
-                    self.wfile.write(b'{"status": "stop signal created"}')
-                else:
-                    self.send_error(404)
-
-            def do_OPTIONS(self):
-                # Handle CORS preflight
-                self.send_response(200)
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-                self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-                self.end_headers()
-
-            def log_message(self, format, *args):
-                pass  # Suppress logging
-
-        with http.server.HTTPServer(('', port), DashboardHandler) as httpd:
-            httpd.serve_forever()
-
-    # Start server in background process
-    server_proc = multiprocessing.Process(target=run_server, args=(str(output_dir), port))
-    server_proc.start()
+    # Start simple HTTP server in background thread
+    server_proc = subprocess.Popen(
+        [sys.executable, "-m", "http.server", str(port)],
+        cwd=str(output_dir),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
     url = f"http://localhost:{port}/dashboard.html"
 
