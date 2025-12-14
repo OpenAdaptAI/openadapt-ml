@@ -58,6 +58,44 @@ SYSTEM_PROMPT_SOM = (
     "IMPORTANT: Follow the action sequence step by step. Each step must be done separately."
 )
 
+# SoM prompt for registration scenario
+SYSTEM_PROMPT_SOM_REGISTRATION = (
+    "You are a GUI automation agent. Given a screenshot and a user goal, "
+    "predict the single next action.\n\n"
+    "INTERACTIVE ELEMENTS:\n"
+    "The screenshot shows numbered labels [1], [2], [3], etc. on interactive UI elements.\n"
+    "These labels indicate clickable elements like buttons, text fields, links, etc.\n\n"
+    "ELEMENT LABELS ON THIS REGISTRATION SCREEN:\n"
+    "[1] = First Name text field\n"
+    "[2] = Last Name text field\n"
+    "[3] = Email text field\n"
+    "[4] = Password text field\n"
+    "[5] = Confirm Password text field\n"
+    "[6] = Register button\n\n"
+    "ALLOWED ACTIONS (use exactly this format):\n"
+    "- CLICK([N])            → click element with number N to focus/activate it\n"
+    "- TYPE([N], \"text\")   → type text into element N (e.g., TYPE([2], \"hello\"))\n"
+    "- WAIT()                → wait for UI to update\n"
+    "- DONE()                → task is complete\n\n"
+    "ACTION SEQUENCE FOR REGISTRATION:\n"
+    "1. CLICK([1]) to focus first name field\n"
+    "2. TYPE([1], \"name\") to enter first name\n"
+    "3. CLICK([2]) to focus last name field\n"
+    "4. TYPE([2], \"name\") to enter last name\n"
+    "5. CLICK([3]) to focus email field\n"
+    "6. TYPE([3], \"email\") to enter email\n"
+    "7. CLICK([4]) to focus password field\n"
+    "8. TYPE([4], \"pass\") to enter password\n"
+    "9. CLICK([5]) to focus confirm password field\n"
+    "10. TYPE([5], \"pass\") to enter confirmation\n"
+    "11. CLICK([6]) to submit registration\n"
+    "12. DONE() when registration is complete\n\n"
+    "RESPONSE FORMAT (required):\n"
+    "Thought: [Brief reasoning: which numbered element to interact with and why]\n"
+    "Action: [Exactly one action from the sequence above]\n\n"
+    "IMPORTANT: Follow the action sequence step by step. Each step must be done separately."
+)
+
 
 def format_action(action: Action, use_som: bool = False) -> str:
     """Serialize an Action into a simple textual command.
@@ -155,22 +193,31 @@ def parse_action_som(text: str) -> Action:
     return Action(type="failed", raw={"text": text})
 
 
-def _generate_thought_for_step(step_index: int, step: Step, goal: str) -> str:
-    """Generate a simple but semantically meaningful Thought for a login step.
+def _generate_thought_for_step(
+    step_index: int,
+    step: Step,
+    goal: str,
+    scenario: str = "login",
+    total_steps: int = 6,
+) -> str:
+    """Generate a simple but semantically meaningful Thought for a step.
 
-    This is specific to the synthetic login workflow, which always follows the
-    same 6-step pattern. The goal text is included where helpful so the model
-    can learn to connect actions back to the stated objective.
-
-    Steps (6 total):
-    - Step 0: blank login screen → click username field
-    - Step 1: username field focused → type username
-    - Step 2: username typed → click password field
-    - Step 3: password field focused → type password
-    - Step 4: password typed → click login button
-    - Step 5: logged-in screen → DONE
+    This handles both login (6 steps) and registration (12 steps) workflows.
+    The goal text is included where helpful so the model can learn to connect
+    actions back to the stated objective.
     """
 
+    action = step.action
+    t = action.type
+
+    if scenario == "registration":
+        return _generate_registration_thought(step_index, step, goal, total_steps)
+    else:
+        return _generate_login_thought(step_index, step, goal, total_steps)
+
+
+def _generate_login_thought(step_index: int, step: Step, goal: str, total_steps: int) -> str:
+    """Generate thought for login scenario (6 steps)."""
     action = step.action
     t = action.type
 
@@ -223,6 +270,71 @@ def _generate_thought_for_step(step_index: int, step: Step, goal: str) -> str:
     )
 
 
+def _generate_registration_thought(step_index: int, step: Step, goal: str, total_steps: int) -> str:
+    """Generate thought for registration scenario (12 steps)."""
+    action = step.action
+    t = action.type
+
+    # Registration step mapping (pairs of click + type for 5 fields, then submit + done)
+    thoughts = {
+        (0, "click"): (
+            "I see a registration form with empty fields for name, email, and password. "
+            f"To start registration, I need to click on the First Name field ({goal})."
+        ),
+        (1, "type"): (
+            "The First Name field is focused. I should type the first name."
+        ),
+        (2, "click"): (
+            "First name entered. Now I need to focus the Last Name field to enter it."
+        ),
+        (3, "type"): (
+            "The Last Name field is focused. I should type the last name."
+        ),
+        (4, "click"): (
+            "Last name entered. Now I need to focus the Email field to enter the email address."
+        ),
+        (5, "type"): (
+            "The Email field is focused. I should type the email address."
+        ),
+        (6, "click"): (
+            "Email entered. Now I need to focus the Password field to create a password."
+        ),
+        (7, "type"): (
+            "The Password field is focused. I should type the password."
+        ),
+        (8, "click"): (
+            "Password entered. Now I need to focus the Confirm Password field to verify the password."
+        ),
+        (9, "type"): (
+            "The Confirm Password field is focused. I should type the same password again."
+        ),
+        (10, "click"): (
+            "All form fields are filled. I should click the Register button to submit the form."
+        ),
+        (11, "done"): (
+            "Registration is complete - I see a success screen. The task is finished."
+        ),
+    }
+
+    key = (step_index, t)
+    if key in thoughts:
+        return thoughts[key]
+
+    # Fallback
+    return (
+        "Based on the current screen and the registration goal, I will take the next action "
+        "that moves the workflow forward."
+    )
+
+
+def _detect_scenario(episode: Episode) -> str:
+    """Detect scenario from episode workflow_id."""
+    workflow_id = episode.workflow_id or ""
+    if "registration" in workflow_id.lower():
+        return "registration"
+    return "login"
+
+
 def build_next_action_sft_samples(
     episodes: List[Episode],
     use_som: bool = False,
@@ -247,11 +359,20 @@ def build_next_action_sft_samples(
 
     samples: List[Dict[str, Any]] = []
 
-    # Select appropriate system prompt and user content based on mode
-    system_prompt = SYSTEM_PROMPT_SOM if use_som else SYSTEM_PROMPT
-
     for episode in episodes:
         goal = episode.goal
+        total_steps = len(episode.steps)
+        scenario = _detect_scenario(episode)
+
+        # Select appropriate system prompt based on mode and scenario
+        if use_som:
+            if scenario == "registration":
+                system_prompt = SYSTEM_PROMPT_SOM_REGISTRATION
+            else:
+                system_prompt = SYSTEM_PROMPT_SOM
+        else:
+            system_prompt = SYSTEM_PROMPT
+
         for step_index, step in enumerate(episode.steps):
             image_path = step.observation.image_path
             if not image_path:
@@ -265,14 +386,14 @@ def build_next_action_sft_samples(
                 prev_action_text = format_action(prev_step.action, use_som=use_som)
                 action_history.append(prev_action_text)
 
-            # Build history section for both modes
+            # Build history section for both modes - use actual step count
             if action_history:
                 history_text = "ACTIONS COMPLETED SO FAR:\n"
                 for i, action_text in enumerate(action_history, 1):
                     history_text += f"  {i}. {action_text}\n"
-                history_text += f"\nThis is step {step_index + 1} of 6. "
+                history_text += f"\nThis is step {step_index + 1} of {total_steps}. "
             else:
-                history_text = "This is step 1 of 6 (no actions completed yet). "
+                history_text = f"This is step 1 of {total_steps} (no actions completed yet). "
 
             if use_som:
                 user_content = (
@@ -294,7 +415,7 @@ def build_next_action_sft_samples(
             # Provide a deterministic, semantically meaningful Thought while supervising
             # the exact DSL Action.
             action_text = format_action(step.action, use_som=use_som)
-            thought_text = _generate_thought_for_step(step_index, step, goal)
+            thought_text = _generate_thought_for_step(step_index, step, goal, scenario, total_steps)
             assistant_content = f"Thought: {thought_text}\nAction: {action_text}"
 
             sample = {

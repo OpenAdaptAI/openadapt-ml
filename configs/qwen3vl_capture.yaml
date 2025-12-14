@@ -1,0 +1,29 @@
+model:
+  name: Qwen/Qwen3-VL-2B-Instruct
+  load_in_4bit: true  # Enable 4-bit quantization to reduce memory
+  # Image resolution: 512x512 = 262144 pixels for faster training (default is huge)
+  max_pixels: 262144
+
+lora:
+  r: 8
+  lora_alpha: 16
+  lora_dropout: 0.05
+  bias: none
+  target_modules:
+    - q_proj
+    - v_proj
+  task_type: CAUSAL_LM
+  weights_path: checkpoints/qwen3vl2b_capture_lora
+
+training:
+  num_train_epochs: 5
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 1
+  learning_rate: 5.0e-5
+  warmup_ratio: 0.1
+  weight_decay: 0.01
+  max_grad_norm: 0.5
+  logging_steps: 1
+  # Early stopping: stop if loss stays below threshold
+  early_stop_loss: 0.01
+  early_stop_patience: 20

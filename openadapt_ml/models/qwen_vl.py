@@ -77,8 +77,16 @@ class QwenVLAdapter(BaseVLMAdapter):
         lora_config: Optional[LoraConfig | Dict[str, Any]] = None,
         load_in_4bit: bool = False,
         device: Optional[torch.device] = None,
+        max_pixels: Optional[int] = None,
+        min_pixels: Optional[int] = None,
     ) -> "QwenVLAdapter":
-        """Load base Qwen model + processor and attach optional LoRA adapter."""
+        """Load base Qwen model + processor and attach optional LoRA adapter.
+
+        Args:
+            max_pixels: Maximum image size in pixels (e.g., 512*512=262144 for faster training).
+                        If None, uses model default (very large).
+            min_pixels: Minimum image size in pixels. If None, uses model default.
+        """
 
         if "Qwen3-VL" in model_name or "Qwen3VL" in model_name:
             version = "qwen3"
@@ -90,6 +98,13 @@ class QwenVLAdapter(BaseVLMAdapter):
             raise ValueError(f"Unrecognized Qwen-VL model name: {model_name}")
 
         processor = AutoProcessor.from_pretrained(model_name)
+
+        # Configure image resolution for faster training
+        if max_pixels is not None and hasattr(processor, 'image_processor'):
+            processor.image_processor.max_pixels = max_pixels
+            print(f"Set max_pixels to {max_pixels} ({int(max_pixels**0.5)}x{int(max_pixels**0.5)} approx)")
+        if min_pixels is not None and hasattr(processor, 'image_processor'):
+            processor.image_processor.min_pixels = min_pixels
 
         model_kwargs: Dict[str, Any] = {}
         if load_in_4bit:
@@ -320,11 +335,20 @@ class QwenVLAdapter(BaseVLMAdapter):
         with torch.no_grad():
             generation = self.model.generate(**inputs, max_new_tokens=max_new_tokens)
 
-        # Decode only the generated ids; for simplicity we decode the full
-        # sequence and return it. Callers are expected to parse the action
-        # from the resulting text.
+        # Decode only the GENERATED tokens (not the input prompt)
+        # This is critical - otherwise we return "user Goal: ... assistant ..." instead of just the response
+        input_len = inputs["input_ids"].shape[1]
+        generated_ids = generation[:, input_len:]
         text = self.processor.batch_decode(  # type: ignore[call-arg]
-            generation,
+            generated_ids,
             skip_special_tokens=True,
         )[0]
         return text
+
+    def save_checkpoint(self, path: str) -> None:
+        """Save the LoRA adapter weights to a directory."""
+        from pathlib import Path
+        save_path = Path(path)
+        save_path.mkdir(parents=True, exist_ok=True)
+        # Save the PEFT adapter (LoRA weights only, not base model)
+        self.model.save_pretrained(str(save_path))
