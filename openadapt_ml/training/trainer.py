@@ -871,6 +871,43 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
         .eval-sample .info .incorrect {{
             color: #ff5f5f;
         }}
+        .eval-sample .details {{
+            margin-top: 8px;
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }}
+        .eval-sample .coords {{
+            display: flex;
+            gap: 16px;
+            margin-top: 4px;
+        }}
+        .eval-sample .coords .human-coord {{
+            color: #34d399;
+        }}
+        .eval-sample .coords .pred-coord {{
+            color: #a78bfa;
+        }}
+        .eval-sample .thinking {{
+            margin-top: 8px;
+            padding: 8px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 4px;
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+            max-height: 80px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }}
+        .eval-sample .thinking-toggle {{
+            cursor: pointer;
+            color: var(--accent);
+            font-size: 0.7rem;
+            margin-top: 4px;
+        }}
+        .eval-sample .thinking-toggle:hover {{
+            text-decoration: underline;
+        }}
     </style>
 </head>
 <body>
@@ -1323,24 +1360,44 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
                 </div>
             `;
 
-            // Render gallery (show last 6 evaluations)
-            const recentEvals = evaluations.slice(-6);
+            // Render gallery (show last 9 evaluations)
+            const recentEvals = evaluations.slice(-9);
             gallery.innerHTML = recentEvals.map((ev, i) => {{
                 const statusClass = ev.correct ? 'correct' : 'incorrect';
                 const statusText = ev.correct ? '✓ Correct' : '✗ Off by ' + ev.distance.toFixed(0) + 'px';
+                const humanX = (ev.human_action.x || 0).toFixed(3);
+                const humanY = (ev.human_action.y || 0).toFixed(3);
+                const predX = (ev.predicted_action.x || 0).toFixed(3);
+                const predY = (ev.predicted_action.y || 0).toFixed(3);
+                const rawOutput = ev.predicted_action.raw_output || '';
+                const thoughtMatch = rawOutput.match(/Thought:([\\s\\S]*?)(?:Action:|$)/);
+                const thought = thoughtMatch ? thoughtMatch[1].trim().substring(0, 200) : '';
+                const sampleId = 'eval-' + ev.epoch + '-' + ev.sample_idx;
                 return `
                     <div class="eval-sample">
                         <div style="position: relative;">
                             <img src="${{ev.image_path}}" alt="Sample ${{ev.sample_idx}}" onerror="this.style.display='none'">
                             <div class="overlay" style="width: 100%; height: 100%;">
-                                <div class="marker human" style="left: ${{(ev.human_action.x || 0) / 10}}%; top: ${{(ev.human_action.y || 0) / 10}}%;" title="Human"></div>
-                                <div class="marker predicted" style="left: ${{(ev.predicted_action.x || 0) / 10}}%; top: ${{(ev.predicted_action.y || 0) / 10}}%;" title="Predicted"></div>
+                                <div class="marker human" style="left: ${{(ev.human_action.x || 0) * 100}}%; top: ${{(ev.human_action.y || 0) * 100}}%;" title="Human"></div>
+                                <div class="marker predicted" style="left: ${{(ev.predicted_action.x || 0) * 100}}%; top: ${{(ev.predicted_action.y || 0) * 100}}%;" title="Predicted"></div>
                             </div>
                         </div>
                         <div class="info">
                             <span class="${{statusClass}}">${{statusText}}</span>
                             <span> | Epoch ${{ev.epoch + 1}}</span>
                         </div>
+                        <div class="details">
+                            <div class="coords">
+                                <span class="human-coord">Human: (${{humanX}}, ${{humanY}})</span>
+                                <span class="pred-coord">Pred: (${{predX}}, ${{predY}})</span>
+                            </div>
+                        </div>
+                        ${{thought ? `
+                            <div class="thinking-toggle" onclick="document.getElementById('${{sampleId}}').style.display = document.getElementById('${{sampleId}}').style.display === 'none' ? 'block' : 'none'">
+                                ▸ Show model thinking
+                            </div>
+                            <div class="thinking" id="${{sampleId}}" style="display: none;">${{thought}}${{thought.length >= 200 ? '...' : ''}}</div>
+                        ` : ''}}
                     </div>
                 `;
             }}).join('');
