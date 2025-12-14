@@ -94,6 +94,56 @@ def open_dashboard_in_browser(output_dir: Path, port: int = DEFAULT_SERVER_PORT)
         return None
 
 
+def setup_capture_screenshots_symlink(output_dir: Path, capture_path: str | Path) -> bool:
+    """Create symlink from output_dir/screenshots to capture's screenshots folder.
+
+    This allows the dashboard to serve screenshots via relative paths.
+
+    Args:
+        output_dir: Training output directory (e.g., training_output/job_id/)
+        capture_path: Path to capture directory (local)
+
+    Returns:
+        True if symlink created successfully
+    """
+    capture_path = Path(capture_path)
+    screenshots_src = capture_path / "screenshots"
+    screenshots_dst = output_dir / "screenshots"
+
+    if not screenshots_src.exists():
+        return False
+
+    # Remove existing symlink or directory
+    if screenshots_dst.is_symlink():
+        screenshots_dst.unlink()
+    elif screenshots_dst.exists():
+        return False  # Don't overwrite real directory
+
+    try:
+        screenshots_dst.symlink_to(screenshots_src.resolve())
+        return True
+    except Exception:
+        return False
+
+
+def rewrite_evaluation_paths(evaluations: list[dict], remote_prefix: str = "/home/ubuntu/capture/") -> list[dict]:
+    """Rewrite Lambda paths in evaluations to relative paths.
+
+    Converts: /home/ubuntu/capture/screenshots/foo.png -> screenshots/foo.png
+
+    Args:
+        evaluations: List of evaluation dicts with image_path
+        remote_prefix: The Lambda path prefix to replace
+
+    Returns:
+        Evaluations with rewritten paths
+    """
+    for ev in evaluations:
+        if "image_path" in ev and ev["image_path"].startswith(remote_prefix):
+            ev["image_path"] = ev["image_path"].replace(remote_prefix, "")
+    return evaluations
+
+
 @dataclass
 class InstanceType:
     """Lambda Labs instance type."""
@@ -762,6 +812,7 @@ def main():
     monitor_parser.add_argument("instance_id", nargs="?", help="Instance ID")
     monitor_parser.add_argument("--open", action="store_true", help="Open dashboard in browser")
     monitor_parser.add_argument("--interval", type=int, default=5, help="Poll interval in seconds (default: 5)")
+    monitor_parser.add_argument("--capture", type=str, help="Local capture path for screenshot symlink")
 
     # Refresh command - one-shot dashboard update
     refresh_parser = subparsers.add_parser("refresh", help="One-shot refresh of training dashboard")
@@ -1327,6 +1378,15 @@ def main():
             dashboard_path = output_dir / "dashboard.html"
             log_path = output_dir / "training_log.json"
 
+            # Setup screenshots symlink if local capture path provided
+            local_capture = args.capture if hasattr(args, 'capture') and args.capture else None
+            if local_capture:
+                setup_capture_screenshots_symlink(output_dir, local_capture)
+
+            # Rewrite evaluation paths from Lambda to relative
+            if "evaluations" in status:
+                status["evaluations"] = rewrite_evaluation_paths(status["evaluations"])
+
             # Ensure instance metadata is present
             status["instance_ip"] = instance.ip
             status["instance_type"] = instance.instance_type
@@ -1497,6 +1557,16 @@ def main():
                         status["cloud_dashboard_url"] = "https://cloud.lambda.ai/instances"
                         status["cloud_instance_id"] = instance.id
                         status["setup_status"] = status.get("setup_status", "training")
+
+                        # Setup screenshots symlink if local capture path provided
+                        local_capture = args.capture if hasattr(args, 'capture') and args.capture else None
+                        if local_capture:
+                            setup_capture_screenshots_symlink(output_dir, local_capture)
+
+                        # Rewrite evaluation paths from Lambda to relative
+                        if "evaluations" in status:
+                            status["evaluations"] = rewrite_evaluation_paths(status["evaluations"])
+
                         log_path.write_text(json.dumps(status, indent=2))
 
                         if step > last_step:
