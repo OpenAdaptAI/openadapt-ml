@@ -40,6 +40,59 @@ import requests
 
 API_BASE = "https://cloud.lambdalabs.com/api/v1"
 
+# Default port for HTTP server
+DEFAULT_SERVER_PORT = 8765
+
+
+def start_dashboard_server(output_dir: Path, port: int = DEFAULT_SERVER_PORT) -> tuple[subprocess.Popen, str]:
+    """Start a background HTTP server for the dashboard.
+
+    Args:
+        output_dir: Directory containing dashboard files
+        port: Port to serve on
+
+    Returns:
+        (process, url): The server process and the dashboard URL
+    """
+    import webbrowser
+
+    # Start server in background
+    server_proc = subprocess.Popen(
+        [sys.executable, "-m", "http.server", str(port)],
+        cwd=str(output_dir),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    url = f"http://localhost:{port}/dashboard.html"
+
+    # Give server time to start
+    time.sleep(0.5)
+
+    return server_proc, url
+
+
+def open_dashboard_in_browser(output_dir: Path, port: int = DEFAULT_SERVER_PORT) -> subprocess.Popen | None:
+    """Start HTTP server and open dashboard in browser.
+
+    Args:
+        output_dir: Directory containing dashboard files
+        port: Port to serve on
+
+    Returns:
+        Server process (caller should call .terminate() when done), or None if failed
+    """
+    import webbrowser
+
+    try:
+        server_proc, url = start_dashboard_server(output_dir, port)
+        webbrowser.open(url)
+        print(f"Dashboard: {url}")
+        return server_proc
+    except Exception as e:
+        print(f"Warning: Could not start dashboard server: {e}")
+        return None
+
 
 @dataclass
 class InstanceType:
@@ -698,6 +751,7 @@ def main():
     train_parser.add_argument("--instance", "-i", help="Use existing instance ID instead of launching new")
     train_parser.add_argument("--no-terminate", action="store_true", help="Don't terminate instance after training")
     train_parser.add_argument("--max-runtime", type=int, default=60, help="Max runtime in minutes before auto-terminate (default: 60)")
+    train_parser.add_argument("--open", action="store_true", help="Open dashboard in browser when training starts")
 
     # Training status command
     train_status_parser = subparsers.add_parser("train-status", help="Check training status on instance")
@@ -951,15 +1005,19 @@ def main():
 
         # Generate initial dashboard with setup status
         from pathlib import Path
-        from openadapt_ml.training.trainer import TrainingState, TrainingConfig, generate_training_dashboard
-        output_dir = Path("training_output")
-        output_dir.mkdir(exist_ok=True)
+        from openadapt_ml.training.trainer import (
+            TrainingState, TrainingConfig, generate_training_dashboard,
+            setup_job_directory
+        )
+        import time as time_module
+        job_id = time_module.strftime("%Y%m%d_%H%M%S")
+        output_dir = setup_job_directory("training_output", job_id)
         dashboard_path = output_dir / "dashboard.html"
         log_path = output_dir / "training_log.json"
 
         def update_dashboard(status: str, logs: list, step: int = 0, loss: float = 0.0, epoch: int = 0):
             """Update dashboard with current setup/training status."""
-            state = TrainingState()
+            state = TrainingState(job_id=job_id)
             state.cloud_provider = "lambda"
             state.cloud_dashboard_url = "https://cloud.lambda.ai/instances"
             state.cloud_instance_id = instance.id
@@ -984,11 +1042,10 @@ def main():
         ]
         update_dashboard("booting", setup_logs)
 
-        # Open dashboard in browser
+        # Open dashboard in browser via HTTP server
+        server_proc = None
         if args.open:
-            import subprocess as sp
-            sp.run(["open", str(dashboard_path)], capture_output=True)
-            print(f"Dashboard opened: {dashboard_path.absolute()}")
+            server_proc = open_dashboard_in_browser(output_dir)
 
         try:
             # Set up environment with retries at the command level
@@ -1149,6 +1206,11 @@ def main():
 
         except KeyboardInterrupt:
             print("\n\nTraining interrupted by user")
+        finally:
+            # Clean up HTTP server if running
+            if server_proc:
+                server_proc.terminate()
+                print("Dashboard server stopped.")
 
         # Only auto-terminate if training completed successfully or user requested it
         elapsed = time_module.time() - start_time
@@ -1248,14 +1310,23 @@ def main():
         else:
             instance = instances[0]
 
-        output_dir = Path("training_output")
-        output_dir.mkdir(exist_ok=True)
-        dashboard_path = output_dir / "dashboard.html"
-        log_path = output_dir / "training_log.json"
+        # Use current job directory via symlink
+        from openadapt_ml.training.trainer import get_current_job_directory, setup_job_directory
+        base_dir = Path("training_output")
+        base_dir.mkdir(exist_ok=True)
 
         status = client.get_training_status(instance)
 
         if status and status.get("step", 0) > 0:
+            # Get or create job directory based on remote job_id
+            remote_job_id = status.get("job_id", "")
+            if remote_job_id:
+                output_dir = setup_job_directory(base_dir, remote_job_id)
+            else:
+                output_dir = get_current_job_directory(base_dir) or base_dir
+            dashboard_path = output_dir / "dashboard.html"
+            log_path = output_dir / "training_log.json"
+
             # Ensure instance metadata is present
             status["instance_ip"] = instance.ip
             status["instance_type"] = instance.instance_type
@@ -1265,8 +1336,8 @@ def main():
             log_path.write_text(json.dumps(status, indent=2))
 
             # Generate dashboard
-            state = TrainingState()
-            state.job_id = status.get("job_id", "")
+            state = TrainingState(job_id=remote_job_id)
+            state.job_id = remote_job_id
             state.hostname = status.get("hostname", "lambda")
             state.instance_ip = instance.ip or ""
             state.instance_type = instance.instance_type
@@ -1348,13 +1419,20 @@ def main():
                     break
                 print(f"  Status: {instance.status}...")
 
-        # Use same output directory as local training so dashboard auto-refreshes
-        output_dir = Path("training_output")
-        output_dir.mkdir(exist_ok=True)
+        # Use job-scoped directory structure
+        from openadapt_ml.training.trainer import (
+            TrainingState, TrainingConfig, generate_training_dashboard,
+            setup_job_directory, get_current_job_directory
+        )
+        base_dir = Path("training_output")
+        base_dir.mkdir(exist_ok=True)
+
+        # Get current job directory or wait for first status to determine job_id
+        output_dir = get_current_job_directory(base_dir) or base_dir
         dashboard_path = output_dir / "dashboard.html"
         log_path = output_dir / "training_log.json"
 
-        # Check for existing log with different job_id
+        # Check for existing log with job_id
         current_job_id = None
         if log_path.exists():
             try:
@@ -1368,9 +1446,8 @@ def main():
         print(f"Polling every {args.interval}s (Ctrl+C to stop)\n")
 
         # Generate initial dashboard if it doesn't exist
-        from openadapt_ml.training.trainer import TrainingState, TrainingConfig, generate_training_dashboard
         if not dashboard_path.exists():
-            state = TrainingState()
+            state = TrainingState(job_id=current_job_id or "")
             state.cloud_provider = "lambda"
             state.cloud_dashboard_url = "https://cloud.lambda.ai/instances"
             state.cloud_instance_id = instance.id
@@ -1381,11 +1458,10 @@ def main():
             config = TrainingConfig(num_train_epochs=5, learning_rate=5e-5)
             dashboard_path.write_text(generate_training_dashboard(state, config))
 
-        # Open dashboard if requested
+        # Open dashboard if requested via HTTP server
+        server_proc = None
         if args.open:
-            import subprocess as sp
-            sp.run(["open", str(dashboard_path)], capture_output=True)
-            print(f"Opened dashboard in browser")
+            server_proc = open_dashboard_in_browser(output_dir)
 
         last_step = 0
         try:
@@ -1466,6 +1542,11 @@ def main():
         except KeyboardInterrupt:
             print("\n\nMonitoring stopped.")
             print(f"Dashboard: {dashboard_path.absolute()}")
+        finally:
+            # Clean up HTTP server if running
+            if server_proc:
+                server_proc.terminate()
+                print("Dashboard server stopped.")
 
     elif args.command == "files":
         instances = client.list_instances()

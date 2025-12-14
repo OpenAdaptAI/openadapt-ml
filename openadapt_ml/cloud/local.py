@@ -40,6 +40,19 @@ from typing import Any
 TRAINING_OUTPUT = Path("training_output")
 
 
+def get_current_output_dir() -> Path:
+    """Get the current job's output directory.
+
+    Returns the 'current' symlink path if it exists, otherwise falls back
+    to the base training_output directory for backward compatibility.
+    """
+    current_link = TRAINING_OUTPUT / "current"
+    if current_link.is_symlink() or current_link.exists():
+        return current_link
+    # Fallback for backward compatibility with old structure
+    return TRAINING_OUTPUT
+
+
 def detect_device() -> str:
     """Detect available compute device."""
     try:
@@ -56,7 +69,9 @@ def detect_device() -> str:
 
 
 def get_training_status() -> dict[str, Any]:
-    """Get current training status from training_output."""
+    """Get current training status from training_output/current."""
+    current_dir = get_current_output_dir()
+
     status = {
         "running": False,
         "epoch": 0,
@@ -66,13 +81,16 @@ def get_training_status() -> dict[str, Any]:
         "has_dashboard": False,
         "has_viewer": False,
         "checkpoints": [],
+        "job_id": None,
+        "output_dir": str(current_dir),
     }
 
-    log_file = TRAINING_OUTPUT / "training_log.json"
+    log_file = current_dir / "training_log.json"
     if log_file.exists():
         try:
             with open(log_file) as f:
                 data = json.load(f)
+            status["job_id"] = data.get("job_id")
             status["epoch"] = data.get("epoch", 0)
             status["step"] = data.get("step", 0)
             status["loss"] = data.get("loss")
@@ -83,8 +101,8 @@ def get_training_status() -> dict[str, Any]:
         except (json.JSONDecodeError, KeyError):
             pass
 
-    status["has_dashboard"] = (TRAINING_OUTPUT / "dashboard.html").exists()
-    status["has_viewer"] = (TRAINING_OUTPUT / "viewer.html").exists()
+    status["has_dashboard"] = (current_dir / "dashboard.html").exists()
+    status["has_viewer"] = (current_dir / "viewer.html").exists()
 
     # Find checkpoints
     checkpoints_dir = Path("checkpoints")
@@ -100,12 +118,16 @@ def get_training_status() -> dict[str, Any]:
 def cmd_status(args: argparse.Namespace) -> int:
     """Show local training status."""
     status = get_training_status()
+    current_dir = get_current_output_dir()
 
     print(f"\n{'='*50}")
     print("LOCAL TRAINING STATUS")
     print(f"{'='*50}")
     print(f"Device: {status['device']}")
     print(f"Status: {'RUNNING' if status['running'] else 'IDLE'}")
+    if status.get("job_id"):
+        print(f"Job ID: {status['job_id']}")
+    print(f"Output: {current_dir}")
 
     if status.get("epoch"):
         print(f"\nProgress:")
@@ -121,8 +143,8 @@ def cmd_status(args: argparse.Namespace) -> int:
         for cp in status["checkpoints"][-5:]:  # Show last 5
             print(f"  - {cp}")
 
-    print(f"\nDashboard: {'✓' if status['has_dashboard'] else '✗'} training_output/dashboard.html")
-    print(f"Viewer: {'✓' if status['has_viewer'] else '✗'} training_output/viewer.html")
+    print(f"\nDashboard: {'✓' if status['has_dashboard'] else '✗'} {current_dir}/dashboard.html")
+    print(f"Viewer: {'✓' if status['has_viewer'] else '✗'} {current_dir}/viewer.html")
     print()
 
     return 0
@@ -246,12 +268,14 @@ def cmd_check(args: argparse.Namespace) -> int:
 def cmd_serve(args: argparse.Namespace) -> int:
     """Start local web server for dashboard."""
     port = args.port
+    current_dir = get_current_output_dir()
 
-    if not TRAINING_OUTPUT.exists():
-        print(f"Error: {TRAINING_OUTPUT} not found. Run training first.")
+    if not current_dir.exists():
+        print(f"Error: {current_dir} not found. Run training first.")
         return 1
 
-    os.chdir(TRAINING_OUTPUT)
+    # Serve from the current job directory
+    os.chdir(current_dir)
 
     class QuietHandler(http.server.SimpleHTTPRequestHandler):
         def log_message(self, format, *args):
@@ -262,6 +286,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
     with socketserver.TCPServer(("", port), handler) as httpd:
         url = f"http://localhost:{port}/dashboard.html"
         print(f"\nServing training output at: {url}")
+        print(f"Job directory: {current_dir}")
         print("Press Ctrl+C to stop\n")
 
         if args.open:
@@ -284,19 +309,21 @@ def cmd_viewer(args: argparse.Namespace) -> int:
         TrainingConfig,
     )
 
-    if not TRAINING_OUTPUT.exists():
-        print(f"Error: {TRAINING_OUTPUT} not found. Run training first.")
+    current_dir = get_current_output_dir()
+
+    if not current_dir.exists():
+        print(f"Error: {current_dir} not found. Run training first.")
         return 1
 
-    print("Regenerating viewer from training_output...")
+    print(f"Regenerating viewer from {current_dir}...")
 
     # Regenerate dashboard
-    log_file = TRAINING_OUTPUT / "training_log.json"
+    log_file = current_dir / "training_log.json"
     if log_file.exists():
         with open(log_file) as f:
             data = json.load(f)
 
-        state = TrainingState()
+        state = TrainingState(job_id=data.get("job_id", ""))
         state.epoch = data.get("epoch", 0)
         state.step = data.get("step", 0)
         state.loss = data.get("loss", 0)
@@ -310,18 +337,18 @@ def cmd_viewer(args: argparse.Namespace) -> int:
         )
 
         dashboard_html = generate_training_dashboard(state, config)
-        (TRAINING_OUTPUT / "dashboard.html").write_text(dashboard_html)
+        (current_dir / "dashboard.html").write_text(dashboard_html)
         print(f"  Regenerated: dashboard.html")
 
     # Find comparison HTML to enhance
-    comparison_files = list(TRAINING_OUTPUT.glob("comparison_epoch*.html"))
+    comparison_files = list(current_dir.glob("comparison_epoch*.html"))
     if comparison_files:
         # Use the latest epoch comparison
         base_file = sorted(comparison_files)[-1]
 
         # Load all prediction files
         predictions_by_checkpoint = {"None": []}
-        for pred_file in TRAINING_OUTPUT.glob("predictions_*.json"):
+        for pred_file in current_dir.glob("predictions_*.json"):
             checkpoint_name = pred_file.stem.replace("predictions_", "")
             # Map to display name
             if "epoch" in checkpoint_name:
@@ -345,15 +372,15 @@ def cmd_viewer(args: argparse.Namespace) -> int:
         _enhance_comparison_to_unified_viewer(
             base_file,
             predictions_by_checkpoint,
-            TRAINING_OUTPUT / "viewer.html",
+            current_dir / "viewer.html",
             capture_id,
             goal,
         )
 
-    print(f"\nGenerated: {TRAINING_OUTPUT / 'viewer.html'}")
+    print(f"\nGenerated: {current_dir / 'viewer.html'}")
 
     if args.open:
-        webbrowser.open(str(TRAINING_OUTPUT / "viewer.html"))
+        webbrowser.open(str(current_dir / "viewer.html"))
 
     return 0
 

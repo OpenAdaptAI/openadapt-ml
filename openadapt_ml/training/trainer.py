@@ -14,6 +14,64 @@ from openadapt_ml.models.base_adapter import BaseVLMAdapter
 from openadapt_ml.schemas.sessions import Episode
 
 
+def setup_job_directory(base_dir: str | Path, job_id: str) -> Path:
+    """Set up job-scoped directory structure with symlink.
+
+    Creates:
+        {base_dir}/{job_id}/     - Job-specific directory
+        {base_dir}/current       - Symlink to current job directory
+
+    Args:
+        base_dir: Base output directory (e.g., "training_output")
+        job_id: Unique job identifier (e.g., "20251214_200417")
+
+    Returns:
+        Path to the job-specific directory
+    """
+    base_dir = Path(base_dir)
+    job_dir = base_dir / job_id
+    current_link = base_dir / "current"
+
+    # Create base and job directories
+    base_dir.mkdir(parents=True, exist_ok=True)
+    job_dir.mkdir(parents=True, exist_ok=True)
+
+    # Atomically update the 'current' symlink
+    # Use a temp link then rename for atomic operation
+    temp_link = base_dir / f".current_temp_{job_id}"
+    try:
+        # Remove temp link if it exists from a previous failed attempt
+        if temp_link.exists() or temp_link.is_symlink():
+            temp_link.unlink()
+
+        # Create temp symlink pointing to job_id (relative path)
+        temp_link.symlink_to(job_id)
+
+        # Atomically replace current with temp
+        temp_link.rename(current_link)
+    except Exception as e:
+        # Clean up temp link on failure
+        if temp_link.exists() or temp_link.is_symlink():
+            temp_link.unlink()
+        raise RuntimeError(f"Failed to create current symlink: {e}")
+
+    return job_dir
+
+
+def get_current_job_directory(base_dir: str | Path) -> Path | None:
+    """Get the current job directory from symlink.
+
+    Returns:
+        Path to current job directory, or None if no current symlink
+    """
+    base_dir = Path(base_dir)
+    current_link = base_dir / "current"
+
+    if current_link.is_symlink():
+        return current_link.resolve()
+    return None
+
+
 @dataclass
 class TrainingConfig:
     # Model / LoRA-related fields are handled elsewhere; this covers loop hyperparams.
@@ -291,11 +349,19 @@ class TrainingLogger:
         cloud_provider: str = "",
         cloud_dashboard_url: str = "",
         cloud_instance_id: str = "",
+        job_id: str = "",
     ):
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        # Generate job_id if not provided
+        if not job_id:
+            job_id = time.strftime("%Y%m%d_%H%M%S")
+
+        # Set up job-scoped directory with symlink
+        base_dir = Path(output_dir)
+        self.base_dir = base_dir
+        self.output_dir = setup_job_directory(base_dir, job_id)
         self.config = config
         self.state = TrainingState(
+            job_id=job_id,
             capture_path=capture_path,
             config_path=config_path,
             instance_ip=instance_ip,
