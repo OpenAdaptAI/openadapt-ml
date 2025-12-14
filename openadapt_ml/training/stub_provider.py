@@ -80,6 +80,18 @@ class StubTrainingProvider:
         progress = self.current_epoch / self.epochs
         accuracy_boost = progress * 0.3  # Up to 30% improvement
 
+        # Use real screenshot if available, otherwise placeholder
+        sample_path = self.output_dir / "screenshots" / "sample.png"
+        if not sample_path.exists():
+            # Try to copy from common capture location
+            import shutil
+            capture_screenshots = Path.home() / "oa/src/openadapt-capture/turn-off-nightshift/screenshots"
+            if capture_screenshots.exists():
+                sample_path.parent.mkdir(parents=True, exist_ok=True)
+                for img in capture_screenshots.glob("*.png"):
+                    shutil.copy(img, sample_path)
+                    break  # Just copy the first one
+
         self.evaluations.append({
             "epoch": self.current_epoch,
             "sample_idx": 7,  # Match the real training sample
