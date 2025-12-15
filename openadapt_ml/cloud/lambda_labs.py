@@ -1630,6 +1630,7 @@ def main():
         last_epoch = -1
         auto_stop_loss = getattr(args, 'auto_stop_loss', 0.5)
         download_checkpoints = getattr(args, 'download_checkpoints', True)
+        step_stall_count = 0  # Track how many times step hasn't increased
 
         print(f"  Auto-stop loss threshold: {auto_stop_loss}")
         print(f"  Checkpoint download: {'enabled' if download_checkpoints else 'disabled'}")
@@ -1642,6 +1643,18 @@ def main():
                     print("  Downloading final checkpoints...")
                     if download_checkpoints:
                         download_checkpoints_from_instance(instance.ip, output_dir)
+
+                    # Update status with termination info before terminating
+                    termination_status = {
+                        "termination_status": "user_stop",
+                        "termination_message": "Training stopped by user via dashboard"
+                    }
+                    current_log = log_path.read_text() if log_path.exists() else "{}"
+                    import json as json_module
+                    current_data = json_module.loads(current_log)
+                    current_data.update(termination_status)
+                    log_path.write_text(json_module.dumps(current_data, indent=2))
+
                     print(f"  Terminating instance {instance.id}...")
                     client.terminate_instance(instance.id)
                     # Remove stop signal
@@ -1695,6 +1708,7 @@ def main():
                         if step > last_step:
                             print(f"  Epoch {epoch+1} | Step {step} | Loss: {loss:.4f} | Elapsed: {elapsed:.0f}s")
                             last_step = step
+                            step_stall_count = 0  # Reset stall counter when step increases
                             if not current_job_id:
                                 current_job_id = remote_job_id
 
@@ -1717,6 +1731,8 @@ def main():
                             state.cloud_instance_id = instance.id
                             state.setup_status = status.get("setup_status", "training")
                             state.setup_logs = status.get("setup_logs", [])
+                            state.termination_status = status.get("termination_status", "")
+                            state.termination_message = status.get("termination_message", "")
 
                             config = TrainingConfig(
                                 num_train_epochs=status.get("total_epochs", 5),
@@ -1740,9 +1756,36 @@ def main():
                                 print("  Downloading final checkpoints...")
                                 if download_checkpoints:
                                     download_checkpoints_from_instance(instance.ip, output_dir)
+
+                                # Update status with termination info
+                                status["termination_status"] = "auto_low_loss"
+                                status["termination_message"] = f"Training auto-stopped: loss {loss:.4f} < threshold {auto_stop_loss}"
+                                log_path.write_text(json.dumps(status, indent=2))
+
                                 print(f"  Auto-terminating instance {instance.id}...")
                                 client.terminate_instance(instance.id)
                                 print("  Training completed (auto-stopped)!")
+                                break
+                        else:
+                            # Step didn't increase - check if training is complete
+                            step_stall_count += 1
+                            total_epochs = status.get("total_epochs", 5)
+
+                            # If on last epoch and step hasn't increased for 3 polls, training is complete
+                            if epoch >= total_epochs - 1 and step_stall_count >= 3:
+                                print(f"\n  Training complete (epoch {epoch+1}/{total_epochs}, step stopped increasing)")
+                                print("  Downloading final checkpoints...")
+                                if download_checkpoints:
+                                    download_checkpoints_from_instance(instance.ip, output_dir)
+
+                                # Update status with termination info
+                                status["termination_status"] = "auto_complete"
+                                status["termination_message"] = f"Training completed successfully ({epoch+1}/{total_epochs} epochs)"
+                                log_path.write_text(json.dumps(status, indent=2))
+
+                                print(f"  Terminating instance {instance.id}...")
+                                client.terminate_instance(instance.id)
+                                print("  Instance terminated.")
                                 break
 
                     else:

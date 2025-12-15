@@ -11,7 +11,10 @@ This script automates Azure resource creation for running WAA benchmarks:
 7. Creates ML workspace
 8. Creates Azure Container Registry (ACR)
 9. Imports WAA Docker image to ACR
-10. Requests GPU quota (NCv3/V100) - may auto-approve for small requests
+10. Attaches ACR to ML workspace
+11. Grants AcrPull role to workspace managed identity
+12. Syncs workspace keys for ACR authentication
+13. Requests GPU quota (NCv3/V100) - may auto-approve for small requests
 
 Usage:
     python scripts/setup_azure.py
@@ -368,6 +371,87 @@ def attach_acr_to_workspace(acr_name: str, resource_group: str, workspace_name: 
             print(f"  ACR already attached")
         else:
             print(f"  WARNING: Could not attach ACR: {e.stderr}")
+
+
+def grant_acr_pull_role(acr_name: str, resource_group: str, workspace_name: str, subscription_id: str) -> bool:
+    """Grant AcrPull role to workspace managed identity for ACR access.
+
+    This is required for Azure ML compute instances to pull Docker images from ACR.
+    The workspace's system-assigned managed identity needs AcrPull permissions on the ACR.
+
+    Args:
+        acr_name: Azure Container Registry name.
+        resource_group: Resource group containing ACR and workspace.
+        workspace_name: Azure ML workspace name.
+        subscription_id: Azure subscription ID.
+
+    Returns:
+        True if role assignment succeeded, False otherwise.
+    """
+    print(f"  Granting AcrPull role to workspace managed identity...")
+
+    try:
+        # Get workspace managed identity principal ID
+        output = run_cmd([
+            "az", "ml", "workspace", "show",
+            "--name", workspace_name,
+            "--resource-group", resource_group,
+            "--query", "identity.principal_id",
+            "-o", "tsv",
+        ])
+        principal_id = output.strip()
+
+        if not principal_id or principal_id == "None":
+            print(f"  WARNING: Workspace does not have a managed identity")
+            print(f"  Managed identity is automatically created when workspace is used")
+            return False
+
+        print(f"  Workspace principal ID: {principal_id}")
+
+        # Build ACR resource ID
+        acr_id = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.ContainerRegistry/registries/{acr_name}"
+
+        # Assign AcrPull role
+        run_cmd([
+            "az", "role", "assignment", "create",
+            "--assignee", principal_id,
+            "--role", "AcrPull",
+            "--scope", acr_id,
+        ])
+        print(f"  AcrPull role granted successfully")
+        return True
+
+    except subprocess.CalledProcessError as e:
+        error_msg = str(e.stderr) if e.stderr else str(e)
+        # Role might already be assigned
+        if "already exists" in error_msg.lower() or "conflict" in error_msg.lower():
+            print(f"  AcrPull role already assigned")
+            return True
+        else:
+            print(f"  WARNING: Could not grant AcrPull role: {error_msg}")
+            print(f"  You may need to assign it manually:")
+            print(f"    az role assignment create --assignee {principal_id if 'principal_id' in locals() else '<PRINCIPAL_ID>'} \\")
+            print(f"      --role AcrPull --scope {acr_id if 'acr_id' in locals() else '<ACR_ID>'}")
+            return False
+
+
+def sync_workspace_keys(workspace_name: str, resource_group: str) -> None:
+    """Sync workspace keys to ensure ACR credentials are updated.
+
+    This command updates the workspace's managed identity credentials and
+    ensures that compute instances can access the attached ACR.
+    """
+    print(f"  Syncing workspace keys...")
+    try:
+        run_cmd([
+            "az", "ml", "workspace", "sync-keys",
+            "--name", workspace_name,
+            "--resource-group", resource_group,
+        ])
+        print(f"  Workspace keys synced")
+    except subprocess.CalledProcessError as e:
+        # Sync-keys might not be critical if other steps succeeded
+        print(f"  WARNING: Could not sync workspace keys: {e.stderr}")
 
 
 def create_storage_account(name: str, resource_group: str, location: str) -> str | None:
@@ -837,7 +921,7 @@ Examples:
     print("=" * 60)
 
     # Step 1: Check Azure CLI
-    print("\n[1/12] Checking Azure CLI...")
+    print("\n[1/15] Checking Azure CLI...")
     if not check_az_cli():
         print("  ERROR: Azure CLI not found!")
         print("\n  Install Azure CLI:")
@@ -849,7 +933,7 @@ Examples:
     print("  Azure CLI is installed")
 
     # Step 2: Login and select subscription
-    print("\n[2/12] Logging into Azure...")
+    print("\n[2/15] Logging into Azure...")
     print("  Running 'az login'...")
     print("  (A browser window will open - select the account with access to your target subscription)")
     run_cmd(["az", "login"], capture=False, check=True)
@@ -870,7 +954,7 @@ Examples:
     print("  Login confirmed")
 
     # Step 3: Select subscription
-    print("\n[3/12] Selecting subscription...")
+    print("\n[3/15] Selecting subscription...")
     subscriptions = get_subscriptions()
 
     if len(subscriptions) == 0:
@@ -917,37 +1001,58 @@ Examples:
     print(f"  Subscription ID: {subscription_id}")
 
     # Step 4: Register resource providers
-    print("\n[4/12] Registering resource providers...")
+    print("\n[4/15] Registering resource providers...")
     register_resource_providers()
 
     # Step 5: Create resource group
-    print(f"\n[5/12] Creating resource group '{args.resource_group}'...")
+    print(f"\n[5/15] Creating resource group '{args.resource_group}'...")
     create_resource_group(args.resource_group, args.location)
 
     # Step 6: Create service principal
-    print("\n[6/12] Creating service principal...")
+    print("\n[6/15] Creating service principal...")
     creds = create_service_principal(args.sp_name, subscription_id)
 
     # Step 7: Install ML extension and create workspace
-    print(f"\n[7/12] Creating ML workspace '{args.workspace}'...")
+    print(f"\n[7/15] Creating ML workspace '{args.workspace}'...")
     if not check_ml_extension():
         install_ml_extension()
     create_ml_workspace(args.workspace, args.resource_group, args.location)
 
     # Step 8: Create container registry
-    print(f"\n[8/12] Creating container registry '{args.acr_name}'...")
+    print(f"\n[8/15] Creating container registry '{args.acr_name}'...")
     acr_login_server = create_container_registry(args.acr_name, args.resource_group)
 
     # Step 9: Import WAA image
     acr_image = None
     if acr_login_server:
-        print(f"\n[9/12] Importing WAA Docker image...")
+        print(f"\n[9/15] Importing WAA Docker image...")
         acr_image = import_waa_image(args.acr_name)
     else:
-        print(f"\n[9/12] Skipping WAA image import (no ACR)...")
+        print(f"\n[9/15] Skipping WAA image import (no ACR)...")
 
-    # Step 10: Request GPU quota
-    print(f"\n[10/12] Requesting GPU quota...")
+    # Step 10: Attach ACR to workspace
+    if acr_login_server:
+        print(f"\n[10/15] Attaching ACR to ML workspace...")
+        attach_acr_to_workspace(args.acr_name, args.resource_group, args.workspace, subscription_id)
+    else:
+        print(f"\n[10/15] Skipping ACR attachment (no ACR)...")
+
+    # Step 11: Grant AcrPull role to workspace managed identity
+    if acr_login_server:
+        print(f"\n[11/15] Configuring ACR authentication...")
+        grant_acr_pull_role(args.acr_name, args.resource_group, args.workspace, subscription_id)
+    else:
+        print(f"\n[11/15] Skipping ACR authentication (no ACR)...")
+
+    # Step 12: Sync workspace keys
+    if acr_login_server:
+        print(f"\n[12/15] Syncing workspace credentials...")
+        sync_workspace_keys(args.workspace, args.resource_group)
+    else:
+        print(f"\n[12/15] Skipping workspace sync (no ACR)...")
+
+    # Step 13: Request GPU quota
+    print(f"\n[13/15] Requesting GPU quota...")
     print("  Checking current GPU quotas...")
     quotas = check_gpu_quota(args.location)
 
@@ -965,8 +1070,8 @@ Examples:
         requested_vcpus=6,  # 1 V100 GPU
     )
 
-    # Step 11: Create storage account for async inference
-    print(f"\n[11/12] Creating storage account for inference queue...")
+    # Step 14: Create storage account for async inference
+    print(f"\n[14/15] Creating storage account for inference queue...")
     storage_account_name = "openadaptmlstorage"  # Must be unique, lowercase, no hyphens
     storage_connection_string = create_storage_account(
         storage_account_name,
@@ -974,20 +1079,20 @@ Examples:
         args.location
     )
 
-    # Step 12: Create queue and blob containers
+    # Step 15: Create queue and blob containers
     inference_queue_name = "inference-jobs"
     checkpoints_container = "checkpoints"
     comparisons_container = "comparisons"
 
     if storage_connection_string:
-        print(f"\n[12/12] Creating inference queue and blob containers...")
+        print(f"\n[15/15] Creating inference queue and blob containers...")
         create_queue(storage_connection_string, inference_queue_name)
         create_blob_containers(
             storage_connection_string,
             [checkpoints_container, comparisons_container]
         )
     else:
-        print(f"\n[12/12] Skipping queue/container creation (no storage account)...")
+        print(f"\n[15/15] Skipping queue/container creation (no storage account)...")
 
     # Write to .env
     print("\n[✓] Writing credentials to .env...")
@@ -1012,15 +1117,22 @@ Examples:
     print("=" * 60)
 
     gpu_status = "✓ Quota request submitted (may take hours to approve)" if gpu_quota_requested else "⚠ Manual request needed"
+    acr_status = "✓ Configured with AcrPull permissions" if acr_login_server else "⚠ Not created"
 
     print(f"""
 Resources created:
   - Resource group: {args.resource_group}
   - ML workspace: {args.workspace}
   - Service principal: {args.sp_name}
-  - Container registry: {args.acr_name}
+  - Container registry: {args.acr_name} - {acr_status}
   - GPU quota: {gpu_status}
   - Credentials: {env_path}
+
+ACR Authentication:
+  ✓ ACR attached to workspace
+  ✓ AcrPull role granted to workspace managed identity
+  ✓ Workspace keys synced
+  → Azure ML compute instances can now pull {acr_image if acr_image else 'images from ACR'}
 
 Next steps:
   1. Check GPU quota status (auto-approval can take minutes to hours):

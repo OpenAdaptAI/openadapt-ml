@@ -48,13 +48,15 @@ def main() -> None:
         adapter = ApiVLMAdapter(provider="openai")
     policy = AgentPolicy(adapter)
 
-    action, thought = policy.predict_action_from_sample(sample)
+    action, thought, state, raw_text = policy.predict_action_from_sample(sample)
     print("Raw sample messages:")
     for m in sample["messages"]:
         print(f"[{m['role']}] {m['content']}")
 
     print("\nPredicted action:", action)
     print("Thought:", thought)
+    print("State:", state)
+    print("Raw output:", raw_text)
 
 if __name__ == "__main__":
     main()

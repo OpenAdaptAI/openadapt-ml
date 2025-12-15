@@ -53,6 +53,59 @@ def get_current_output_dir() -> Path:
     return TRAINING_OUTPUT
 
 
+def _regenerate_viewer_if_possible(output_dir: Path) -> bool:
+    """Regenerate viewer.html if comparison data exists.
+
+    Returns True if viewer was regenerated, False otherwise.
+    """
+    from openadapt_ml.training.trainer import _enhance_comparison_to_unified_viewer
+
+    # Look for base comparison file
+    base_file = output_dir / "comparison.html"
+    if not base_file.exists():
+        # Try to find any comparison HTML
+        comparison_files = list(output_dir.glob("*comparison*.html"))
+        if comparison_files:
+            base_file = comparison_files[0]
+        else:
+            return False
+
+    # Load predictions from checkpoint files
+    predictions_by_checkpoint = {"None": []}
+    for pred_file in output_dir.glob("predictions_*.json"):
+        checkpoint_name = pred_file.stem.replace("predictions_", "")
+        if "epoch" in checkpoint_name:
+            display_name = checkpoint_name.replace("epoch", "Epoch ").replace("_", " ").title()
+        elif checkpoint_name == "preview":
+            display_name = "Preview"
+        else:
+            display_name = checkpoint_name.title()
+
+        try:
+            with open(pred_file) as f:
+                predictions_by_checkpoint[display_name] = json.load(f)
+        except json.JSONDecodeError:
+            pass
+
+    # Get capture info
+    capture_id = "capture"
+    goal = "Complete the recorded workflow"
+
+    try:
+        _enhance_comparison_to_unified_viewer(
+            base_file,
+            predictions_by_checkpoint,
+            output_dir / "viewer.html",
+            capture_id,
+            goal,
+        )
+        print(f"Regenerated viewer: {output_dir / 'viewer.html'}")
+        return True
+    except Exception as e:
+        print(f"Could not regenerate viewer: {e}")
+        return False
+
+
 def detect_device() -> str:
     """Detect available compute device."""
     try:
@@ -266,13 +319,29 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
-    """Start local web server for dashboard."""
+    """Start local web server for dashboard.
+
+    Automatically regenerates dashboard and viewer before serving to ensure
+    the latest code and data are reflected.
+    """
+    from openadapt_ml.training.trainer import regenerate_local_dashboard
+
     port = args.port
     current_dir = get_current_output_dir()
 
     if not current_dir.exists():
         print(f"Error: {current_dir} not found. Run training first.")
         return 1
+
+    # Regenerate dashboard and viewer with latest code before serving
+    if not args.no_regenerate:
+        print("Regenerating dashboard and viewer...")
+        try:
+            regenerate_local_dashboard(str(current_dir))
+            # Also regenerate viewer if comparison data exists
+            _regenerate_viewer_if_possible(current_dir)
+        except Exception as e:
+            print(f"Warning: Could not regenerate: {e}")
 
     # Serve from the current job directory
     os.chdir(current_dir)
@@ -341,10 +410,17 @@ def cmd_viewer(args: argparse.Namespace) -> int:
         print(f"  Regenerated: dashboard.html")
 
     # Find comparison HTML to enhance
+    # Try epoch-specific files first, then fall back to generic comparison.html
     comparison_files = list(current_dir.glob("comparison_epoch*.html"))
+    base_file = None
     if comparison_files:
         # Use the latest epoch comparison
         base_file = sorted(comparison_files)[-1]
+    elif (current_dir / "comparison.html").exists():
+        base_file = current_dir / "comparison.html"
+
+    if base_file:
+        print(f"  Using base file: {base_file.name}")
 
         # Load all prediction files
         predictions_by_checkpoint = {"None": []}
@@ -360,14 +436,28 @@ def cmd_viewer(args: argparse.Namespace) -> int:
 
             try:
                 with open(pred_file) as f:
-                    predictions_by_checkpoint[display_name] = json.load(f)
+                    data = json.load(f)
+                    # Handle predictions JSON structure
+                    if isinstance(data, dict) and "predictions" in data:
+                        predictions_by_checkpoint[display_name] = data["predictions"]
+                    else:
+                        predictions_by_checkpoint[display_name] = data
                 print(f"  Loaded predictions from {pred_file.name}")
             except json.JSONDecodeError:
                 print(f"  Warning: Could not parse {pred_file.name}")
 
-        # Get capture info
+        # Get capture info from training log
         capture_id = "capture"
         goal = "Complete the recorded workflow"
+        if log_file.exists():
+            try:
+                with open(log_file) as f:
+                    log_data = json.load(f)
+                capture_path = log_data.get("capture_path", "")
+                if capture_path:
+                    capture_id = Path(capture_path).name
+            except (json.JSONDecodeError, KeyError):
+                pass
 
         _enhance_comparison_to_unified_viewer(
             base_file,
@@ -376,8 +466,9 @@ def cmd_viewer(args: argparse.Namespace) -> int:
             capture_id,
             goal,
         )
-
-    print(f"\nGenerated: {current_dir / 'viewer.html'}")
+        print(f"\nGenerated: {current_dir / 'viewer.html'}")
+    else:
+        print("\nNo comparison.html found. Run comparison first or copy from capture directory.")
 
     if args.open:
         webbrowser.open(str(current_dir / "viewer.html"))
@@ -468,6 +559,8 @@ Examples:
     p_serve.add_argument("--port", type=int, default=8765, help="Port number")
     p_serve.add_argument("--open", action="store_true", help="Open in browser")
     p_serve.add_argument("--quiet", "-q", action="store_true", help="Suppress request logging")
+    p_serve.add_argument("--no-regenerate", action="store_true",
+                         help="Skip regenerating dashboard/viewer (serve existing files)")
     p_serve.set_defaults(func=cmd_serve)
 
     # viewer

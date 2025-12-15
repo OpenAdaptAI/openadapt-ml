@@ -113,6 +113,7 @@ class TrainingState:
     learning_rate: float = 0.0
     samples_seen: int = 0
     start_time: float = field(default_factory=time.time)
+    elapsed_time: float = 0.0  # For historical data loaded from JSON
     losses: List[Dict[str, Any]] = field(default_factory=list)
     evaluations: List[Dict[str, Any]] = field(default_factory=list)
     # Cloud info (optional)
@@ -125,6 +126,9 @@ class TrainingState:
     # Setup status tracking
     setup_status: str = ""  # e.g. "booting", "installing", "training", "complete"
     setup_logs: List[str] = field(default_factory=list)  # Setup progress messages
+    # Termination tracking
+    termination_status: str = ""  # e.g. "auto_low_loss", "auto_complete", "user_stop", "running"
+    termination_message: str = ""  # Human-readable termination reason
 
     def log_step(self, epoch: int, step: int, loss: float, lr: float = 0.0) -> None:
         """Log a training step."""
@@ -188,6 +192,9 @@ class TrainingState:
             "elapsed_time": time.time() - self.start_time,
             "losses": self.losses,
             "evaluations": self.evaluations,
+            # Termination tracking
+            "termination_status": self.termination_status,
+            "termination_message": self.termination_message,
         }
 
 
@@ -402,10 +409,55 @@ class TrainingLogger:
         dashboard_path.write_text(html)
 
 
+def _generate_termination_status_html(state: TrainingState, is_training_complete: bool) -> str:
+    """Generate HTML for termination status section."""
+    # Check if we have termination info
+    if state.termination_status:
+        # Map termination status to colors and icons
+        status_styles = {
+            "auto_complete": {"color": "#22c55e", "icon": "✓", "label": "Training Complete"},
+            "auto_low_loss": {"color": "#22c55e", "icon": "✓", "label": "Auto-Stopped (Low Loss)"},
+            "user_stop": {"color": "#f59e0b", "icon": "■", "label": "Stopped by User"},
+        }
+        style = status_styles.get(state.termination_status, {"color": "#22c55e", "icon": "✓", "label": "Complete"})
+
+        return f'''<div style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px; color: {style['color']};">
+                <span style="font-size: 1.2rem;">{style['icon']}</span>
+                <span style="font-weight: 600;">{style['label']}</span>
+            </div>
+            {f'<div style="font-size: 0.85rem; color: var(--text-muted); margin-left: 28px;">{state.termination_message}</div>' if state.termination_message else ''}
+        </div>'''
+    elif is_training_complete:
+        return '''<div style="display: flex; align-items: center; gap: 8px; color: #22c55e;">
+            <span style="font-size: 1.2rem;">✓</span>
+            <span style="font-weight: 600;">Training Complete</span>
+        </div>'''
+    else:
+        return '''<button id="stop-training-btn" onclick="stopTraining()" style="
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+        ">
+            <span style="font-size: 1.1rem;">■</span> Stop Training
+        </button>
+        <p id="stop-status" style="margin-top: 8px; font-size: 0.75rem; color: var(--text-muted);"></p>'''
+
+
 def generate_training_dashboard(state: TrainingState, config: TrainingConfig) -> str:
     """Generate an HTML dashboard for training visualization."""
     losses_json = json.dumps(state.losses)
-    elapsed = time.time() - state.start_time
+    # Use stored elapsed_time if available (historical data), otherwise calculate
+    elapsed = state.elapsed_time if state.elapsed_time > 0 else time.time() - state.start_time
     elapsed_str = f"{int(elapsed // 60)}m {int(elapsed % 60)}s"
 
     # Calculate stats
@@ -441,6 +493,8 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
         total_steps_estimate = steps_per_epoch * total_epochs
         remaining_steps = max(0, total_steps_estimate - len(state.losses))
         eta_seconds = remaining_steps * avg_step_time if avg_step_time > 0 else 0
+        # Check if training is complete (all steps done)
+        is_training_complete = remaining_steps == 0 and len(state.losses) > 0
     else:
         min_loss = avg_loss = recent_avg = avg_step_time = 0.0
         epoch_avg = {}
@@ -448,6 +502,7 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
         steps_per_epoch = 0
         total_steps_estimate = 0
         remaining_steps = 0
+        is_training_complete = False
 
     epoch_avg_json = json.dumps(list(epoch_avg.items()))
 
@@ -513,9 +568,9 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
             font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
-            padding: 24px;
+            min-height: 100vh;
         }}
-        .container {{ max-width: 1400px; margin: 0 auto; }}
+        .container {{ max-width: 1400px; margin: 0 auto; padding: 24px; }}
         header {{
             display: flex;
             justify-content: space-between;
@@ -911,9 +966,9 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
     </style>
 </head>
 <body>
-    <div class="container">
-        {_generate_shared_header_html("training", meta_html=f"Job: {state.job_id}")}
+    {_generate_shared_header_html("training", meta_html=f"Job: {state.job_id}")}
 
+    <div class="container">
         <header>
             <div>
                 <h1>Training Dashboard{f' <a href="{state.cloud_dashboard_url}" target="_blank" class="cloud-link cloud-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>{state.cloud_provider.title()} Cloud</a>' if state.cloud_dashboard_url else ''}</h1>
@@ -943,8 +998,8 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
         <div class="stats-grid">
             <div class="stat-card" id="card-epoch">
                 <div class="stat-label">Epoch Progress</div>
-                <div class="stat-value" id="stat-epoch">{state.epoch + 1} / {config.num_train_epochs}</div>
-                <div class="progress-bar"><div class="progress-fill" id="epoch-progress" style="width: {((state.epoch + 1) / config.num_train_epochs) * 100}%"></div></div>
+                <div class="stat-value" id="stat-epoch">{min(state.epoch + 1, config.num_train_epochs)} / {config.num_train_epochs}</div>
+                <div class="progress-bar"><div class="progress-fill" id="epoch-progress" style="width: {(min(state.epoch + 1, config.num_train_epochs) / config.num_train_epochs) * 100}%"></div></div>
             </div>
             <div class="stat-card" id="card-step">
                 <div class="stat-label">Steps</div>
@@ -973,8 +1028,13 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
             </div>
             <div class="stat-card eta-card">
                 <div class="stat-label">ETA</div>
-                <div class="stat-value" id="stat-eta">{f"{int(eta_seconds // 60)}m {int(eta_seconds % 60)}s" if eta_seconds > 0 else "calculating..."}</div>
+                <div class="stat-value" id="stat-eta">{f"{int(eta_seconds // 60)}m {int(eta_seconds % 60)}s" if eta_seconds > 0 else ("Complete" if is_training_complete else "calculating...")}</div>
                 <div class="stat-detail" id="eta-detail">{f"~{int(remaining_steps)} steps @ {avg_step_time:.1f}s/step" if remaining_steps > 0 else ""}</div>
+            </div>
+            <div class="stat-card" id="card-cost" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(220, 38, 38, 0.05)); border-color: rgba(239, 68, 68, 0.3);">
+                <div class="stat-label">Cloud Cost</div>
+                <div class="stat-value" id="stat-running-cost" style="color: #ef4444;">$0.00</div>
+                <div class="stat-detail" id="stat-est-total">Est. Total: $0.00</div>
             </div>
         </div>
 
@@ -1006,24 +1066,8 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
                 <div class="config-item"><span class="key">Max grad norm:</span> <span class="value">{config.max_grad_norm}</span></div>
                 <div class="config-item"><span class="key">Early stop:</span> <span class="value">{config.early_stop_loss}</span></div>
             </div>
-            <div class="stop-training-section" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color);">
-                <button id="stop-training-btn" onclick="stopTraining()" style="
-                    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-                    color: white;
-                    border: none;
-                    padding: 12px 24px;
-                    border-radius: 8px;
-                    font-size: 0.9rem;
-                    font-weight: 600;
-                    cursor: pointer;
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    transition: all 0.2s;
-                ">
-                    <span style="font-size: 1.1rem;">■</span> Stop Training
-                </button>
-                <p id="stop-status" style="margin-top: 8px; font-size: 0.75rem; color: var(--text-muted);"></p>
+            <div id="stop-training-section" class="stop-training-section" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color);">
+                {_generate_termination_status_html(state, is_training_complete)}
             </div>
         </div>
 
@@ -1042,6 +1086,56 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
         let lossChart, epochChart;
         let lastStep = {state.step};
         let lastLoss = {state.loss};
+
+        // Cloud cost tracking
+        const instanceType = '{state.instance_type}';
+        const COST_RATES = {{
+            'gpu_1x_a10': 0.75,      // Lambda Labs A10
+            'gpu_8x_a100': 1.29,     // Lambda Labs A100 (per GPU)
+            'a10': 0.75,             // Generic A10
+            'a100': 1.29,            // Generic A100
+        }};
+
+        function getHourlyRate(instanceType) {{
+            // Try exact match first
+            if (COST_RATES[instanceType.toLowerCase()]) {{
+                return COST_RATES[instanceType.toLowerCase()];
+            }}
+            // Try partial match
+            const typeStr = instanceType.toLowerCase();
+            if (typeStr.includes('a100')) return COST_RATES['a100'];
+            if (typeStr.includes('a10')) return COST_RATES['a10'];
+            // Default to A10 rate
+            return COST_RATES['a10'];
+        }}
+
+        function updateCostDisplay() {{
+            // Only show costs for actual cloud training (not stub/local)
+            if (!instanceType || instanceType === '' || instanceType === 'stub') {{
+                document.getElementById('card-cost').style.display = 'none';
+                return;
+            }}
+
+            const hourlyRate = getHourlyRate(instanceType);
+
+            // Calculate running cost based on elapsed time
+            const timeSinceSync = (Date.now() - lastSyncTime) / 1000;
+            const liveElapsed = baseElapsedTime + timeSinceSync;
+            const elapsedHours = liveElapsed / 3600;
+            const runningCost = elapsedHours * hourlyRate;
+
+            // Calculate estimated total cost
+            let estimatedTotal = runningCost;
+            if (etaSeconds > 0) {{
+                const totalTimeSeconds = liveElapsed + etaSeconds;
+                const totalHours = totalTimeSeconds / 3600;
+                estimatedTotal = totalHours * hourlyRate;
+            }}
+
+            // Update display
+            document.getElementById('stat-running-cost').textContent = `$${{runningCost.toFixed(2)}}`;
+            document.getElementById('stat-est-total').textContent = `Est. Total: $${{estimatedTotal.toFixed(2)}}`;
+        }}
 
         async function stopTraining() {{
             const btn = document.getElementById('stop-training-btn');
@@ -1174,8 +1268,14 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
         let etaSeconds = {eta_seconds};
         let avgStepTime = {avg_step_time};
         let remainingSteps = {remaining_steps};
+        let isTrainingComplete = {'true' if is_training_complete else 'false'};
 
         function updateElapsedDisplay() {{
+            // Don't update elapsed if training is complete
+            if (isTrainingComplete) {{
+                return;
+            }}
+
             // Calculate live elapsed: base time + time since last sync
             const timeSinceSync = (Date.now() - lastSyncTime) / 1000;
             const liveElapsed = baseElapsedTime + timeSinceSync;
@@ -1190,6 +1290,9 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
                 const etaSecs = Math.floor(liveEta % 60);
                 document.getElementById('stat-eta').textContent = `${{etaMins}}m ${{etaSecs}}s`;
             }}
+
+            // Update cost display
+            updateCostDisplay();
         }}
 
         function updateStatusIndicator() {{
@@ -1286,8 +1389,9 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
 
                     // Update stats
                     const totalEpochs = data.total_epochs || {config.num_train_epochs};
-                    document.getElementById('stat-epoch').textContent = `${{data.epoch + 1}} / ${{totalEpochs}}`;
-                    document.getElementById('epoch-progress').style.width = `${{((data.epoch + 1) / totalEpochs) * 100}}%`;
+                    const displayEpoch = Math.min(data.epoch + 1, totalEpochs);  // Cap at max
+                    document.getElementById('stat-epoch').textContent = `${{displayEpoch}} / ${{totalEpochs}}`;
+                    document.getElementById('epoch-progress').style.width = `${{(displayEpoch / totalEpochs) * 100}}%`;
                     document.getElementById('stat-step').textContent = data.step;
                     document.getElementById('stat-loss').textContent = data.loss.toFixed(4);
 
@@ -1337,9 +1441,24 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
                                 const etaSecs = Math.floor(etaSeconds % 60);
                                 document.getElementById('stat-eta').textContent = `${{etaMins}}m ${{etaSecs}}s`;
                                 document.getElementById('eta-detail').textContent = `~${{Math.round(remainingSteps)}} steps @ ${{avgStepTime.toFixed(1)}}s/step`;
-                            }} else {{
-                                document.getElementById('stat-eta').textContent = 'done';
+                            }} else if (data.losses.length > 0) {{
+                                // Training complete - stop elapsed timer and update UI
+                                isTrainingComplete = true;
+                                document.getElementById('stat-eta').textContent = 'Complete';
                                 document.getElementById('eta-detail').textContent = '';
+                                // Update cost display one final time
+                                updateCostDisplay();
+                                // Replace stop button with completion message
+                                const stopSection = document.getElementById('stop-training-section');
+                                if (stopSection) {{
+                                    stopSection.innerHTML = `<div style="display: flex; align-items: center; gap: 8px; color: #22c55e;">
+                                        <span style="font-size: 1.2rem;">✓</span>
+                                        <span style="font-weight: 600;">Training Complete</span>
+                                    </div>`;
+                                }}
+                            }} else {{
+                                // No data yet
+                                document.getElementById('stat-eta').textContent = 'calculating...';
                             }}
                         }}
 
@@ -1425,7 +1544,7 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
             const recentEvals = evaluations.slice(-9);
             gallery.innerHTML = recentEvals.map((ev, i) => {{
                 const statusClass = ev.correct ? 'correct' : 'incorrect';
-                const statusText = ev.correct ? '✓ Correct' : '✗ Off by ' + ev.distance.toFixed(0) + 'px';
+                const statusText = ev.correct ? '✓ Correct' : '✗ Off by ' + (ev.distance * 100).toFixed(1) + '%';
                 const humanX = (ev.human_action.x || 0).toFixed(3);
                 const humanY = (ev.human_action.y || 0).toFixed(3);
                 const predX = (ev.predicted_action.x || 0).toFixed(3);
@@ -1462,6 +1581,8 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
         }}
 
         initCharts();
+        updateCostDisplay();  // Initialize cost display
+        fetchAndUpdate();  // Initial fetch on page load
         setInterval(fetchAndUpdate, 3000);
         setInterval(updateElapsedDisplay, 1000);  // Update elapsed time every second
         setInterval(updateStatusIndicator, 1000);  // Update LIVE/STALE indicator every second
@@ -2490,14 +2611,6 @@ def _enhance_comparison_to_unified_viewer(
         meta_html=f"ID: {capture_id}"
     )
 
-    # Replace existing nav with unified header
-    html = re.sub(
-        r'<nav class="nav-bar"[^>]*>.*?</nav>\s*',
-        unified_header,
-        html,
-        flags=re.DOTALL
-    )
-
     # Remove any old viewer-controls div if it exists (from previous runs)
     html = re.sub(
         r'<div class="viewer-controls"[^>]*>.*?</div>\s*(?=<)',
@@ -2505,6 +2618,17 @@ def _enhance_comparison_to_unified_viewer(
         html,
         flags=re.DOTALL
     )
+
+    # Try to replace existing nav with unified header
+    nav_replaced = False
+    if re.search(r'<nav class="nav-bar"', html):
+        html = re.sub(
+            r'<nav class="nav-bar"[^>]*>.*?</nav>\s*',
+            unified_header,
+            html,
+            flags=re.DOTALL
+        )
+        nav_replaced = True
 
     # Remove the old <header> element - unified header already contains all info
     html = re.sub(
@@ -2514,16 +2638,14 @@ def _enhance_comparison_to_unified_viewer(
         flags=re.DOTALL
     )
 
-    # No separate dropdown controls needed - they're in the unified header
-    dropdown_controls = ''
-
-    # Insert after nav, before comparison-panel
-    html = re.sub(
-        r'(</nav>\s*)',
-        r'\1' + dropdown_controls,
-        html,
-        count=1
-    )
+    # If no nav was found/replaced, insert unified header after <body>
+    if not nav_replaced:
+        html = re.sub(
+            r'(<body[^>]*>)',
+            r'\1\n' + unified_header,
+            html,
+            count=1
+        )
 
     # 3. Replace the comparisonData with multi-checkpoint system
     # We need to modify the JavaScript to use our checkpoint system
@@ -2531,16 +2653,17 @@ def _enhance_comparison_to_unified_viewer(
     checkpoint_script = f'''
     <script>
     // Unified viewer: multi-checkpoint support
-    const predictionsByCheckpoint = {predictions_json};
-    const availableCaptures = {captures_json};
-    let currentCheckpoint = 'None';
+    // Use window. prefix for cross-script variable access
+    window.predictionsByCheckpoint = {predictions_json};
+    window.availableCaptures = {captures_json};
+    window.currentCheckpoint = 'None';
 
     // Initialize checkpoint dropdown
-    function initCheckpointDropdown() {{
+    window.initCheckpointDropdown = function() {{
         const select = document.getElementById('checkpoint-select');
         if (!select) return;
 
-        const checkpointNames = Object.keys(predictionsByCheckpoint);
+        const checkpointNames = Object.keys(window.predictionsByCheckpoint);
         checkpointNames.sort((a, b) => {{
             if (a === 'None') return -1;
             if (b === 'None') return 1;
@@ -2564,42 +2687,46 @@ def _enhance_comparison_to_unified_viewer(
             : checkpointNames.filter(n => n !== 'None').pop();
         if (latestCheckpoint) {{
             select.value = latestCheckpoint;
-            currentCheckpoint = latestCheckpoint;
-            applyCheckpointPredictions(latestCheckpoint);
+            window.currentCheckpoint = latestCheckpoint;
+            window.applyCheckpointPredictions(latestCheckpoint);
         }}
 
         select.addEventListener('change', (e) => {{
-            currentCheckpoint = e.target.value;
-            applyCheckpointPredictions(currentCheckpoint);
+            window.currentCheckpoint = e.target.value;
+            window.applyCheckpointPredictions(window.currentCheckpoint);
         }});
-    }}
+    }};
 
     // Apply predictions from selected checkpoint to comparisonData
-    function applyCheckpointPredictions(checkpointName) {{
-        const predictions = predictionsByCheckpoint[checkpointName] || [];
+    window.applyCheckpointPredictions = function(checkpointName) {{
+        const predictions = window.predictionsByCheckpoint[checkpointName] || [];
 
-        // Update comparisonData with new predictions
-        if (typeof comparisonData !== 'undefined') {{
-            comparisonData.forEach((item, i) => {{
+        // Update comparisonData with new predictions (access from window)
+        if (typeof window.comparisonData !== 'undefined') {{
+            window.comparisonData.forEach((item, i) => {{
                 const pred = predictions[i] || {{}};
                 item.predicted_action = pred.predicted_action || null;
                 item.match = pred.match !== undefined ? pred.match : null;
             }});
         }}
 
-        // Refresh display if updateComparison exists
-        if (typeof updateComparison === 'function' && typeof currentIndex !== 'undefined') {{
-            updateComparison(currentIndex);
+        // Refresh display if updateComparison exists (check both window and global scope)
+        const idx = typeof window.currentIndex !== 'undefined' ? window.currentIndex :
+                    (typeof currentIndex !== 'undefined' ? currentIndex : 0);
+        if (typeof window.updateComparison === 'function') {{
+            window.updateComparison(idx);
+        }} else if (typeof updateComparison === 'function') {{
+            updateComparison(idx);
         }}
 
         // Update metrics if setupMetricsSummary exists
-        if (typeof setupMetricsSummary === 'function') {{
-            setupMetricsSummary();
+        if (typeof window.setupMetricsSummary === 'function') {{
+            window.setupMetricsSummary();
         }}
-    }}
+    }};
 
     // Initialize on load
-    setTimeout(initCheckpointDropdown, 200);
+    setTimeout(window.initCheckpointDropdown, 200);
 
     // Smart auto-scroll: scroll while playing, but stop if user scrolls up
     (function() {{
@@ -2716,10 +2843,10 @@ def _add_static_nav_to_comparison(
         nav_links = _build_nav_links()
 
     # Build nav HTML with active state for current file
+    # NOTE: No "Dashboards:" label to match training dashboard nav
     current_file = comparison_path.name
     nav_html = '''
     <nav class="nav-bar" style="display:flex;gap:8px;padding:12px 16px;background:#12121a;border:1px solid rgba(255,255,255,0.06);border-radius:8px;margin-bottom:16px;flex-wrap:wrap;">
-        <span style="font-size:0.75rem;color:#888;margin-right:8px;align-self:center;">Dashboards:</span>
 '''
     for filename, label in nav_links:
         is_active = filename == current_file
@@ -2796,6 +2923,8 @@ def regenerate_local_dashboard(
         total_epochs=data.get("total_epochs", 5),
         instance_type=data.get("instance_type", ""),
         instance_ip=data.get("instance_ip", ""),
+        elapsed_time=data.get("elapsed_time", 0.0),
+        cloud_provider=data.get("cloud_provider", ""),
     )
     state.losses = data.get("losses", [])
     state.evaluations = data.get("evaluations", [])
@@ -3054,12 +3183,21 @@ def train_supervised(
     # Early stopping tracking
     consecutive_low_loss = 0
     early_stopped = False
+    user_stopped = False
 
     for epoch in range(config.num_train_epochs):
-        if early_stopped:
+        if early_stopped or user_stopped:
             break
 
         for _, batch in enumerate(dataloader):
+            # Check for stop signal from dashboard
+            stop_file = Path(config.output_dir) / "STOP_TRAINING"
+            if stop_file.exists():
+                print("Stop signal received from dashboard. Stopping training...")
+                user_stopped = True
+                stop_file.unlink()  # Remove signal file
+                break
+
             # Batch is a List[Dict[str, Any]] of SFT-style samples; adapter is
             # responsible for converting it into model inputs.
             samples: List[Dict[str, Any]] = batch

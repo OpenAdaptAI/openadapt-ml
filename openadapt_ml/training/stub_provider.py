@@ -71,6 +71,9 @@ class StubTrainingProvider:
         if self.current_step % self.steps_per_epoch == 0:
             self._generate_epoch_evaluation()
             self.current_epoch += 1
+            # Cap at max epochs for display
+            if self.current_epoch > self.epochs:
+                self.current_epoch = self.epochs
 
         return self.get_status()
 
@@ -185,7 +188,8 @@ class StubTrainingProvider:
             loss = status["loss"]
             epoch = status["epoch"]
             step = status["step"]
-            print(f"  Epoch {epoch+1}/{self.epochs} | Step {step} | Loss: {loss:.4f}")
+            display_epoch = min(epoch + 1, self.epochs)  # Cap at max for display
+            print(f"  Epoch {display_epoch}/{self.epochs} | Step {step} | Loss: {loss:.4f}")
 
             if callback:
                 callback(status)
