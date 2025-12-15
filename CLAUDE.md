@@ -381,6 +381,22 @@ az ml workspace sync-keys -n openadapt-ml -g openadapt-agents
 - Full model output (not truncated)
 - Filter/search evaluations by epoch or correctness
 
+### Viewer Code Consolidation
+**Status**: TODO - HIGH PRIORITY
+
+**Problem**: Viewer code is fragmented across multiple locations:
+1. `generate_training_dashboard()` - generates unified viewer template
+2. `_enhance_comparison_to_unified_viewer()` - injects checkpoint_script into comparison.html
+3. `comparison.html` from capture - has its own display logic
+
+This causes issues where changes don't propagate correctly.
+
+**Solution**: Create a single `generate_unified_viewer()` function that:
+- Takes comparison data as input
+- Generates a complete standalone viewer.html
+- Has all display logic in one place
+- Doesn't rely on injecting scripts into existing HTML
+
 ### README API Documentation
 **Status**: VERIFIED
 

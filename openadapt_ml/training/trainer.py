@@ -2747,6 +2747,44 @@ def _enhance_comparison_to_unified_viewer(
         window.comparisonData = comparisonData;
     }}
 
+    // Parse model output for SoM actions
+    window.parseModelOutput = function(rawOutput) {{
+        if (!rawOutput) return {{ html: '<em style="color:var(--text-muted);">No prediction</em>' }};
+
+        // Try to extract SoM actions: CLICK([N]), TYPE([N], "text"), TYPE("text")
+        const clickSomMatch = rawOutput.match(/CLICK\\s*\\(\\s*\\[\\s*(\\d+)\\s*\\]\\s*\\)/);
+        const typeSomMatch = rawOutput.match(/TYPE\\s*\\(\\s*\\[\\s*(\\d+)\\s*\\]\\s*,\\s*["']([^"']*)["']\\s*\\)/);
+        const typeSimpleMatch = rawOutput.match(/TYPE\\s*\\(\\s*["']([^"']*)["']\\s*\\)/);
+        const clickCoordMatch = rawOutput.match(/CLICK\\s*\\(\\s*x\\s*=\\s*([\\d.]+)\\s*,\\s*y\\s*=\\s*([\\d.]+)\\s*\\)/);
+
+        let html = '';
+
+        if (clickSomMatch) {{
+            html = `<div style="font-weight:600;color:#00d4aa;">CLICK([${{clickSomMatch[1]}}])</div>`;
+        }} else if (typeSomMatch) {{
+            html = `<div style="font-weight:600;color:#00d4aa;">TYPE([${{typeSomMatch[1]}}], "${{typeSomMatch[2]}}")</div>`;
+        }} else if (typeSimpleMatch) {{
+            html = `<div style="font-weight:600;color:#00d4aa;">TYPE("${{typeSimpleMatch[1]}}")</div>`;
+        }} else if (clickCoordMatch) {{
+            html = `<div style="font-weight:600;color:#00d4aa;">CLICK(x=${{clickCoordMatch[1]}}, y=${{clickCoordMatch[2]}})</div>`;
+        }} else {{
+            // No structured action - show truncated output
+            const truncated = rawOutput.replace(/\\n/g, ' ').substring(0, 150);
+            html = `<div style="font-size:0.85rem;color:var(--text-muted);max-height:60px;overflow:hidden;">${{truncated}}${{rawOutput.length > 150 ? '...' : ''}}</div>`;
+        }}
+
+        return {{ html }};
+    }};
+
+    // Override prediction display in comparison viewer
+    window.formatPrediction = function(pred) {{
+        if (!pred) return '<em style="color:var(--text-muted);">No prediction</em>';
+        if (pred.x !== undefined) {{
+            return `<div>Type: ${{pred.type || 'click'}}</div><div>Position: (${{(pred.x * 100).toFixed(1)}}%, ${{(pred.y * 100).toFixed(1)}}%)</div>`;
+        }}
+        return window.parseModelOutput(pred.raw_output || JSON.stringify(pred)).html;
+    }};
+
     // Use window. prefix for cross-script variable access
     window.predictionsByCheckpoint = {predictions_json};
     window.availableCaptures = {captures_json};
@@ -2812,6 +2850,18 @@ def _enhance_comparison_to_unified_viewer(
         }} else if (typeof updateComparison === 'function') {{
             updateComparison(idx);
         }}
+
+        // Reformat prediction display after original updateComparison runs
+        setTimeout(() => {{
+            const predEl = document.getElementById('predicted-action') ||
+                          document.querySelector('.action-box.predicted .action-details');
+            if (predEl && window.comparisonData && window.comparisonData[idx]) {{
+                const pred = window.comparisonData[idx].predicted_action;
+                if (pred) {{
+                    predEl.innerHTML = window.formatPrediction(pred);
+                }}
+            }}
+        }}, 50);
 
         // Update metrics if setupMetricsSummary exists
         if (typeof window.setupMetricsSummary === 'function') {{
