@@ -217,10 +217,9 @@ def _get_shared_header_css() -> str:
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 12px 20px;
-        background: linear-gradient(180deg, rgba(18,18,26,0.95) 0%, rgba(26,26,36,0.95) 100%);
-        border: 1px solid rgba(255,255,255,0.08);
-        border-radius: 12px;
+        padding: 12px 24px;
+        background: linear-gradient(180deg, rgba(18,18,26,0.98) 0%, rgba(26,26,36,0.98) 100%);
+        border-bottom: 1px solid rgba(255,255,255,0.08);
         margin-bottom: 20px;
         gap: 16px;
         flex-wrap: wrap;
@@ -973,9 +972,7 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
             <div>
                 <h1>Training Dashboard{f' <a href="{state.cloud_dashboard_url}" target="_blank" class="cloud-link cloud-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>{state.cloud_provider.title()} Cloud</a>' if state.cloud_dashboard_url else ''}</h1>
                 <div class="job-info" id="job-info">
-                    <span class="job-id">Job: {state.job_id}</span>
-                    <span class="job-host">{state.hostname or 'local'}{(' @ ' + state.instance_ip) if state.instance_ip else ''}</span>
-                    {f'<span class="job-config">{state.config_path}</span>' if state.config_path else ''}
+                    <span class="job-host">{state.hostname or 'stub-local'} @ {state.instance_ip or '127.0.0.1'}</span>
                     {f'<span class="job-config">{state.instance_type}</span>' if state.instance_type else ''}
                 </div>
             </div>
