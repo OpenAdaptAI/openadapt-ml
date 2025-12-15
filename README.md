@@ -429,7 +429,29 @@ if candidates:
     print(f"Found at {best.centroid} with {best.confidence:.0%} confidence")
 ```
 
-### 6.2 Available Grounders
+### 6.2 Set-of-Marks (SoM) Support
+
+The grounding module includes functions for extracting all UI elements and overlaying numbered labels (Set-of-Marks):
+
+```python
+from openadapt_ml.grounding import extract_ui_elements, overlay_element_marks
+
+# Extract all interactive elements
+elements = extract_ui_elements(screenshot)
+# Returns: [{"id": 1, "label": "Login button", "bbox": [x1,y1,x2,y2], ...}, ...]
+
+# Overlay numbered labels on screenshot
+marked_screenshot = overlay_element_marks(screenshot, elements, style="compact")
+marked_screenshot.save("screenshot_with_marks.png")
+```
+
+This enables element-based actions using indices instead of coordinates:
+- Old: `CLICK(x=0.487, y=0.328)` - coordinate-based, brittle
+- New: `CLICK([1])` - element-based, robust
+
+See `docs/gemini_grounding.md` for full documentation and `examples/test_gemini_grounding.py` for a complete example.
+
+### 6.3 Available Grounders
 
 | Grounder | Description | Latency | Use Case |
 |----------|-------------|---------|----------|
@@ -437,7 +459,7 @@ if candidates:
 | `OracleGrounder` | Ground-truth bboxes | ~0ms | Evaluation |
 | `DetectorGrounder` | Generic wrapper with backend selection | varies | Flexible |
 
-### 6.3 Grounding Evaluation
+### 6.4 Grounding Evaluation
 
 The `openadapt_ml.evals.grounding` module provides metrics for evaluating grounding accuracy:
 
@@ -686,21 +708,34 @@ uv run python -m openadapt_ml.cloud.lambda_labs terminate <instance_id>
 
 The training process generates:
 - **`training_output/dashboard.html`** - Real-time training dashboard with loss curves
-- **`training_output/comparison_epochN.html`** - Model predictions at each epoch
+- **`training_output/viewer.html`** - Unified viewer for comparing human vs model predictions
 
-Both dashboards have navigation links to switch between views.
+Use the navigation tabs to switch between Training and Viewer.
+
+**To serve the dashboard:**
+```bash
+uv run python -m openadapt_ml.cloud.local serve --port 8080 --open
+```
 
 **Training Dashboard:**
 
-![Training Dashboard](docs/images/training-dashboard.png)
+![Training Dashboard - Top](docs/images/dashboard/training_top.png)
 
-*Shows training progress, loss curves, and key metrics. Use the navigation tabs to switch between Training and Viewer.*
+*Shows training progress, loss curves, stats (current loss, min loss, avg step time), and ETA.*
+
+![Training Dashboard - Bottom](docs/images/dashboard/training_bottom.png)
+
+*Training configuration and evaluation samples with visual overlays showing human (green) vs predicted (purple) click positions.*
 
 **Comparison Viewer:**
 
-![Comparison Viewer](docs/images/viewer-comparison.png)
+![Viewer - Top](docs/images/dashboard/viewer_top.png)
 
-*Compare human actions vs model predictions frame-by-frame. Shows match/mismatch status, click overlays, and full event timeline.*
+*Compare human actions vs model predictions frame-by-frame. Shows action type, model reasoning output, and match/mismatch status.*
+
+![Viewer - Bottom](docs/images/dashboard/viewer_bottom.png)
+
+*Event timeline, event details, transcript, and video playback controls.*
 
 **Keyboard shortcuts (Viewer):**
 - `Space` - Play/pause

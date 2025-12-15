@@ -24,7 +24,6 @@ We have exactly **2 pages**:
 Nav is **hardcoded** in both files:
 ```html
 <nav class="nav-bar">
-    <span class="nav-label">Dashboards:</span>
     <a href="dashboard.html" class="nav-link">Training</a>
     <a href="viewer.html" class="nav-link">Viewer</a>
 </nav>
