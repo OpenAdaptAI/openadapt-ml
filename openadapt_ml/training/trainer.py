@@ -1166,6 +1166,35 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
             }}
         }}
 
+        function updateTerminationStatus(data) {{
+            const stopSection = document.getElementById('stop-training-section');
+            if (!stopSection) return;
+
+            const termStatus = data.termination_status || 'auto_complete';
+            const termMessage = data.termination_message || '';
+
+            const statusStyles = {{
+                'auto_complete': {{ color: '#22c55e', icon: '✓', label: 'Training Complete' }},
+                'auto_low_loss': {{ color: '#22c55e', icon: '✓', label: 'Auto-Stopped (Low Loss)' }},
+                'user_stop': {{ color: '#f59e0b', icon: '■', label: 'Stopped by User' }},
+            }};
+
+            const style = statusStyles[termStatus] || statusStyles['auto_complete'];
+
+            let html = `<div style="display: flex; flex-direction: column; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px; color: ${{style.color}};">
+                    <span style="font-size: 1.2rem;">${{style.icon}}</span>
+                    <span style="font-weight: 600;">${{style.label}}</span>
+                </div>`;
+
+            if (termMessage) {{
+                html += `<div style="font-size: 0.85rem; color: var(--text-muted); margin-left: 28px;">${{termMessage}}</div>`;
+            }}
+
+            html += '</div>';
+            stopSection.innerHTML = html;
+        }}
+
         function initCharts() {{
             const lossCtx = document.getElementById('lossChart').getContext('2d');
             lossChart = new Chart(lossCtx, {{
@@ -1377,6 +1406,15 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
                     lastSyncTime = Date.now();
                 }}
 
+                // Check for termination status (handles completed/stopped states)
+                if (data.termination_status && !isTrainingComplete) {{
+                    isTrainingComplete = true;
+                    document.getElementById('stat-eta').textContent = 'Complete';
+                    document.getElementById('eta-detail').textContent = '';
+                    updateTerminationStatus(data);
+                    updateCostDisplay();
+                }}
+
                 // Only update other stats if step changed
                 if (data.step !== lastStep) {{
                     // Update with animation
@@ -1445,14 +1483,8 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
                                 document.getElementById('eta-detail').textContent = '';
                                 // Update cost display one final time
                                 updateCostDisplay();
-                                // Replace stop button with completion message
-                                const stopSection = document.getElementById('stop-training-section');
-                                if (stopSection) {{
-                                    stopSection.innerHTML = `<div style="display: flex; align-items: center; gap: 8px; color: #22c55e;">
-                                        <span style="font-size: 1.2rem;">✓</span>
-                                        <span style="font-weight: 600;">Training Complete</span>
-                                    </div>`;
-                                }}
+                                // Replace stop button with termination status
+                                updateTerminationStatus(data);
                             }} else {{
                                 // No data yet
                                 document.getElementById('stat-eta').textContent = 'calculating...';

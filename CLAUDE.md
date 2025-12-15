@@ -382,15 +382,12 @@ az ml workspace sync-keys -n openadapt-ml -g openadapt-agents
 - Filter/search evaluations by epoch or correctness
 
 ### README API Documentation
-**Status**: TODO - needs review
+**Status**: VERIFIED
 
-The README §7.1 API-backed adapters section has placeholder model names that should be updated:
-- "Claude Sonnet 4.5" → should reflect actual model (e.g., claude-3-5-sonnet, claude-3-opus)
-- "GPT-5.1" → should reflect actual model (e.g., gpt-4-turbo, gpt-4o)
+The README §7.1 API-backed adapters section uses correct model names:
+- "Claude Sonnet 4.5" → `claude-sonnet-4-5-20250929` in api_adapter.py ✓
+- "GPT-5.1" → `gpt-5.1` in api_adapter.py ✓
 
-Check `openadapt_ml/models/api_adapter.py` for actual model names used and update README to match.
-
-Also verify:
-- API key environment variable names are correct
-- Example code snippets work
-- Backend flag options in CLI match actual implementations
+Verified:
+- API key environment variable names: ANTHROPIC_API_KEY, OPENAI_API_KEY ✓
+- Backend flag options: `claude`, `openai` in CLI ✓
