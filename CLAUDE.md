@@ -333,21 +333,20 @@ az ml workspace sync-keys -n openadapt-ml -g openadapt-agents
 **Priority**: Low - current dashboard shows key metrics (loss, epoch, step). Terminal output mainly useful for debugging.
 
 ### Early Termination Controls
-**Status**: TODO - HIGH PRIORITY
+**Status**: DONE
 
 **Problem**: Training runs until completion even when loss is low enough. Wastes GPU credits ($0.75/hr for A10).
 
-**Requirements**:
-1. **Auto-termination**: Stop training when loss drops below threshold (e.g., 0.5 or configurable)
-2. **Dashboard button**: "Stop Training" button in dashboard UI that terminates Lambda instance
-3. **Checkpoint download**: Auto-download best checkpoint before termination
-4. **Cost awareness**: Show running cost and prompt user when approaching budget
+**Solution implemented**:
+1. **Auto-termination**: `early_stop_loss` and `early_stop_patience` in stub_provider.py
+2. **Dashboard button**: "Stop Training" button calls `/api/stop` endpoint
+3. **Stop signal**: Creates `STOP_TRAINING` file that training loop checks
+4. **Termination status**: Dashboard shows termination reason (auto_complete, auto_low_loss, user_stop)
 
-**Implementation approach**:
-- Add `early_stop_loss` to training config (already exists but may not terminate instance)
-- Add terminate endpoint that dashboard can call
-- Modify Lambda monitor to download checkpoints on termination
-- Add "Stop Training" button to dashboard config section
+**Files changed**:
+- `openadapt_ml/cloud/local.py` - Added `/api/stop` POST endpoint
+- `openadapt_ml/training/stub_provider.py` - Added early stop logic, termination status
+- `openadapt_ml/training/trainer.py` - Added `updateTerminationStatus()` JS function
 
 ### Cloud Cost Estimation in Viewers
 **Status**: TODO
@@ -406,3 +405,23 @@ The README §7.1 API-backed adapters section uses correct model names:
 Verified:
 - API key environment variable names: ANTHROPIC_API_KEY, OPENAI_API_KEY ✓
 - Backend flag options: `claude`, `openai` in CLI ✓
+
+### Benchmark Viewer Integration
+**Status**: TODO - HIGH PRIORITY
+
+**Goal**: Integrate benchmark evaluation results (WAA, WebArena, OSWorld) into the unified viewer.
+
+**Design doc**: `docs/benchmark_viewer_integration.md`
+
+**Key features**:
+1. **Benchmarks tab**: Third tab alongside Training and Viewer
+2. **Task-level view**: List of benchmark tasks with pass/fail status
+3. **Step-by-step replay**: Same UI as Viewer tab for benchmark executions
+4. **Model comparison**: Side-by-side comparison of different models on same task
+5. **Aggregate metrics**: Success rate by domain, difficulty rankings
+
+**Implementation phases**:
+1. Data collection: Save screenshots during benchmark runs
+2. Viewer backend: `generate_benchmark_viewer()` function
+3. UI components: Summary dashboard, task list, replay
+4. Analysis: Failure clustering, regression detection
