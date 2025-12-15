@@ -12,6 +12,11 @@ from torch.utils.data import DataLoader, Dataset
 
 from openadapt_ml.models.base_adapter import BaseVLMAdapter
 from openadapt_ml.schemas.sessions import Episode
+from openadapt_ml.training.shared_ui import (
+    get_shared_header_css as _get_shared_header_css,
+    generate_shared_header_html as _generate_shared_header_html,
+    build_nav_links as _build_nav_links,
+)
 
 
 def setup_job_directory(base_dir: str | Path, job_id: str) -> Path:
@@ -198,149 +203,6 @@ class TrainingState:
         }
 
 
-# =============================================================================
-# SHARED DASHBOARD COMPONENTS
-# =============================================================================
-# These functions generate consistent UI components across all dashboards.
-# This ensures visual consistency and makes maintenance easier.
-# See CLAUDE.md "Shared Dashboard Components" section for patterns.
-# =============================================================================
-
-def _get_shared_header_css() -> str:
-    """Generate CSS for the shared dashboard header.
-
-    This CSS is used by both the Training Dashboard and the Viewer.
-    Any changes here will affect all dashboards consistently.
-    """
-    return '''
-    .unified-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 12px 24px;
-        background: linear-gradient(180deg, rgba(18,18,26,0.98) 0%, rgba(26,26,36,0.98) 100%);
-        border-bottom: 1px solid rgba(255,255,255,0.08);
-        margin-bottom: 20px;
-        gap: 16px;
-        flex-wrap: wrap;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    }
-    .unified-header .nav-tabs {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        background: rgba(0,0,0,0.3);
-        padding: 4px;
-        border-radius: 8px;
-    }
-    .unified-header .nav-tab {
-        padding: 8px 16px;
-        border-radius: 6px;
-        font-size: 0.85rem;
-        font-weight: 500;
-        text-decoration: none;
-        color: var(--text-secondary);
-        background: transparent;
-        border: none;
-        transition: all 0.2s;
-        cursor: pointer;
-    }
-    .unified-header .nav-tab:hover {
-        color: var(--text-primary);
-        background: rgba(255,255,255,0.05);
-    }
-    .unified-header .nav-tab.active {
-        color: var(--bg-primary);
-        background: var(--accent);
-        font-weight: 600;
-    }
-    .unified-header .controls-section {
-        display: flex;
-        align-items: center;
-        gap: 24px;
-        flex-wrap: wrap;
-    }
-    .unified-header .control-group {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    .unified-header .control-label {
-        font-size: 0.7rem;
-        color: var(--text-muted);
-        font-weight: 600;
-        letter-spacing: 0.5px;
-        text-transform: uppercase;
-    }
-    .unified-header select {
-        padding: 8px 32px 8px 12px;
-        border-radius: 8px;
-        font-size: 0.85rem;
-        background: rgba(0,0,0,0.4);
-        color: var(--text-primary);
-        border: 1px solid rgba(255,255,255,0.1);
-        cursor: pointer;
-        appearance: none;
-        background-image: url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%278%27%3E%3Cpath fill=%27%23888%27 d=%27M0 0l6 8 6-8z%27/%3E%3C/svg%3E');
-        background-repeat: no-repeat;
-        background-position: right 10px center;
-        transition: all 0.2s;
-    }
-    .unified-header select:hover {
-        border-color: var(--accent);
-        background-color: rgba(0,212,170,0.1);
-    }
-    .unified-header select:focus {
-        outline: none;
-        border-color: var(--accent);
-        box-shadow: 0 0 0 2px rgba(0,212,170,0.2);
-    }
-    .unified-header .header-meta {
-        font-size: 0.75rem;
-        color: var(--text-muted);
-        font-family: "SF Mono", Monaco, monospace;
-    }
-    '''
-
-
-def _generate_shared_header_html(
-    active_page: str,
-    controls_html: str = "",
-    meta_html: str = "",
-) -> str:
-    """Generate the shared header HTML.
-
-    Args:
-        active_page: Either "training" or "viewer" to highlight the active tab
-        controls_html: Optional HTML for control groups (dropdowns, etc.)
-        meta_html: Optional HTML for metadata display (job ID, capture ID, etc.)
-
-    Returns:
-        HTML string for the header
-    """
-    training_active = "active" if active_page == "training" else ""
-    viewer_active = "active" if active_page == "viewer" else ""
-
-    controls_section = ""
-    if controls_html or meta_html:
-        controls_section = f'''
-        <div class="controls-section">
-            {controls_html}
-            {f'<span class="header-meta">{meta_html}</span>' if meta_html else ''}
-        </div>
-        '''
-
-    return f'''
-    <div class="unified-header">
-        <div class="nav-tabs">
-            <a href="dashboard.html" class="nav-tab {training_active}">Training</a>
-            <a href="viewer.html" class="nav-tab {viewer_active}">Viewer</a>
-        </div>
-        {controls_section}
-    </div>
-    '''
-
-
 class TrainingLogger:
     """Logs training progress and generates visualization."""
 
@@ -378,6 +240,26 @@ class TrainingLogger:
             cloud_instance_id=cloud_instance_id,
         )
         self.log_file = self.output_dir / "training_log.json"
+        self.terminal_log_file = self.output_dir / "training.log"
+        self.terminal_log_handle = None
+
+    def _log_to_terminal(self, message: str):
+        """Write message to training.log file.
+
+        Args:
+            message: Message to log
+        """
+        from datetime import datetime
+
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_line = f"[{timestamp}] {message}"
+
+        # Open file on first write (line buffered)
+        if self.terminal_log_handle is None:
+            self.terminal_log_handle = open(self.terminal_log_file, "w", buffering=1)
+
+        self.terminal_log_handle.write(log_line + "\n")
+        self.terminal_log_handle.flush()
 
     def on_step(self, epoch: int, step: int, loss: float, lr: float = 0.0) -> None:
         """Called after each training step."""
@@ -395,6 +277,11 @@ class TrainingLogger:
         self._save_log()
         self._generate_dashboard()
         print(f"Training dashboard: {self.output_dir / 'dashboard.html'}")
+
+        # Close terminal log file
+        if self.terminal_log_handle:
+            self.terminal_log_handle.close()
+            self.terminal_log_handle = None
 
     def _save_log(self) -> None:
         """Save training log to JSON."""
@@ -872,41 +759,117 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
             font-weight: 600;
             color: var(--accent);
         }}
+        .eval-filters {{
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+            align-items: center;
+            flex-wrap: wrap;
+        }}
+        .eval-filters .filter-group {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+        .eval-filters label {{
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }}
+        .eval-filters select {{
+            padding: 8px 32px 8px 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            background: rgba(0,0,0,0.4);
+            color: var(--text-primary);
+            border: 1px solid rgba(255,255,255,0.1);
+            cursor: pointer;
+            appearance: none;
+            background-image: url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%278%27%3E%3Cpath fill=%27%23888%27 d=%27M0 0l6 8 6-8z%27/%3E%3C/svg%3E');
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            transition: all 0.2s;
+        }}
+        .eval-filters select:hover {{
+            border-color: var(--accent);
+            background-color: rgba(0,212,170,0.1);
+        }}
+        .eval-filters select:focus {{
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(0,212,170,0.2);
+        }}
         .eval-gallery {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 16px;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
         }}
         .eval-sample {{
             background: var(--bg-tertiary);
             border-radius: 8px;
-            padding: 12px;
+            padding: 0;
             position: relative;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }}
+        .eval-sample.hidden {{
+            display: none;
+        }}
+        .eval-sample .image-container {{
+            position: relative;
+            background: #000;
+            min-height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }}
         .eval-sample img {{
             width: 100%;
-            border-radius: 4px;
+            height: auto;
             display: block;
+            max-height: 400px;
+            object-fit: contain;
         }}
         .eval-sample .overlay {{
             position: absolute;
-            top: 12px;
-            left: 12px;
-            right: 12px;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
         }}
         .eval-sample .marker {{
             position: absolute;
-            width: 16px;
-            height: 16px;
+            width: 24px;
+            height: 24px;
             border-radius: 50%;
             transform: translate(-50%, -50%);
-            border: 2px solid white;
+            border: 3px solid white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: bold;
+            color: white;
+            z-index: 10;
         }}
         .eval-sample .marker.human {{
-            background: rgba(52, 211, 153, 0.8);
+            background: rgba(0, 212, 170, 0.4);
+            border-color: #00d4aa;
+        }}
+        .eval-sample .marker.human::after {{
+            content: 'H';
+            color: #00d4aa;
         }}
         .eval-sample .marker.predicted {{
-            background: rgba(167, 139, 250, 0.8);
+            background: rgba(167, 139, 250, 0.4);
+            border-color: #a78bfa;
+        }}
+        .eval-sample .marker.predicted::after {{
+            content: 'AI';
+            font-size: 9px;
+            color: #a78bfa;
         }}
         .eval-sample .line {{
             position: absolute;
@@ -914,26 +877,33 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
             background: rgba(255, 255, 255, 0.5);
             transform-origin: left center;
         }}
+        .eval-sample .content {{
+            padding: 12px;
+        }}
         .eval-sample .info {{
-            margin-top: 8px;
             font-size: 0.75rem;
             color: var(--text-secondary);
+            margin-bottom: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color);
         }}
         .eval-sample .info .correct {{
             color: #34d399;
+            font-weight: 600;
         }}
         .eval-sample .info .incorrect {{
             color: #ff5f5f;
+            font-weight: 600;
         }}
         .eval-sample .details {{
-            margin-top: 8px;
             font-size: 0.7rem;
             color: var(--text-secondary);
         }}
         .eval-sample .coords {{
             display: flex;
-            gap: 16px;
-            margin-top: 4px;
+            flex-direction: column;
+            gap: 4px;
+            margin-bottom: 8px;
         }}
         .eval-sample .coords .human-coord {{
             color: #34d399;
@@ -948,19 +918,131 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
             border-radius: 4px;
             font-size: 0.65rem;
             color: var(--text-secondary);
-            max-height: 80px;
+            max-height: 150px;
             overflow-y: auto;
             white-space: pre-wrap;
             word-break: break-word;
+            font-family: "SF Mono", Monaco, monospace;
+            line-height: 1.4;
+        }}
+        .eval-sample .thinking.collapsed {{
+            max-height: 60px;
+            overflow: hidden;
+            position: relative;
+        }}
+        .eval-sample .thinking.collapsed::after {{
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 30px;
+            background: linear-gradient(to bottom, transparent, rgba(0,0,0,0.5));
         }}
         .eval-sample .thinking-toggle {{
             cursor: pointer;
             color: var(--accent);
             font-size: 0.7rem;
             margin-top: 4px;
+            display: inline-block;
         }}
         .eval-sample .thinking-toggle:hover {{
             text-decoration: underline;
+        }}
+        .terminal-panel {{
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 16px;
+        }}
+        .terminal-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }}
+        .terminal-header h2 {{
+            font-size: 0.9rem;
+            margin: 0;
+        }}
+        .terminal-toggle {{
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }}
+        .terminal-toggle:hover {{
+            border-color: var(--accent);
+            background: rgba(0, 212, 170, 0.1);
+        }}
+        .terminal-container {{
+            background: #000;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 16px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: "SF Mono", Monaco, "Courier New", monospace;
+            font-size: 0.7rem;
+            line-height: 1.5;
+            color: #0f0;
+            position: relative;
+        }}
+        .terminal-container.collapsed {{
+            max-height: 200px;
+        }}
+        .terminal-output {{
+            white-space: pre-wrap;
+            word-break: break-word;
+        }}
+        .terminal-line {{
+            padding: 2px 0;
+        }}
+        .terminal-line.timestamp {{
+            color: #888;
+        }}
+        .terminal-line.error {{
+            color: #ff5f5f;
+        }}
+        .terminal-line.success {{
+            color: #34d399;
+        }}
+        .terminal-line.warning {{
+            color: #ff9500;
+        }}
+        .terminal-empty {{
+            color: #888;
+            font-style: italic;
+            text-align: center;
+            padding: 40px;
+        }}
+        .terminal-controls {{
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-size: 0.7rem;
+        }}
+        .terminal-control-btn {{
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }}
+        .terminal-control-btn:hover {{
+            border-color: var(--accent);
+            color: var(--text-primary);
+        }}
+        .terminal-control-btn.active {{
+            border-color: var(--accent);
+            color: var(--accent);
         }}
     </style>
 </head>
@@ -1071,7 +1153,47 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
         <div class="eval-panel" id="eval-panel" style="display: none;">
             <h2>Evaluation Samples</h2>
             <div class="eval-metrics" id="eval-metrics"></div>
+            <div class="eval-filters">
+                <div class="filter-group">
+                    <label for="epoch-filter">Epoch:</label>
+                    <select id="epoch-filter">
+                        <option value="all">All Epochs</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="correctness-filter">Status:</label>
+                    <select id="correctness-filter">
+                        <option value="all">All</option>
+                        <option value="correct">Correct Only</option>
+                        <option value="incorrect">Incorrect Only</option>
+                    </select>
+                </div>
+                <div style="margin-left: auto; font-size: 0.75rem; color: var(--text-muted);">
+                    <span id="filter-count"></span>
+                </div>
+            </div>
             <div class="eval-gallery" id="eval-gallery"></div>
+        </div>
+
+        <div class="terminal-panel" id="terminal-panel">
+            <div class="terminal-header">
+                <h2>Training Output</h2>
+                <button class="terminal-toggle" id="terminal-toggle" onclick="toggleTerminal()">
+                    <span id="terminal-toggle-text">Collapse</span>
+                </button>
+            </div>
+            <div class="terminal-controls">
+                <button class="terminal-control-btn active" id="auto-scroll-btn" onclick="toggleAutoScroll()">Auto-scroll</button>
+                <button class="terminal-control-btn" id="wrap-btn" onclick="toggleWrap()">Wrap text</button>
+                <span style="margin-left: auto; color: var(--text-secondary); font-size: 0.7rem;">
+                    <span id="terminal-line-count">0</span> lines
+                </span>
+            </div>
+            <div class="terminal-container" id="terminal-container">
+                <div class="terminal-output" id="terminal-output">
+                    <div class="terminal-empty">Waiting for training output...</div>
+                </div>
+            </div>
         </div>
 
         <div class="update-indicator" id="update-indicator">Last updated: just now</div>
@@ -1609,28 +1731,131 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
             }}).join('');
         }}
 
+        // Terminal output management
+        let terminalAutoScroll = true;
+        let terminalWrap = false;
+        let terminalCollapsed = false;
+        let lastTerminalSize = 0;
+        const MAX_TERMINAL_LINES = 500;
+
+        function toggleTerminal() {{
+            const container = document.getElementById('terminal-container');
+            const toggleText = document.getElementById('terminal-toggle-text');
+            terminalCollapsed = !terminalCollapsed;
+
+            if (terminalCollapsed) {{
+                container.classList.add('collapsed');
+                toggleText.textContent = 'Expand';
+            }} else {{
+                container.classList.remove('collapsed');
+                toggleText.textContent = 'Collapse';
+            }}
+        }}
+
+        function toggleAutoScroll() {{
+            terminalAutoScroll = !terminalAutoScroll;
+            const btn = document.getElementById('auto-scroll-btn');
+            if (terminalAutoScroll) {{
+                btn.classList.add('active');
+                scrollTerminalToBottom();
+            }} else {{
+                btn.classList.remove('active');
+            }}
+        }}
+
+        function toggleWrap() {{
+            terminalWrap = !terminalWrap;
+            const btn = document.getElementById('wrap-btn');
+            const output = document.getElementById('terminal-output');
+            if (terminalWrap) {{
+                btn.classList.add('active');
+                output.style.whiteSpace = 'pre-wrap';
+            }} else {{
+                btn.classList.remove('active');
+                output.style.whiteSpace = 'pre';
+            }}
+        }}
+
+        function scrollTerminalToBottom() {{
+            const container = document.getElementById('terminal-container');
+            container.scrollTop = container.scrollHeight;
+        }}
+
+        async function fetchTerminalOutput() {{
+            try {{
+                const response = await fetch('training.log?t=' + Date.now());
+                if (!response.ok) {{
+                    // File doesn't exist yet
+                    return;
+                }}
+
+                const text = await response.text();
+                const lines = text.trim().split('\\n');
+
+                // Keep only last MAX_TERMINAL_LINES
+                const displayLines = lines.slice(-MAX_TERMINAL_LINES);
+
+                const output = document.getElementById('terminal-output');
+                const lineCount = document.getElementById('terminal-line-count');
+
+                // Update line count
+                lineCount.textContent = lines.length;
+
+                // Only update if content changed
+                if (displayLines.length === 0) {{
+                    output.innerHTML = '<div class="terminal-empty">Waiting for training output...</div>';
+                    return;
+                }}
+
+                // Format lines with basic syntax highlighting
+                const formattedLines = displayLines.map(line => {{
+                    let className = 'terminal-line';
+
+                    // Detect line type
+                    if (line.match(/^\\d{{4}}-\\d{{2}}-\\d{{2}}/)) {{
+                        className += ' timestamp';
+                    }} else if (line.toLowerCase().includes('error') || line.toLowerCase().includes('failed')) {{
+                        className += ' error';
+                    }} else if (line.toLowerCase().includes('success') || line.toLowerCase().includes('complete')) {{
+                        className += ' success';
+                    }} else if (line.toLowerCase().includes('warning')) {{
+                        className += ' warning';
+                    }}
+
+                    // Escape HTML
+                    const escaped = line
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;');
+
+                    return `<div class="${{className}}">${{escaped}}</div>`;
+                }}).join('');
+
+                output.innerHTML = formattedLines;
+
+                // Auto-scroll if enabled and new content arrived
+                if (terminalAutoScroll && lines.length > lastTerminalSize) {{
+                    scrollTerminalToBottom();
+                }}
+
+                lastTerminalSize = lines.length;
+            }} catch (err) {{
+                console.error('Failed to fetch terminal output:', err);
+            }}
+        }}
+
         initCharts();
         updateCostDisplay();  // Initialize cost display
         fetchAndUpdate();  // Initial fetch on page load
+        fetchTerminalOutput();  // Initial terminal fetch
         setInterval(fetchAndUpdate, 3000);
+        setInterval(fetchTerminalOutput, 2000);  // Poll terminal output every 2 seconds
         setInterval(updateElapsedDisplay, 1000);  // Update elapsed time every second
         setInterval(updateStatusIndicator, 1000);  // Update LIVE/STALE indicator every second
     </script>
 </body>
 </html>'''
     return html
-
-
-def _build_nav_links() -> list[tuple[str, str]]:
-    """Build consistent nav links for dashboard pages.
-
-    Returns fixed list of (filename, label) tuples - just Training + Viewer.
-    The unified viewer handles checkpoint selection internally via dropdowns.
-    """
-    return [
-        ("dashboard.html", "Training"),
-        ("viewer.html", "Viewer"),
-    ]
 
 
 def regenerate_all_dashboards(output_dir: str | Path) -> list[Path]:
@@ -1670,6 +1895,50 @@ def regenerate_all_dashboards(output_dir: str | Path) -> list[Path]:
         traceback.print_exc()
 
     return regenerated
+
+
+def _copy_transcript_and_audio(capture_path: Path | None, output_dir: Path) -> None:
+    """Copy transcript.json and convert audio to mp3 for viewer playback.
+
+    Args:
+        capture_path: Path to the capture directory (may be None)
+        output_dir: Output directory for the viewer
+    """
+    import shutil
+    import subprocess
+
+    if capture_path is None or not capture_path.exists():
+        return
+
+    # Copy transcript.json if it exists
+    transcript_src = capture_path / "transcript.json"
+    transcript_dst = output_dir / "transcript.json"
+    if transcript_src.exists() and not transcript_dst.exists():
+        shutil.copy2(transcript_src, transcript_dst)
+        print(f"  Copied transcript.json from capture")
+
+    # Convert audio to mp3 if it exists (ffmpeg required)
+    audio_dst = output_dir / "audio.mp3"
+    if not audio_dst.exists():
+        # Try common audio formats
+        for audio_ext in [".flac", ".wav", ".m4a", ".aac", ".ogg"]:
+            audio_src = capture_path / f"audio{audio_ext}"
+            if audio_src.exists():
+                try:
+                    result = subprocess.run(
+                        ["ffmpeg", "-i", str(audio_src), "-y", "-q:a", "2", str(audio_dst)],
+                        capture_output=True,
+                        timeout=60,
+                    )
+                    if result.returncode == 0:
+                        print(f"  Converted {audio_src.name} to audio.mp3")
+                    else:
+                        print(f"  Warning: ffmpeg conversion failed for {audio_src.name}")
+                except FileNotFoundError:
+                    print("  Warning: ffmpeg not found, cannot convert audio")
+                except subprocess.TimeoutExpired:
+                    print("  Warning: ffmpeg timed out")
+                break
 
 
 def generate_unified_viewer_from_output_dir(output_dir: Path) -> Path | None:
@@ -1823,6 +2092,9 @@ def generate_unified_viewer_from_output_dir(output_dir: Path) -> Path | None:
     if base_data is None:
         print("No comparison data found, cannot generate unified viewer")
         return None
+
+    # Copy transcript and audio files from capture if available
+    _copy_transcript_and_audio(capture_path, output_dir)
 
     # Generate the unified viewer using standalone HTML template
     # (Consolidated approach - always use standalone for reliability)
@@ -2116,17 +2388,57 @@ def _generate_unified_viewer_from_extracted_data(
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
             border-radius: 8px;
+            flex-wrap: wrap;
+            align-items: center;
         }}
         .playback-btn {{
-            flex: 1;
-            padding: 8px;
+            padding: 8px 12px;
             border: 1px solid var(--border-color);
             background: var(--bg-tertiary);
             color: var(--text-primary);
             border-radius: 6px;
             cursor: pointer;
+            font-size: 0.85rem;
+            min-width: 40px;
+            text-align: center;
         }}
         .playback-btn:hover {{ border-color: var(--accent); }}
+        .playback-btn.active {{ background: var(--accent); color: var(--bg-primary); border-color: var(--accent); }}
+        .playback-btn.primary {{ flex: 1; min-width: 60px; }}
+        .speed-control {{
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-left: auto;
+        }}
+        .speed-control label {{
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }}
+        .speed-control select {{
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            font-size: 0.8rem;
+            cursor: pointer;
+        }}
+        .progress-bar {{
+            width: 100%;
+            height: 4px;
+            background: var(--bg-tertiary);
+            border-radius: 2px;
+            margin-top: 8px;
+            overflow: hidden;
+            cursor: pointer;
+        }}
+        .progress-bar .progress {{
+            height: 100%;
+            background: var(--accent);
+            transition: width 0.1s ease;
+        }}
         .details-panel {{
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
@@ -2143,7 +2455,7 @@ def _generate_unified_viewer_from_extracted_data(
         .details-content {{
             padding: 12px 16px;
             font-size: 0.82rem;
-            max-height: 200px;
+            max-height: 400px;
             overflow-y: auto;
         }}
         .detail-row {{
@@ -2172,12 +2484,144 @@ def _generate_unified_viewer_from_extracted_data(
         }}
         .copy-btn:hover {{ background: var(--bg-secondary); color: var(--text-primary); }}
         .copy-btn.copied {{ background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }}
+        .cost-panel {{
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(220, 38, 38, 0.05));
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            display: none;
+        }}
+        .cost-panel.visible {{ display: flex; }}
+        .cost-panel .cost-items {{
+            display: flex;
+            gap: 24px;
+            align-items: center;
+            flex: 1;
+        }}
+        .cost-panel .cost-item {{
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }}
+        .cost-panel .cost-label {{
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }}
+        .cost-panel .cost-value {{
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #ef4444;
+            font-family: "SF Mono", Monaco, monospace;
+        }}
+        .cost-panel .cost-info {{
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-left: auto;
+        }}
+        .transcript-panel {{
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+        }}
+        .transcript-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--border-color);
+        }}
+        .transcript-panel h2 {{
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin: 0;
+        }}
+        .transcript-follow-btn {{
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.7rem;
+            transition: all 0.2s;
+        }}
+        .transcript-follow-btn:hover {{
+            border-color: var(--accent);
+            color: var(--text-secondary);
+        }}
+        .transcript-follow-btn.active {{
+            background: var(--accent-dim);
+            border-color: var(--accent);
+            color: var(--accent);
+        }}
+        .transcript-content {{
+            padding: 14px 18px;
+            font-size: 0.85rem;
+            line-height: 1.9;
+            color: var(--text-secondary);
+            max-height: 150px;
+            overflow-y: auto;
+        }}
+        .transcript-segment {{
+            display: inline;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            transition: all 0.15s ease;
+        }}
+        .transcript-segment:hover {{
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }}
+        .transcript-segment.active {{
+            background: var(--accent-dim);
+            color: var(--accent);
+        }}
+        .transcript-time {{
+            color: var(--text-muted);
+            font-size: 0.7rem;
+            font-family: "SF Mono", Monaco, monospace;
+            margin-right: 4px;
+        }}
+        .transcript-empty {{
+            color: var(--text-muted);
+            font-style: italic;
+            text-align: center;
+            padding: 16px;
+        }}
+        .step-list-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+        }}
+        .step-list-header h3 {{
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin: 0;
+        }}
+        .copy-all-btn {{
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+        }}
+        .copy-all-btn:hover {{ background: var(--bg-secondary); color: var(--text-primary); }}
+        .copy-all-btn.copied {{ background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }}
     </style>
 </head>
 <body>
-    <div class="container">
-        {shared_header_html}
+    {shared_header_html}
 
+    <div class="container">
         <div class="viewer-controls">
             <div class="control-group">
                 <span class="control-label">Training Example:</span>
@@ -2187,6 +2631,20 @@ def _generate_unified_viewer_from_extracted_data(
             <div class="control-group">
                 <span class="control-label">Checkpoint:</span>
                 <select class="control-select" id="checkpoint-select"></select>
+            </div>
+        </div>
+
+        <div class="cost-panel" id="cost-panel">
+            <div class="cost-items">
+                <div class="cost-item">
+                    <div class="cost-label">Running Cost</div>
+                    <div class="cost-value" id="cost-running">$0.00</div>
+                </div>
+                <div class="cost-item">
+                    <div class="cost-label">Total Cost</div>
+                    <div class="cost-value" id="cost-total">$0.00</div>
+                </div>
+                <div class="cost-info" id="cost-info"></div>
             </div>
         </div>
 
@@ -2218,10 +2676,39 @@ def _generate_unified_viewer_from_extracted_data(
             </div>
             <div class="sidebar">
                 <div class="playback-controls">
-                    <button class="playback-btn" id="prev-btn">← Prev</button>
-                    <button class="playback-btn" id="next-btn">Next →</button>
+                    <button class="playback-btn" id="rewind-btn" title="Rewind (Home)">⏮</button>
+                    <button class="playback-btn" id="prev-btn" title="Previous (←)">◀</button>
+                    <button class="playback-btn primary" id="play-btn" title="Play/Pause (Space)">▶ Play</button>
+                    <button class="playback-btn" id="next-btn" title="Next (→)">▶</button>
+                    <button class="playback-btn" id="end-btn" title="End (End)">⏭</button>
+                    <div class="speed-control">
+                        <label>Speed</label>
+                        <select id="speed-select">
+                            <option value="2000">0.5x</option>
+                            <option value="1000" selected>1x</option>
+                            <option value="500">2x</option>
+                            <option value="250">4x</option>
+                        </select>
+                    </div>
+                    <div class="progress-bar" id="progress-bar">
+                        <div class="progress" id="progress"></div>
+                    </div>
                 </div>
-                <div class="step-list" id="step-list"></div>
+                <div class="step-list" id="step-list">
+                    <div class="step-list-header">
+                        <h3>Steps</h3>
+                        <button class="copy-all-btn" id="copy-all-btn">Copy All</button>
+                    </div>
+                    <div id="step-list-items"></div>
+                </div>
+                <div class="transcript-panel" id="transcript-panel">
+                    <div class="transcript-header">
+                        <h2>Transcript</h2>
+                        <button class="transcript-follow-btn active" id="transcript-follow-btn" title="Auto-scroll to active segment">Follow</button>
+                    </div>
+                    <div class="transcript-content" id="transcript-content"></div>
+                </div>
+                <audio id="audio" style="display:none;"></audio>
                 <div class="details-panel" id="details-panel">
                     <div class="details-header">
                         <span style="font-size:0.9rem;font-weight:600;">Step Details</span>
@@ -2243,6 +2730,61 @@ def _generate_unified_viewer_from_extracted_data(
     let currentCheckpoint = 'None';
     let showHumanOverlay = true;
     let showPredictedOverlay = true;
+    let isPlaying = false;
+    let playInterval = null;
+    let playSpeed = 1000;  // ms per step
+
+    // Cloud cost tracking
+    const COST_RATES = {{
+        'gpu_1x_a10': 0.75,      // Lambda Labs A10
+        'gpu_8x_a100': 1.29,     // Lambda Labs A100 (per GPU)
+        'a10': 0.75,             // Generic A10
+        'a100': 1.29,            // Generic A100
+    }};
+
+    function getHourlyRate(instanceType) {{
+        if (!instanceType) return 0;
+        // Try exact match first
+        const lowerType = instanceType.toLowerCase();
+        if (COST_RATES[lowerType]) {{
+            return COST_RATES[lowerType];
+        }}
+        // Try partial match
+        if (lowerType.includes('a100')) return COST_RATES['a100'];
+        if (lowerType.includes('a10')) return COST_RATES['a10'];
+        // Default to A10 rate
+        return COST_RATES['a10'];
+    }}
+
+    async function loadAndDisplayCosts() {{
+        try {{
+            const response = await fetch('training_log.json?t=' + Date.now());
+            if (!response.ok) return;
+
+            const data = await response.json();
+            const instanceType = data.instance_type || '';
+
+            // Only show costs for actual cloud training (not stub/local)
+            if (!instanceType || instanceType === '' || instanceType === 'stub') {{
+                document.getElementById('cost-panel').style.display = 'none';
+                return;
+            }}
+
+            const hourlyRate = getHourlyRate(instanceType);
+            const elapsedTime = data.elapsed_time || 0;
+            const elapsedHours = elapsedTime / 3600;
+            const totalCost = elapsedHours * hourlyRate;
+
+            // Update display
+            document.getElementById('cost-running').textContent = `$${{totalCost.toFixed(2)}}`;
+            document.getElementById('cost-total').textContent = `$${{totalCost.toFixed(2)}}`;
+            document.getElementById('cost-info').textContent = `${{instanceType}} @ $${{hourlyRate.toFixed(2)}}/hr`;
+            document.getElementById('cost-panel').classList.add('visible');
+        }} catch (e) {{
+            // Silently fail if training_log.json not available
+            console.log('Could not load training costs:', e);
+        }}
+    }}
 
     function getMergedData() {{
         const predictions = predictionsByCheckpoint[currentCheckpoint] || [];
@@ -2461,12 +3003,18 @@ def _generate_unified_viewer_from_extracted_data(
 
         // Update details panel
         updateDetailsPanel(data);
+
+        // Update progress bar
+        updateProgressBar();
     }}
 
     function updateDetailsPanel(data) {{
         const detailsEl = document.getElementById('details-content');
         const action = data.human_action;
+
+        // Build human action section
         let html = `
+            <div style="font-weight:600;font-size:0.8rem;color:var(--accent);margin-bottom:8px;text-transform:uppercase;">Human Action</div>
             <div class="detail-row"><span class="detail-key">Step</span><span class="detail-value">${{currentIndex + 1}} of ${{baseData.length}}</span></div>
             <div class="detail-row"><span class="detail-key">Time</span><span class="detail-value">${{data.time ? data.time.toFixed(2) + 's' : '—'}}</span></div>
             <div class="detail-row"><span class="detail-key">Type</span><span class="detail-value">${{action.type}}</span></div>
@@ -2477,9 +3025,40 @@ def _generate_unified_viewer_from_extracted_data(
         if (action.text) {{
             html += `<div class="detail-row"><span class="detail-key">Text</span><span class="detail-value">"${{action.text}}"</span></div>`;
         }}
+
+        // Build prediction section if available
         if (data.predicted_action && currentCheckpoint !== 'None') {{
-            html += `<div class="detail-row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-color);"><span class="detail-key">AI</span><span class="detail-value">${{data.match === true ? '✓ Correct' : data.match === false ? '✗ Wrong' : '—'}}</span></div>`;
+            const pred = data.predicted_action;
+            html += `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color);">`;
+            html += `<div style="font-weight:600;font-size:0.8rem;color:#a78bfa;margin-bottom:8px;text-transform:uppercase;display:flex;justify-content:space-between;">
+                <span>Model Prediction</span>
+                <span style="color:${{data.match === true ? '#34d399' : data.match === false ? '#ff5f5f' : 'var(--text-muted)'}};">${{data.match === true ? '✓ Match' : data.match === false ? '✗ Mismatch' : '—'}}</span>
+            </div>`;
+
+            // Show predicted position if available
+            if (pred.x !== undefined && pred.y !== undefined) {{
+                html += `<div class="detail-row"><span class="detail-key">Type</span><span class="detail-value">${{pred.type || 'click'}}</span></div>`;
+                html += `<div class="detail-row"><span class="detail-key">Position</span><span class="detail-value">(${{(pred.x * 100).toFixed(2)}}%, ${{(pred.y * 100).toFixed(2)}}%)</span></div>`;
+            }}
+
+            // Show raw output (model reasoning)
+            if (pred.raw_output) {{
+                const rawOutput = pred.raw_output;
+                html += `<div class="detail-row" style="flex-direction:column;margin-top:8px;">
+                    <span class="detail-key" style="margin-bottom:4px;">Model Output</span>
+                    <div class="detail-value" style="font-size:0.75rem;max-height:150px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;background:var(--bg-tertiary);padding:8px;border-radius:4px;">${{rawOutput.replace(/</g, '&lt;').replace(/>/g, '&gt;')}}</div>
+                </div>`;
+            }} else {{
+                // Show whatever fields are present
+                const predStr = JSON.stringify(pred, null, 2);
+                html += `<div class="detail-row" style="flex-direction:column;margin-top:8px;">
+                    <span class="detail-key" style="margin-bottom:4px;">Prediction Data</span>
+                    <div class="detail-value" style="font-size:0.75rem;max-height:100px;overflow-y:auto;white-space:pre;background:var(--bg-tertiary);padding:8px;border-radius:4px;">${{predStr}}</div>
+                </div>`;
+            }}
+            html += `</div>`;
         }}
+
         detailsEl.innerHTML = html;
     }}
 
@@ -2492,6 +3071,23 @@ def _generate_unified_viewer_from_extracted_data(
             this.classList.add('copied');
             setTimeout(() => {{
                 this.textContent = 'Copy';
+                this.classList.remove('copied');
+            }}, 1500);
+        }};
+    }}
+
+    function setupCopyAllButton() {{
+        const btn = document.getElementById('copy-all-btn');
+        if (!btn) return;
+
+        btn.onclick = function() {{
+            const allData = getMergedData();
+            const text = JSON.stringify(allData, null, 2);
+            navigator.clipboard.writeText(text);
+            this.textContent = 'Copied!';
+            this.classList.add('copied');
+            setTimeout(() => {{
+                this.textContent = 'Copy All';
                 this.classList.remove('copied');
             }}, 1500);
         }};
@@ -2553,7 +3149,7 @@ def _generate_unified_viewer_from_extracted_data(
 
     function setupOverlayToggles() {{
         const container = document.getElementById('overlay-toggles');
-        container.innerHTML = `<button class="toggle-btn active" id="toggle-human">Human (H)</button><button class="toggle-btn active" id="toggle-predicted">AI (P)</button>`;
+        container.innerHTML = `<button class="toggle-btn active" id="toggle-human" title="Toggle human overlay (H)">Human</button><button class="toggle-btn active" id="toggle-predicted" title="Toggle AI overlay (A)">AI</button>`;
         document.getElementById('toggle-human').onclick = function() {{
             showHumanOverlay = !showHumanOverlay;
             this.classList.toggle('active', showHumanOverlay);
@@ -2566,19 +3162,288 @@ def _generate_unified_viewer_from_extracted_data(
         }};
     }}
 
+    function updateProgressBar() {{
+        const progress = document.getElementById('progress');
+        if (progress) {{
+            const pct = (currentIndex / (baseData.length - 1)) * 100;
+            progress.style.width = pct + '%';
+        }}
+    }}
+
+    function stopPlayback() {{
+        isPlaying = false;
+        if (playInterval) {{
+            clearInterval(playInterval);
+            playInterval = null;
+        }}
+        const playBtn = document.getElementById('play-btn');
+        if (playBtn) {{
+            playBtn.textContent = '▶ Play';
+            playBtn.classList.remove('active');
+        }}
+        // Pause audio if playing
+        if (audioElement && !audioElement.paused) {{
+            audioElement.pause();
+        }}
+    }}
+
+    function startPlayback() {{
+        isPlaying = true;
+        const playBtn = document.getElementById('play-btn');
+        if (playBtn) {{
+            playBtn.textContent = '⏸ Pause';
+            playBtn.classList.add('active');
+        }}
+        // Start audio if available
+        if (audioElement && audioElement.src) {{
+            audioElement.play().catch(e => console.log('Audio play failed:', e));
+        }}
+        playInterval = setInterval(() => {{
+            if (currentIndex < baseData.length - 1) {{
+                currentIndex++;
+                updateDisplay();
+            }} else {{
+                stopPlayback();
+            }}
+        }}, playSpeed);
+    }}
+
+    function togglePlayback() {{
+        if (isPlaying) {{
+            stopPlayback();
+        }} else {{
+            startPlayback();
+        }}
+    }}
+
     function setupPlaybackControls() {{
+        // Rewind
+        document.getElementById('rewind-btn').onclick = () => {{
+            stopPlayback();
+            currentIndex = 0;
+            updateDisplay();
+        }};
+
+        // Previous
         document.getElementById('prev-btn').onclick = () => {{
+            stopPlayback();
             if (currentIndex > 0) {{ currentIndex--; updateDisplay(); }}
         }};
+
+        // Play/Pause
+        document.getElementById('play-btn').onclick = togglePlayback;
+
+        // Next
         document.getElementById('next-btn').onclick = () => {{
+            stopPlayback();
             if (currentIndex < baseData.length - 1) {{ currentIndex++; updateDisplay(); }}
         }};
+
+        // End
+        document.getElementById('end-btn').onclick = () => {{
+            stopPlayback();
+            currentIndex = baseData.length - 1;
+            updateDisplay();
+        }};
+
+        // Speed control
+        document.getElementById('speed-select').onchange = (e) => {{
+            playSpeed = parseInt(e.target.value);
+            if (isPlaying) {{
+                stopPlayback();
+                startPlayback();
+            }}
+        }};
+
+        // Progress bar click to seek
+        document.getElementById('progress-bar').onclick = (e) => {{
+            const rect = e.currentTarget.getBoundingClientRect();
+            const pct = (e.clientX - rect.left) / rect.width;
+            currentIndex = Math.round(pct * (baseData.length - 1));
+            updateDisplay();
+        }};
+
+        // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {{
-            if (e.key === 'ArrowLeft') document.getElementById('prev-btn').click();
-            if (e.key === 'ArrowRight') document.getElementById('next-btn').click();
-            if (e.key === 'h' || e.key === 'H') document.getElementById('toggle-human').click();
-            if (e.key === 'p' || e.key === 'P') document.getElementById('toggle-predicted').click();
+            // Ignore if focused on an input
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+            switch(e.key) {{
+                case 'ArrowLeft':
+                    document.getElementById('prev-btn').click();
+                    break;
+                case 'ArrowRight':
+                    document.getElementById('next-btn').click();
+                    break;
+                case ' ':  // Space
+                    e.preventDefault();
+                    togglePlayback();
+                    break;
+                case 'Home':
+                    document.getElementById('rewind-btn').click();
+                    break;
+                case 'End':
+                    document.getElementById('end-btn').click();
+                    break;
+                case 'h':
+                case 'H':
+                    document.getElementById('toggle-human').click();
+                    break;
+                case 'a':
+                case 'A':
+                    document.getElementById('toggle-predicted').click();
+                    break;
+            }}
         }});
+    }}
+
+    // Transcript/audio sync variables
+    let transcriptSegments = [];
+    let audioElement = null;
+    let lastActiveSegmentIndex = -1;
+    let autoScrollTranscript = true;
+
+    async function loadTranscript() {{
+        // Try to load transcript.json
+        try {{
+            const response = await fetch('transcript.json?t=' + Date.now());
+            if (response.ok) {{
+                const data = await response.json();
+                if (data.segments && data.segments.length > 0) {{
+                    transcriptSegments = data.segments;
+                    renderTranscript();
+                    setupAudioSync();
+                    return;
+                }}
+            }}
+        }} catch (e) {{
+            console.log('No transcript.json found');
+        }}
+
+        // Check if any base data has transcript info
+        const hasTranscript = baseData.some(d => d.transcript_text || d.audio_start !== undefined);
+        if (!hasTranscript) {{
+            document.getElementById('transcript-content').innerHTML = '<div class="transcript-empty">No transcript available</div>';
+            return;
+        }}
+
+        // Build segments from base data
+        baseData.forEach((step, i) => {{
+            if (step.transcript_text) {{
+                transcriptSegments.push({{
+                    start: step.audio_start || step.time || 0,
+                    end: step.audio_end || (baseData[i + 1]?.time || step.time + 5),
+                    text: step.transcript_text,
+                    stepIndex: i
+                }});
+            }}
+        }});
+
+        if (transcriptSegments.length > 0) {{
+            renderTranscript();
+            setupAudioSync();
+        }} else {{
+            document.getElementById('transcript-content').innerHTML = '<div class="transcript-empty">No transcript available</div>';
+        }}
+    }}
+
+    function renderTranscript() {{
+        const container = document.getElementById('transcript-content');
+        if (transcriptSegments.length === 0) {{
+            container.innerHTML = '<div class="transcript-empty">No transcript available</div>';
+            return;
+        }}
+
+        container.innerHTML = transcriptSegments.map((seg, i) => {{
+            const timeStr = formatTime(seg.start);
+            return `<span class="transcript-segment" data-index="${{i}}" data-start="${{seg.start}}" data-end="${{seg.end}}">` +
+                   `<span class="transcript-time">${{timeStr}}</span>${{seg.text}} </span>`;
+        }}).join('');
+
+        // Add click handlers for seek
+        container.querySelectorAll('.transcript-segment').forEach(el => {{
+            el.onclick = () => {{
+                const start = parseFloat(el.dataset.start);
+                seekAudio(start);
+
+                // Also jump to corresponding step if available
+                const segIndex = parseInt(el.dataset.index);
+                if (transcriptSegments[segIndex]?.stepIndex !== undefined) {{
+                    currentIndex = transcriptSegments[segIndex].stepIndex;
+                    updateDisplay();
+                }}
+            }};
+        }});
+    }}
+
+    function formatTime(seconds) {{
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${{mins}}:${{secs.toString().padStart(2, '0')}}`;
+    }}
+
+    function seekAudio(time) {{
+        if (!audioElement) {{
+            audioElement = document.getElementById('audio');
+        }}
+        if (audioElement && audioElement.src) {{
+            audioElement.currentTime = time;
+            if (audioElement.paused) {{
+                audioElement.play().catch(e => console.log('Audio play failed:', e));
+            }}
+        }}
+    }}
+
+    function setupAudioSync() {{
+        audioElement = document.getElementById('audio');
+
+        // Try to load audio file
+        const audioSrc = 'audio.mp3';
+        audioElement.src = audioSrc;
+        audioElement.load();
+
+        // Auto-highlight during playback
+        audioElement.ontimeupdate = () => {{
+            const currentTime = audioElement.currentTime;
+            highlightCurrentSegment(currentTime);
+        }};
+
+        audioElement.onerror = () => {{
+            console.log('Audio file not available');
+        }};
+
+        // Setup follow toggle button
+        const followBtn = document.getElementById('transcript-follow-btn');
+        if (followBtn) {{
+            followBtn.onclick = () => {{
+                autoScrollTranscript = !autoScrollTranscript;
+                followBtn.classList.toggle('active', autoScrollTranscript);
+            }};
+        }}
+    }}
+
+    function highlightCurrentSegment(currentTime) {{
+        const segments = document.querySelectorAll('.transcript-segment');
+        let newActiveIndex = -1;
+
+        segments.forEach((el, i) => {{
+            const start = parseFloat(el.dataset.start);
+            const end = parseFloat(el.dataset.end);
+            const isActive = currentTime >= start && currentTime < end;
+            el.classList.toggle('active', isActive);
+
+            if (isActive) {{
+                newActiveIndex = i;
+            }}
+        }});
+
+        // Only scroll when active segment changes (not on every timeupdate)
+        if (newActiveIndex !== lastActiveSegmentIndex && newActiveIndex !== -1) {{
+            lastActiveSegmentIndex = newActiveIndex;
+            if (autoScrollTranscript) {{
+                segments[newActiveIndex].scrollIntoView({{ behavior: 'smooth', block: 'nearest' }});
+            }}
+        }}
     }}
 
     // Initialize
@@ -2587,8 +3452,11 @@ def _generate_unified_viewer_from_extracted_data(
     setupOverlayToggles();
     setupPlaybackControls();
     setupCopyButton();
+    setupCopyAllButton();
     updateMetrics();
     updateDisplay();
+    loadAndDisplayCosts();
+    loadTranscript();  // Load transcript and setup audio sync
     </script>
 </body>
 </html>'''
@@ -3310,7 +4178,9 @@ def train_supervised(
             # Check for stop signal from dashboard
             stop_file = Path(config.output_dir) / "STOP_TRAINING"
             if stop_file.exists():
-                print("Stop signal received from dashboard. Stopping training...")
+                msg = "Stop signal received from dashboard. Stopping training..."
+                print(msg)
+                logger._log_to_terminal(msg)
                 user_stopped = True
                 stop_file.unlink()  # Remove signal file
                 break
@@ -3326,7 +4196,9 @@ def train_supervised(
 
             # Guard against invalid losses to avoid propagating NaNs/Infs
             if torch.isnan(loss) or torch.isinf(loss):
-                print(f"Encountered invalid loss at epoch={epoch} step={total_steps + 1}: {loss.item()}")
+                msg = f"Encountered invalid loss at epoch={epoch} step={total_steps + 1}: {loss.item()}"
+                print(msg)
+                logger._log_to_terminal(msg)
                 logger.on_train_end()
                 return False
 
@@ -3344,16 +4216,20 @@ def train_supervised(
             logger.on_step(epoch, total_steps, loss_val, config.learning_rate)
 
             if config.logging_steps and total_steps % config.logging_steps == 0:
-                print(f"epoch={epoch} step={total_steps} loss={loss_val:.4f}")
+                msg = f"epoch={epoch} step={total_steps} loss={loss_val:.4f}"
+                print(msg)
+                logger._log_to_terminal(msg)
 
             # Early stopping check
             if loss_val < config.early_stop_loss:
                 consecutive_low_loss += 1
                 if consecutive_low_loss >= config.early_stop_patience:
-                    print(
+                    msg = (
                         f"Early stopping: loss ({loss_val:.6f}) below threshold "
                         f"({config.early_stop_loss}) for {config.early_stop_patience} consecutive steps"
                     )
+                    print(msg)
+                    logger._log_to_terminal(msg)
                     early_stopped = True
                     break
             else:
@@ -3368,9 +4244,13 @@ def train_supervised(
             checkpoint_path.mkdir(parents=True, exist_ok=True)
             try:
                 adapter.save_checkpoint(str(checkpoint_path))
-                print(f"Checkpoint saved to {checkpoint_path}")
+                msg = f"Checkpoint saved to {checkpoint_path}"
+                print(msg)
+                logger._log_to_terminal(msg)
             except Exception as e:
-                print(f"Warning: Failed to save checkpoint: {e}")
+                msg = f"Warning: Failed to save checkpoint: {e}"
+                print(msg)
+                logger._log_to_terminal(msg)
 
         # Run evaluation after each epoch (generates comparison_epoch{N}.html)
         if config.eval_every_epoch and episode is not None:
