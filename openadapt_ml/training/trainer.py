@@ -2653,6 +2653,11 @@ def _enhance_comparison_to_unified_viewer(
     checkpoint_script = f'''
     <script>
     // Unified viewer: multi-checkpoint support
+    // Bridge local comparisonData to window scope for cross-script access
+    if (typeof comparisonData !== 'undefined' && typeof window.comparisonData === 'undefined') {{
+        window.comparisonData = comparisonData;
+    }}
+
     // Use window. prefix for cross-script variable access
     window.predictionsByCheckpoint = {predictions_json};
     window.availableCaptures = {captures_json};
