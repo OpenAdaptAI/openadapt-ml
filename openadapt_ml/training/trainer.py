@@ -1824,43 +1824,12 @@ def generate_unified_viewer_from_output_dir(output_dir: Path) -> Path | None:
         print("No comparison data found, cannot generate unified viewer")
         return None
 
-    # Generate the unified viewer by enhancing an existing comparison file
+    # Generate the unified viewer using standalone HTML template
+    # (Consolidated approach - always use standalone for reliability)
     viewer_path = output_dir / "viewer.html"
 
-    # Find the best existing comparison file to use as base (prefer epoch files)
-    # Check both main directory and archive folder
-    base_html_file = None
-    search_dirs = [output_dir, output_dir / "archive"]
-
-    for search_dir in search_dirs:
-        if not search_dir.exists():
-            continue
-        # Look for epoch files first (reverse sort = latest first)
-        for comp_file in sorted(search_dir.glob("comparison_epoch*.html"), reverse=True):
-            base_html_file = comp_file
-            break
-        if base_html_file:
-            break
-        # Fall back to comparison_preview.html
-        preview_file = search_dir / "comparison_preview.html"
-        if preview_file.exists():
-            base_html_file = preview_file
-            break
-
-    if base_html_file is None:
-        # Fall back to basic viewer
-        _generate_unified_viewer_from_extracted_data(
-            base_data=base_data,
-            predictions_by_checkpoint=predictions_by_checkpoint,
-            output_path=viewer_path,
-            capture_id=capture_id,
-            goal=goal,
-        )
-        return viewer_path
-
-    # Use the existing comparison file as base and enhance it with unified controls
-    _enhance_comparison_to_unified_viewer(
-        base_html_file=base_html_file,
+    _generate_unified_viewer_from_extracted_data(
+        base_data=base_data,
         predictions_by_checkpoint=predictions_by_checkpoint,
         output_path=viewer_path,
         capture_id=capture_id,
@@ -2307,9 +2276,9 @@ def _generate_unified_viewer_from_extracted_data(
         if (thinkMatch) thinking = thinkMatch[1].trim().substring(0, 150);
 
         if (clickSomMatch) {{
-            action = {{ type: 'click', element: `[${clickSomMatch[1]}]` }};
+            action = {{ type: 'click', element: `[${{clickSomMatch[1]}}]` }};
         }} else if (typeSomMatch) {{
-            action = {{ type: 'type', element: `[${typeSomMatch[1]}]`, text: typeSomMatch[2] }};
+            action = {{ type: 'type', element: `[${{typeSomMatch[1]}}]`, text: typeSomMatch[2] }};
         }} else if (typeSimpleMatch) {{
             action = {{ type: 'type', text: typeSimpleMatch[1] }};
         }} else if (clickCoordMatch) {{
@@ -2323,12 +2292,12 @@ def _generate_unified_viewer_from_extracted_data(
         let html = '';
         if (action) {{
             if (action.type === 'click' && action.element) {{
-                html = `<div style="font-weight:600;color:var(--accent);">CLICK(${action.element})</div>`;
+                html = `<div style="font-weight:600;color:var(--accent);">CLICK(${{action.element}})</div>`;
             }} else if (action.type === 'click' && action.x !== undefined) {{
                 html = `<div style="font-weight:600;color:var(--accent);">CLICK(x=${{action.x.toFixed(2)}}, y=${{action.y.toFixed(2)}})</div>`;
             }} else if (action.type === 'type') {{
-                const elem = action.element ? `${action.element}, ` : '';
-                html = `<div style="font-weight:600;color:var(--accent);">TYPE(${elem}"${{action.text}}")</div>`;
+                const elem = action.element ? `${{action.element}}, ` : '';
+                html = `<div style="font-weight:600;color:var(--accent);">TYPE(${{elem}}"${{action.text}}")</div>`;
             }} else if (action.type === 'raw') {{
                 html = `<div style="color:var(--accent);">${{action.text}}</div>`;
             }}
@@ -2636,6 +2605,10 @@ def _enhance_comparison_to_unified_viewer(
     goal: str = "Untitled",
 ) -> None:
     """Enhance an existing comparison HTML file into a unified viewer.
+
+    DEPRECATED: This function uses script injection which is fragile.
+    Use _generate_unified_viewer_from_extracted_data() instead for a
+    standalone viewer that doesn't depend on the comparison.html structure.
 
     Takes the nice openadapt-capture viewer and adds:
     - Simplified nav (Training + Viewer only)

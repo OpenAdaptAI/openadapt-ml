@@ -58,49 +58,14 @@ def _regenerate_viewer_if_possible(output_dir: Path) -> bool:
 
     Returns True if viewer was regenerated, False otherwise.
     """
-    from openadapt_ml.training.trainer import _enhance_comparison_to_unified_viewer
-
-    # Look for base comparison file
-    base_file = output_dir / "comparison.html"
-    if not base_file.exists():
-        # Try to find any comparison HTML
-        comparison_files = list(output_dir.glob("*comparison*.html"))
-        if comparison_files:
-            base_file = comparison_files[0]
-        else:
-            return False
-
-    # Load predictions from checkpoint files
-    predictions_by_checkpoint = {"None": []}
-    for pred_file in output_dir.glob("predictions_*.json"):
-        checkpoint_name = pred_file.stem.replace("predictions_", "")
-        if "epoch" in checkpoint_name:
-            display_name = checkpoint_name.replace("epoch", "Epoch ").replace("_", " ").title()
-        elif checkpoint_name == "preview":
-            display_name = "Preview"
-        else:
-            display_name = checkpoint_name.title()
-
-        try:
-            with open(pred_file) as f:
-                predictions_by_checkpoint[display_name] = json.load(f)
-        except json.JSONDecodeError:
-            pass
-
-    # Get capture info
-    capture_id = "capture"
-    goal = "Complete the recorded workflow"
+    from openadapt_ml.training.trainer import generate_unified_viewer_from_output_dir
 
     try:
-        _enhance_comparison_to_unified_viewer(
-            base_file,
-            predictions_by_checkpoint,
-            output_dir / "viewer.html",
-            capture_id,
-            goal,
-        )
-        print(f"Regenerated viewer: {output_dir / 'viewer.html'}")
-        return True
+        viewer_path = generate_unified_viewer_from_output_dir(output_dir)
+        if viewer_path:
+            print(f"Regenerated viewer: {viewer_path}")
+            return True
+        return False
     except Exception as e:
         print(f"Could not regenerate viewer: {e}")
         return False
@@ -399,7 +364,7 @@ def cmd_viewer(args: argparse.Namespace) -> int:
     """Regenerate viewer from local training output."""
     from openadapt_ml.training.trainer import (
         generate_training_dashboard,
-        _enhance_comparison_to_unified_viewer,
+        generate_unified_viewer_from_output_dir,
         TrainingState,
         TrainingConfig,
     )
@@ -435,66 +400,12 @@ def cmd_viewer(args: argparse.Namespace) -> int:
         (current_dir / "dashboard.html").write_text(dashboard_html)
         print(f"  Regenerated: dashboard.html")
 
-    # Find comparison HTML to enhance
-    # Try epoch-specific files first, then fall back to generic comparison.html
-    comparison_files = list(current_dir.glob("comparison_epoch*.html"))
-    base_file = None
-    if comparison_files:
-        # Use the latest epoch comparison
-        base_file = sorted(comparison_files)[-1]
-    elif (current_dir / "comparison.html").exists():
-        base_file = current_dir / "comparison.html"
-
-    if base_file:
-        print(f"  Using base file: {base_file.name}")
-
-        # Load all prediction files
-        predictions_by_checkpoint = {"None": []}
-        for pred_file in current_dir.glob("predictions_*.json"):
-            checkpoint_name = pred_file.stem.replace("predictions_", "")
-            # Map to display name
-            if "epoch" in checkpoint_name:
-                display_name = checkpoint_name.replace("epoch", "Epoch ").replace("_", " ").title()
-            elif checkpoint_name == "preview":
-                display_name = "Preview"
-            else:
-                display_name = checkpoint_name.title()
-
-            try:
-                with open(pred_file) as f:
-                    data = json.load(f)
-                    # Handle predictions JSON structure
-                    if isinstance(data, dict) and "predictions" in data:
-                        predictions_by_checkpoint[display_name] = data["predictions"]
-                    else:
-                        predictions_by_checkpoint[display_name] = data
-                print(f"  Loaded predictions from {pred_file.name}")
-            except json.JSONDecodeError:
-                print(f"  Warning: Could not parse {pred_file.name}")
-
-        # Get capture info from training log
-        capture_id = "capture"
-        goal = "Complete the recorded workflow"
-        if log_file.exists():
-            try:
-                with open(log_file) as f:
-                    log_data = json.load(f)
-                capture_path = log_data.get("capture_path", "")
-                if capture_path:
-                    capture_id = Path(capture_path).name
-            except (json.JSONDecodeError, KeyError):
-                pass
-
-        _enhance_comparison_to_unified_viewer(
-            base_file,
-            predictions_by_checkpoint,
-            current_dir / "viewer.html",
-            capture_id,
-            goal,
-        )
-        print(f"\nGenerated: {current_dir / 'viewer.html'}")
+    # Generate unified viewer using consolidated function
+    viewer_path = generate_unified_viewer_from_output_dir(current_dir)
+    if viewer_path:
+        print(f"\nGenerated: {viewer_path}")
     else:
-        print("\nNo comparison.html found. Run comparison first or copy from capture directory.")
+        print("\nNo comparison data found. Run comparison first or copy from capture directory.")
 
     if args.open:
         webbrowser.open(str(current_dir / "viewer.html"))
