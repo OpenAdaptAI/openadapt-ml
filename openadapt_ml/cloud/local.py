@@ -71,6 +71,101 @@ def _regenerate_viewer_if_possible(output_dir: Path) -> bool:
         return False
 
 
+def _is_mock_benchmark(benchmark_dir: Path) -> bool:
+    """Check if a benchmark run is mock/test data (not real evaluation).
+
+    Returns True if the benchmark is mock data that should be filtered out.
+    """
+    # Check summary.json for model_id
+    summary_path = benchmark_dir / "summary.json"
+    if summary_path.exists():
+        try:
+            with open(summary_path) as f:
+                summary = json.load(f)
+            model_id = summary.get("model_id", "").lower()
+            # Filter out mock/test/random agent runs
+            if any(term in model_id for term in ["random", "mock", "test"]):
+                return True
+        except Exception:
+            pass
+
+    # Check metadata.json for model_id
+    metadata_path = benchmark_dir / "metadata.json"
+    if metadata_path.exists():
+        try:
+            with open(metadata_path) as f:
+                metadata = json.load(f)
+            model_id = metadata.get("model_id", "").lower()
+            if any(term in model_id for term in ["random", "mock", "test"]):
+                return True
+        except Exception:
+            pass
+
+    # Check benchmark name for "mock"
+    if "mock" in benchmark_dir.name.lower():
+        return True
+
+    return False
+
+
+def _regenerate_benchmark_viewer_if_available(output_dir: Path) -> bool:
+    """Regenerate benchmark.html from latest real benchmark results.
+
+    Looks for the most recent non-mock benchmark run in benchmark_results/ directory
+    and generates a benchmark viewer in the output directory. If no real benchmark
+    data exists, generates an empty state viewer with guidance.
+
+    Returns True if benchmark viewer was regenerated, False otherwise.
+    """
+    from openadapt_ml.training.benchmark_viewer import (
+        generate_benchmark_viewer,
+        generate_empty_benchmark_viewer,
+    )
+
+    benchmark_results_dir = Path("benchmark_results")
+
+    # Find real (non-mock) benchmark runs
+    real_benchmarks = []
+    if benchmark_results_dir.exists():
+        for d in benchmark_results_dir.iterdir():
+            if d.is_dir() and (d / "summary.json").exists():
+                if not _is_mock_benchmark(d):
+                    real_benchmarks.append(d)
+
+    benchmark_html_path = output_dir / "benchmark.html"
+
+    if not real_benchmarks:
+        # No real benchmark data - generate empty state viewer
+        try:
+            generate_empty_benchmark_viewer(benchmark_html_path)
+            print("  Generated benchmark viewer: No real evaluation data yet")
+            return True
+        except Exception as e:
+            print(f"  Could not generate empty benchmark viewer: {e}")
+            return False
+
+    # Sort by modification time to get the latest real benchmark
+    latest_benchmark = max(real_benchmarks, key=lambda d: d.stat().st_mtime)
+
+    try:
+        # Generate benchmark.html in the output directory
+        generate_benchmark_viewer(latest_benchmark, benchmark_html_path)
+
+        # Copy tasks folder for screenshots
+        tasks_src = latest_benchmark / "tasks"
+        tasks_dst = output_dir / "tasks"
+        if tasks_src.exists():
+            if tasks_dst.exists():
+                shutil.rmtree(tasks_dst)
+            shutil.copytree(tasks_src, tasks_dst)
+
+        print(f"  Regenerated benchmark viewer from: {latest_benchmark.name}")
+        return True
+    except Exception as e:
+        print(f"  Could not regenerate benchmark viewer: {e}")
+        return False
+
+
 def detect_device() -> str:
     """Detect available compute device."""
     try:
@@ -327,6 +422,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
             except Exception as e:
                 print(f"Warning: Could not regenerate: {e}")
 
+            # Also regenerate benchmark viewer from latest benchmark results
+            _regenerate_benchmark_viewer_if_available(serve_dir)
+
         start_page = "dashboard.html"
 
     # Serve from the specified directory
@@ -353,8 +451,99 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 self.end_headers()
                 self.wfile.write(b'{"status": "stop_signal_created"}')
                 print(f"\n⏹ Stop signal created: {stop_file}")
+            elif self.path == '/api/run-benchmark':
+                # Parse request body for provider
+                content_length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(content_length).decode('utf-8') if content_length else '{}'
+                try:
+                    params = json.loads(body)
+                except json.JSONDecodeError:
+                    params = {}
+
+                provider = params.get('provider', 'anthropic')
+                tasks = params.get('tasks', 5)
+
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "started", "provider": provider, "tasks": tasks}).encode())
+
+                # Run benchmark in background thread with progress logging
+                def run_benchmark():
+                    import subprocess
+                    from dotenv import load_dotenv
+
+                    # Load .env file for API keys
+                    project_root = Path(__file__).parent.parent.parent
+                    load_dotenv(project_root / ".env")
+
+                    # Create progress log file (in cwd which is serve_dir)
+                    progress_file = Path("benchmark_progress.json")
+
+                    print(f"\n🚀 Starting {provider} benchmark evaluation ({tasks} tasks)...")
+
+                    # Write initial progress
+                    progress_file.write_text(json.dumps({
+                        "status": "running",
+                        "provider": provider,
+                        "tasks_total": tasks,
+                        "tasks_complete": 0,
+                        "message": f"Starting {provider} evaluation..."
+                    }))
+
+                    # Copy environment with loaded vars
+                    env = os.environ.copy()
+
+                    result = subprocess.run(
+                        ["uv", "run", "python", "-m", "openadapt_ml.benchmarks.cli", "run-api",
+                         "--provider", provider, "--tasks", str(tasks),
+                         "--model-id", f"{provider}-api"],
+                        capture_output=True, text=True, cwd=str(project_root), env=env
+                    )
+
+                    print(f"\n📋 Benchmark output:\n{result.stdout}")
+                    if result.stderr:
+                        print(f"Stderr: {result.stderr}")
+
+                    if result.returncode == 0:
+                        print(f"✅ Benchmark complete. Regenerating viewer...")
+                        progress_file.write_text(json.dumps({
+                            "status": "complete",
+                            "provider": provider,
+                            "message": "Evaluation complete! Refreshing results..."
+                        }))
+                        # Regenerate benchmark viewer
+                        _regenerate_benchmark_viewer_if_available(serve_dir)
+                    else:
+                        print(f"❌ Benchmark failed: {result.stderr}")
+                        progress_file.write_text(json.dumps({
+                            "status": "error",
+                            "provider": provider,
+                            "message": f"Evaluation failed: {result.stderr[:200]}"
+                        }))
+
+                threading.Thread(target=run_benchmark, daemon=True).start()
             else:
                 self.send_error(404, "Not found")
+
+        def do_GET(self):
+            if self.path.startswith('/api/benchmark-progress'):
+                # Return benchmark progress
+                progress_file = Path("benchmark_progress.json")  # Relative to serve_dir (cwd)
+                if progress_file.exists():
+                    progress = progress_file.read_text()
+                else:
+                    progress = json.dumps({"status": "idle"})
+
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(progress.encode())
+            else:
+                # Default file serving
+                super().do_GET()
 
         def do_OPTIONS(self):
             # Handle CORS preflight
