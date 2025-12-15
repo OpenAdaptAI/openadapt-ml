@@ -19,6 +19,7 @@ from typing import Any
 from openadapt_ml.ingest.capture import capture_to_episode
 from openadapt_ml.schemas.sessions import Episode, Step
 from openadapt_ml.datasets.next_action import SYSTEM_PROMPT, format_action
+from openadapt_ml.training.trainer import _get_shared_header_css, _generate_shared_header_html
 
 
 def load_model(checkpoint_path: str | None, config_path: str | None = None):
@@ -430,12 +431,17 @@ def generate_comparison_html(
 
         comparison_script = f'''
         <script>
-        const comparisonData = {comparison_json};
+        // Consolidated viewer script - all variables and functions in one scope
+        // Export to window for cross-script access (for checkpoint dropdown script)
+        window.comparisonData = {comparison_json};
+        const comparisonData = window.comparisonData;  // Local alias
+        window.currentIndex = 0;  // Explicit currentIndex declaration
+        let currentIndex = window.currentIndex;  // Local alias
         let showHumanOverlay = true;
         let showPredictedOverlay = true;
 
         // Compute aggregate metrics
-        function computeMetrics() {{
+        window.computeMetrics = function() {{
             let matches = 0;
             let total = 0;
             let totalDistance = 0;
@@ -460,9 +466,10 @@ def generate_comparison_html(
                 avgDistance: distanceCount > 0 ? (totalDistance / distanceCount * 100).toFixed(1) : 'N/A',
                 total: comparisonData.length
             }};
-        }}
+        }};
+        const computeMetrics = window.computeMetrics;  // Local alias
 
-        function updateClickOverlays(index) {{
+        window.updateClickOverlays = function(index) {{
             // Remove existing overlays
             document.querySelectorAll('.click-marker, .distance-line').forEach(el => el.remove());
 
@@ -509,9 +516,10 @@ def generate_comparison_html(
                     imgContainer.appendChild(line);
                 }}
             }}
-        }}
+        }};
+        const updateClickOverlays = window.updateClickOverlays;  // Local alias
 
-        function updateComparison(index) {{
+        window.updateComparison = function(index) {{
             const data = comparisonData[index];
             if (!data) return;
 
@@ -555,9 +563,13 @@ def generate_comparison_html(
 
             // Update visual overlays
             updateClickOverlays(index);
-        }}
 
-        function setupOverlayToggles() {{
+            // Sync currentIndex to window
+            window.currentIndex = index;
+        }};
+        const updateComparison = window.updateComparison;  // Local alias
+
+        window.setupOverlayToggles = function() {{
             const togglesContainer = document.querySelector('.overlay-toggles');
             if (!togglesContainer) return;
 
@@ -586,9 +598,10 @@ def generate_comparison_html(
                     document.getElementById('toggle-predicted').click();
                 }}
             }});
-        }}
+        }};
+        const setupOverlayToggles = window.setupOverlayToggles;  // Local alias
 
-        function setupMetricsSummary() {{
+        window.setupMetricsSummary = function() {{
             const metricsEl = document.querySelector('.metrics-summary');
             if (!metricsEl) return;
 
@@ -607,13 +620,18 @@ def generate_comparison_html(
                     <span class="metric-value">${{metrics.total}}</span>
                 </div>
             `;
-        }}
+        }};
+        const setupMetricsSummary = window.setupMetricsSummary;  // Local alias
 
         // Hook into existing updateDisplay
         const originalUpdateDisplay = typeof updateDisplay !== 'undefined' ? updateDisplay : function() {{}};
-        updateDisplay = function(skipAudioSync) {{
+        window.updateDisplay = updateDisplay = function(skipAudioSync) {{
             originalUpdateDisplay(skipAudioSync);
-            updateComparison(typeof currentIndex !== 'undefined' ? currentIndex : 0);
+            // Sync currentIndex from base viewer if it exists
+            if (typeof currentIndex !== 'undefined') {{
+                window.currentIndex = currentIndex;
+            }}
+            updateComparison(window.currentIndex);
         }};
 
         // Discover other dashboards in the same directory
@@ -687,16 +705,23 @@ def generate_comparison_html(
         setTimeout(() => {{
             setupOverlayToggles();
             setupMetricsSummary();
-            updateComparison(0);
-            // Discover other dashboards and create nav bar
-            discoverDashboards();
+            updateComparison(window.currentIndex);
+            // Note: Nav is now injected via shared header HTML, no need for discoverDashboards()
         }}, 100);
         </script>
         '''
 
         # Insert into HTML
-        # Add styles before </head>
-        html = base_html.replace('</head>', comparison_styles + '</head>')
+        # Add shared header CSS and comparison styles before </head>
+        shared_header_css = f'<style>{_get_shared_header_css()}</style>'
+        html = base_html.replace('</head>', shared_header_css + comparison_styles + '</head>')
+
+        # Add shared header HTML after container div
+        shared_header_html = _generate_shared_header_html("viewer")
+        html = html.replace(
+            '<div class="container">',
+            '<div class="container">\n' + shared_header_html
+        )
 
         # Add comparison panel as full-width row BEFORE the main-content/sidebar flex row
         # Insert right BEFORE <div class="main-content"> as a sibling
@@ -1132,6 +1157,7 @@ def generate_unified_viewer(
         # Unified viewer script
         unified_script = f'''
         <script>
+        // Consolidated unified viewer script - all variables in one scope
         // Data
         const baseData = {base_data_json};
         const predictionsByCheckpoint = {predictions_json};
@@ -1139,6 +1165,7 @@ def generate_unified_viewer(
         const currentCaptureId = {current_capture_json};
 
         // State
+        let currentIndex = 0;  // Explicit currentIndex declaration
         let currentCheckpoint = 'None';
         let showHumanOverlay = true;
         let showPredictedOverlay = true;
@@ -1414,7 +1441,6 @@ def generate_unified_viewer(
             navBar.className = 'nav-bar';
             navBar.id = 'nav-bar';
             navBar.innerHTML = `
-                <span class="nav-label">Dashboards:</span>
                 <a href="dashboard.html" class="nav-link">Training</a>
                 <a href="viewer.html" class="nav-link active">Viewer</a>
             `;
@@ -1425,7 +1451,11 @@ def generate_unified_viewer(
         const originalUpdateDisplay = typeof updateDisplay !== 'undefined' ? updateDisplay : function() {{}};
         updateDisplay = function(skipAudioSync) {{
             originalUpdateDisplay(skipAudioSync);
-            updateComparison(typeof currentIndex !== 'undefined' ? currentIndex : 0);
+            // Sync currentIndex from base viewer if it exists
+            if (typeof currentIndex !== 'undefined') {{
+                currentIndex = currentIndex;
+            }}
+            updateComparison(currentIndex);
         }};
 
         // Initialize
@@ -1434,7 +1464,7 @@ def generate_unified_viewer(
             initDropdowns();
             setupOverlayToggles();
             updateMetrics();
-            updateComparison(0);
+            updateComparison(currentIndex);
         }}, 100);
         </script>
         '''
