@@ -292,24 +292,45 @@ def cmd_serve(args: argparse.Namespace) -> int:
     from openadapt_ml.training.trainer import regenerate_local_dashboard
 
     port = args.port
-    current_dir = get_current_output_dir()
 
-    if not current_dir.exists():
-        print(f"Error: {current_dir} not found. Run training first.")
-        return 1
+    # Determine what to serve: benchmark directory or training output
+    if hasattr(args, 'benchmark') and args.benchmark:
+        serve_dir = Path(args.benchmark).expanduser().resolve()
+        if not serve_dir.exists():
+            print(f"Error: Benchmark directory not found: {serve_dir}")
+            return 1
 
-    # Regenerate dashboard and viewer with latest code before serving
-    if not args.no_regenerate:
-        print("Regenerating dashboard and viewer...")
-        try:
-            regenerate_local_dashboard(str(current_dir))
-            # Also regenerate viewer if comparison data exists
-            _regenerate_viewer_if_possible(current_dir)
-        except Exception as e:
-            print(f"Warning: Could not regenerate: {e}")
+        # Regenerate benchmark viewer if needed
+        if not args.no_regenerate:
+            print("Regenerating benchmark viewer...")
+            try:
+                from openadapt_ml.training.benchmark_viewer import generate_benchmark_viewer
+                generate_benchmark_viewer(serve_dir)
+            except Exception as e:
+                print(f"Warning: Could not regenerate benchmark viewer: {e}")
 
-    # Serve from the current job directory
-    os.chdir(current_dir)
+        start_page = "benchmark.html"
+    else:
+        serve_dir = get_current_output_dir()
+
+        if not serve_dir.exists():
+            print(f"Error: {serve_dir} not found. Run training first.")
+            return 1
+
+        # Regenerate dashboard and viewer with latest code before serving
+        if not args.no_regenerate:
+            print("Regenerating dashboard and viewer...")
+            try:
+                regenerate_local_dashboard(str(serve_dir))
+                # Also regenerate viewer if comparison data exists
+                _regenerate_viewer_if_possible(serve_dir)
+            except Exception as e:
+                print(f"Warning: Could not regenerate: {e}")
+
+        start_page = "dashboard.html"
+
+    # Serve from the specified directory
+    os.chdir(serve_dir)
 
     # Custom handler with /api/stop support
     quiet_mode = args.quiet
@@ -324,7 +345,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         def do_POST(self):
             if self.path == '/api/stop':
                 # Create stop signal file
-                stop_file = current_dir / "STOP_TRAINING"
+                stop_file = serve_dir / "STOP_TRAINING"
                 stop_file.touch()
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
@@ -344,9 +365,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
             self.end_headers()
 
     with socketserver.TCPServer(("", port), StopHandler) as httpd:
-        url = f"http://localhost:{port}/dashboard.html"
-        print(f"\nServing training output at: {url}")
-        print(f"Job directory: {current_dir}")
+        url = f"http://localhost:{port}/{start_page}"
+        print(f"\nServing at: {url}")
+        print(f"Directory: {serve_dir}")
         print("Press Ctrl+C to stop\n")
 
         if args.open:
@@ -413,6 +434,36 @@ def cmd_viewer(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_benchmark_viewer(args: argparse.Namespace) -> int:
+    """Generate benchmark viewer from benchmark results."""
+    from openadapt_ml.training.benchmark_viewer import generate_benchmark_viewer
+
+    benchmark_dir = Path(args.benchmark_dir).expanduser().resolve()
+    if not benchmark_dir.exists():
+        print(f"Error: Benchmark directory not found: {benchmark_dir}")
+        return 1
+
+    print(f"\n{'='*50}")
+    print("GENERATING BENCHMARK VIEWER")
+    print(f"{'='*50}")
+    print(f"Benchmark dir: {benchmark_dir}")
+    print()
+
+    try:
+        viewer_path = generate_benchmark_viewer(benchmark_dir)
+        print(f"\nSuccess! Benchmark viewer generated at: {viewer_path}")
+
+        if args.open:
+            webbrowser.open(str(viewer_path))
+
+        return 0
+    except Exception as e:
+        print(f"Error generating benchmark viewer: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
 def cmd_compare(args: argparse.Namespace) -> int:
     """Run human vs AI comparison on local checkpoint."""
     capture_path = Path(args.capture).expanduser().resolve()
@@ -468,6 +519,9 @@ Examples:
   # Regenerate viewer
   uv run python -m openadapt_ml.cloud.local viewer --open
 
+  # Generate benchmark viewer
+  uv run python -m openadapt_ml.cloud.local benchmark-viewer benchmark_results/test_run --open
+
   # Run comparison
   uv run python -m openadapt_ml.cloud.local compare --capture ~/captures/my-workflow --checkpoint checkpoints/model
 """
@@ -498,12 +552,19 @@ Examples:
     p_serve.add_argument("--quiet", "-q", action="store_true", help="Suppress request logging")
     p_serve.add_argument("--no-regenerate", action="store_true",
                          help="Skip regenerating dashboard/viewer (serve existing files)")
+    p_serve.add_argument("--benchmark", help="Serve benchmark results directory instead of training output")
     p_serve.set_defaults(func=cmd_serve)
 
     # viewer
     p_viewer = subparsers.add_parser("viewer", help="Regenerate viewer")
     p_viewer.add_argument("--open", action="store_true", help="Open in browser")
     p_viewer.set_defaults(func=cmd_viewer)
+
+    # benchmark_viewer
+    p_benchmark = subparsers.add_parser("benchmark-viewer", help="Generate benchmark viewer")
+    p_benchmark.add_argument("benchmark_dir", help="Path to benchmark results directory")
+    p_benchmark.add_argument("--open", action="store_true", help="Open viewer in browser")
+    p_benchmark.set_defaults(func=cmd_benchmark_viewer)
 
     # compare
     p_compare = subparsers.add_parser("compare", help="Run human vs AI comparison")
