@@ -2287,6 +2287,63 @@ def _generate_unified_viewer_from_extracted_data(
         }});
     }}
 
+    function parseModelOutput(rawOutput) {{
+        // Parse model output for structured action commands
+        let action = null;
+        let thinking = '';
+
+        // Try to extract SoM actions: CLICK([N]), TYPE([N], "text"), TYPE("text")
+        const clickSomMatch = rawOutput.match(/CLICK\\s*\\(\\s*\\[\\s*(\\d+)\\s*\\]\\s*\\)/);
+        const typeSomMatch = rawOutput.match(/TYPE\\s*\\(\\s*\\[\\s*(\\d+)\\s*\\]\\s*,\\s*["']([^"']*)["']\\s*\\)/);
+        const typeSimpleMatch = rawOutput.match(/TYPE\\s*\\(\\s*["']([^"']*)["']\\s*\\)/);
+
+        // Try coordinate-based: CLICK(x=0.5, y=0.5)
+        const clickCoordMatch = rawOutput.match(/CLICK\\s*\\(\\s*x\\s*=\\s*([\\d.]+)\\s*,\\s*y\\s*=\\s*([\\d.]+)\\s*\\)/);
+
+        // Try to extract thinking/reasoning
+        const thinkMatch = rawOutput.match(/(?:Thought|Thinking|Reasoning|Analysis):\\s*([\\s\\S]*?)(?:Action:|$)/i);
+        const actionMatch = rawOutput.match(/Action:\\s*([^\\n]+)/i);
+
+        if (thinkMatch) thinking = thinkMatch[1].trim().substring(0, 150);
+
+        if (clickSomMatch) {{
+            action = {{ type: 'click', element: `[${clickSomMatch[1]}]` }};
+        }} else if (typeSomMatch) {{
+            action = {{ type: 'type', element: `[${typeSomMatch[1]}]`, text: typeSomMatch[2] }};
+        }} else if (typeSimpleMatch) {{
+            action = {{ type: 'type', text: typeSimpleMatch[1] }};
+        }} else if (clickCoordMatch) {{
+            action = {{ type: 'click', x: parseFloat(clickCoordMatch[1]), y: parseFloat(clickCoordMatch[2]) }};
+        }} else if (actionMatch) {{
+            // Extract the action line for cleaner display
+            action = {{ type: 'raw', text: actionMatch[1].trim() }};
+        }}
+
+        // Generate HTML
+        let html = '';
+        if (action) {{
+            if (action.type === 'click' && action.element) {{
+                html = `<div style="font-weight:600;color:var(--accent);">CLICK(${action.element})</div>`;
+            }} else if (action.type === 'click' && action.x !== undefined) {{
+                html = `<div style="font-weight:600;color:var(--accent);">CLICK(x=${{action.x.toFixed(2)}}, y=${{action.y.toFixed(2)}})</div>`;
+            }} else if (action.type === 'type') {{
+                const elem = action.element ? `${action.element}, ` : '';
+                html = `<div style="font-weight:600;color:var(--accent);">TYPE(${elem}"${{action.text}}")</div>`;
+            }} else if (action.type === 'raw') {{
+                html = `<div style="color:var(--accent);">${{action.text}}</div>`;
+            }}
+            if (thinking) {{
+                html += `<div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;max-height:60px;overflow:hidden;">${{thinking}}...</div>`;
+            }}
+        }} else {{
+            // No parseable action - show truncated raw output
+            const truncated = rawOutput.substring(0, 200).replace(/\\n/g, ' ');
+            html = `<div style="font-size:0.85rem;color:var(--text-muted);max-height:80px;overflow:hidden;">${{truncated}}${{rawOutput.length > 200 ? '...' : ''}}</div>`;
+        }}
+
+        return {{ action, thinking, html }};
+    }}
+
     function initDropdowns() {{
         const captureSelect = document.getElementById('capture-select');
         const checkpointSelect = document.getElementById('checkpoint-select');
@@ -2404,7 +2461,10 @@ def _generate_unified_viewer_from_extracted_data(
             if (pred.x !== undefined) {{
                 predictedEl.innerHTML = `<div>Type: ${{pred.type || 'click'}}</div><div>Position: (${{(pred.x * 100).toFixed(1)}}%, ${{(pred.y * 100).toFixed(1)}}%)</div>`;
             }} else {{
-                predictedEl.innerHTML = `<div>${{pred.raw_output || JSON.stringify(pred)}}</div>`;
+                // Parse raw_output for actions
+                const rawOutput = pred.raw_output || JSON.stringify(pred);
+                const parsed = parseModelOutput(rawOutput);
+                predictedEl.innerHTML = parsed.html;
             }}
         }} else {{
             predictedEl.innerHTML = '<em style="color:var(--text-muted);">No prediction</em>';
