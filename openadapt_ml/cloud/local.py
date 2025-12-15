@@ -346,13 +346,39 @@ def cmd_serve(args: argparse.Namespace) -> int:
     # Serve from the current job directory
     os.chdir(current_dir)
 
-    class QuietHandler(http.server.SimpleHTTPRequestHandler):
-        def log_message(self, format, *args):
-            pass  # Suppress request logging
+    # Custom handler with /api/stop support
+    quiet_mode = args.quiet
 
-    handler = QuietHandler if args.quiet else http.server.SimpleHTTPRequestHandler
+    class StopHandler(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, format, *log_args):
+            if quiet_mode:
+                pass  # Suppress request logging
+            else:
+                super().log_message(format, *log_args)
 
-    with socketserver.TCPServer(("", port), handler) as httpd:
+        def do_POST(self):
+            if self.path == '/api/stop':
+                # Create stop signal file
+                stop_file = current_dir / "STOP_TRAINING"
+                stop_file.touch()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(b'{"status": "stop_signal_created"}')
+                print(f"\n⏹ Stop signal created: {stop_file}")
+            else:
+                self.send_error(404, "Not found")
+
+        def do_OPTIONS(self):
+            # Handle CORS preflight
+            self.send_response(200)
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+            self.end_headers()
+
+    with socketserver.TCPServer(("", port), StopHandler) as httpd:
         url = f"http://localhost:{port}/dashboard.html"
         print(f"\nServing training output at: {url}")
         print(f"Job directory: {current_dir}")

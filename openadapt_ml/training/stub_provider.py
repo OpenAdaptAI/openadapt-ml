@@ -20,6 +20,8 @@ class StubTrainingProvider:
         epochs: int = 5,
         steps_per_epoch: int = 10,
         step_delay: float = 0.5,
+        early_stop_loss: float = 0.0,
+        early_stop_patience: int = 3,
     ):
         """Initialize stub provider.
 
@@ -28,6 +30,8 @@ class StubTrainingProvider:
             epochs: Number of epochs to simulate
             steps_per_epoch: Steps per epoch
             step_delay: Delay between steps in seconds (for realistic feel)
+            early_stop_loss: Stop if loss drops below this threshold
+            early_stop_patience: Number of consecutive steps below threshold before stopping
         """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -35,6 +39,8 @@ class StubTrainingProvider:
         self.epochs = epochs
         self.steps_per_epoch = steps_per_epoch
         self.step_delay = step_delay
+        self.early_stop_loss = early_stop_loss
+        self.early_stop_patience = early_stop_patience
 
         self.current_epoch = 0
         self.current_step = 0
@@ -42,6 +48,9 @@ class StubTrainingProvider:
         self.evaluations = []
         self.start_time = time.time()
         self.job_id = f"stub_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self.consecutive_low_loss = 0
+        self.termination_status = None
+        self.termination_message = None
 
     def simulate_step(self) -> dict:
         """Simulate one training step.
@@ -124,6 +133,14 @@ class StubTrainingProvider:
         current_loss = self.losses[-1]["loss"] if self.losses else 0
         elapsed = time.time() - self.start_time
 
+        # Determine status
+        if self.termination_status:
+            status = "completed" if self.termination_status == "auto_complete" else self.termination_status
+        elif self.is_complete():
+            status = "completed"
+        else:
+            status = "training"
+
         return {
             "job_id": self.job_id,
             "hostname": "stub-local",
@@ -147,6 +164,9 @@ class StubTrainingProvider:
             "elapsed_time": elapsed,
             "losses": self.losses,
             "evaluations": self.evaluations,
+            "status": status,
+            "termination_status": self.termination_status,
+            "termination_message": self.termination_message,
         }
 
     def write_status(self):
@@ -172,20 +192,38 @@ class StubTrainingProvider:
         print(f"[Stub] Starting simulated training: {self.epochs} epochs, {self.steps_per_epoch} steps/epoch")
         print(f"[Stub] Output: {self.output_dir}")
         print(f"[Stub] Step delay: {self.step_delay}s (total ~{self.epochs * self.steps_per_epoch * self.step_delay:.0f}s)")
+        if self.early_stop_loss > 0:
+            print(f"[Stub] Early stop: loss < {self.early_stop_loss} for {self.early_stop_patience} steps")
         print()
 
         while not self.is_complete():
-            # Check for stop signal
+            # Check for user stop signal
             if self.check_stop_signal():
-                print("\n[Stub] Stop signal received!")
+                print("\n[Stub] ⏹ Stop signal received from user!")
                 (self.output_dir / "STOP_TRAINING").unlink(missing_ok=True)
+                self.termination_status = "user_stop"
+                self.termination_message = f"Stopped at epoch {self.current_epoch + 1}, step {self.current_step}"
+                self.write_status()
                 break
 
             status = self.simulate_step()
+
+            # Check for early stop loss
+            loss = status["loss"]
+            if self.early_stop_loss > 0 and loss < self.early_stop_loss:
+                self.consecutive_low_loss += 1
+                if self.consecutive_low_loss >= self.early_stop_patience:
+                    print(f"\n[Stub] ✓ Auto-stopped: loss ({loss:.4f}) < {self.early_stop_loss} for {self.early_stop_patience} steps")
+                    self.termination_status = "auto_low_loss"
+                    self.termination_message = f"Loss reached {loss:.4f} (< {self.early_stop_loss})"
+                    self.write_status()
+                    break
+            else:
+                self.consecutive_low_loss = 0
+
             self.write_status()
 
             # Progress output
-            loss = status["loss"]
             epoch = status["epoch"]
             step = status["step"]
             display_epoch = min(epoch + 1, self.epochs)  # Cap at max for display
@@ -196,5 +234,11 @@ class StubTrainingProvider:
 
             time.sleep(self.step_delay)
 
-        print("\n[Stub] Training simulation complete!")
+        # Set completion status if not already set
+        if self.termination_status is None:
+            self.termination_status = "auto_complete"
+            self.termination_message = f"Completed {self.epochs} epochs"
+            self.write_status()
+
+        print(f"\n[Stub] Training complete: {self.termination_status}")
         return self.get_status()
