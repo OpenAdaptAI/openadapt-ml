@@ -3153,11 +3153,17 @@ def _generate_unified_viewer_from_extracted_data(
         document.getElementById('toggle-human').onclick = function() {{
             showHumanOverlay = !showHumanOverlay;
             this.classList.toggle('active', showHumanOverlay);
+            // Also dim the human action box
+            const humanBox = document.querySelector('.action-box.human');
+            if (humanBox) humanBox.style.opacity = showHumanOverlay ? '1' : '0.4';
             updateClickOverlays();
         }};
         document.getElementById('toggle-predicted').onclick = function() {{
             showPredictedOverlay = !showPredictedOverlay;
             this.classList.toggle('active', showPredictedOverlay);
+            // Also dim the predicted action box
+            const predictedBox = document.getElementById('predicted-box');
+            if (predictedBox) predictedBox.style.opacity = showPredictedOverlay ? '1' : '0.4';
             updateClickOverlays();
         }};
     }}
@@ -3249,6 +3255,11 @@ def _generate_unified_viewer_from_extracted_data(
         // Speed control
         document.getElementById('speed-select').onchange = (e) => {{
             playSpeed = parseInt(e.target.value);
+            // Map step interval to audio playback rate: 2000ms=0.5x, 1000ms=1x, 500ms=2x, 250ms=4x
+            const playbackRate = 1000 / playSpeed;
+            if (audioElement) {{
+                audioElement.playbackRate = playbackRate;
+            }}
             if (isPlaying) {{
                 stopPlayback();
                 startPlayback();
