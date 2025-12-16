@@ -743,6 +743,12 @@ uv run python -m openadapt_ml.cloud.local serve --port 8080 --open
 - `Home` / `End` - First/last frame
 - `O` - Toggle click overlay
 
+**Benchmark Viewer:**
+
+![Benchmark Viewer](docs/images/benchmark_viewer.png)
+
+*View benchmark evaluation results with task-level filtering, success/failure status, and run comparison. Shows Claude achieving 30% success rate on WAA mock tasks.*
+
 ---
 
 ## 13. Limitations & Notes
