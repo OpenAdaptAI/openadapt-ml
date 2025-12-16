@@ -564,6 +564,7 @@ class WAAMockAdapter(BenchmarkAdapter):
         self._tasks: list[BenchmarkTask] = []
         self._current_task: BenchmarkTask | None = None
         self._step_count = 0
+        self._temp_dir: Path | None = None
         self._generate_mock_tasks()
 
     @property
@@ -628,9 +629,20 @@ class WAAMockAdapter(BenchmarkAdapter):
         )
 
     def _mock_observation(self) -> BenchmarkObservation:
-        """Generate a mock observation."""
+        """Generate a mock observation with a real screenshot file."""
+        import tempfile
+
+        # Create temp directory if needed
+        if self._temp_dir is None:
+            self._temp_dir = Path(tempfile.mkdtemp(prefix="waa_mock_"))
+
+        # Generate a simple mock screenshot (gray image with text)
+        screenshot_path = self._temp_dir / f"mock_step_{self._step_count}.png"
+        self._generate_mock_screenshot(screenshot_path)
+
         return BenchmarkObservation(
-            screenshot=b"mock_screenshot_data",
+            screenshot=screenshot_path.read_bytes(),
+            screenshot_path=str(screenshot_path),
             viewport=(1920, 1200),
             accessibility_tree={
                 "role": "window",
@@ -638,7 +650,55 @@ class WAAMockAdapter(BenchmarkAdapter):
                 "children": [
                     {"role": "button", "name": "OK", "id": "1"},
                     {"role": "textfield", "name": "Input", "id": "2"},
+                    {"role": "button", "name": "Cancel", "id": "3"},
+                    {"role": "button", "name": "Submit", "id": "4"},
                 ],
             },
             window_title="Mock Window - Testing",
         )
+
+    def _generate_mock_screenshot(self, path: Path) -> None:
+        """Generate a simple mock screenshot image."""
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+
+            # Create a simple gray image with some UI elements
+            img = Image.new("RGB", (1920, 1200), color=(240, 240, 240))
+            draw = ImageDraw.Draw(img)
+
+            # Draw a title bar
+            draw.rectangle([0, 0, 1920, 40], fill=(60, 60, 60))
+            draw.text((20, 10), "Mock Application Window", fill=(255, 255, 255))
+
+            # Draw some buttons
+            draw.rectangle([100, 100, 200, 140], fill=(0, 120, 215))
+            draw.text((120, 110), "OK", fill=(255, 255, 255))
+
+            draw.rectangle([220, 100, 320, 140], fill=(200, 200, 200))
+            draw.text((240, 110), "Cancel", fill=(0, 0, 0))
+
+            # Draw a text field
+            draw.rectangle([100, 160, 500, 200], outline=(100, 100, 100))
+            draw.text((110, 170), "Enter text here...", fill=(150, 150, 150))
+
+            # Draw task instruction
+            task_name = self._current_task.task_id if self._current_task else "Unknown"
+            draw.text((100, 250), f"Task: {task_name}", fill=(0, 0, 0))
+            draw.text((100, 280), f"Step: {self._step_count}", fill=(0, 0, 0))
+
+            img.save(path)
+        except ImportError:
+            # Fallback: create a minimal valid PNG if PIL not available
+            # This is a 1x1 gray PNG
+            minimal_png = bytes([
+                0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,  # PNG signature
+                0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,  # IHDR chunk
+                0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+                0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+                0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41,  # IDAT chunk
+                0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+                0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x05, 0xFE,
+                0xD4, 0xEF, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,  # IEND chunk
+                0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82
+            ])
+            path.write_bytes(minimal_png)

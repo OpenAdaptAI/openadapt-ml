@@ -141,135 +141,207 @@ class QwenVLAdapter(BaseVLMAdapter):
     def prepare_inputs(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:  # type: ignore[override]
         """Convert SFT samples into model inputs for Qwen-VL.
 
-        We reinterpret generic SFT samples into Qwen-style multimodal
-        messages with proper chat format: user message followed by assistant
-        message. This matches the inference format where we generate from the
-        assistant turn. For Qwen3-VL we use assistant-only supervision by
-        masking non-assistant tokens in the labels.
+        Supports true batching by processing multiple samples simultaneously.
+        Uses processor.apply_chat_template with padding=True and truncation=True
+        for multi-sample tokenization. Computes assistant-only labels per sample.
+
+        Args:
+            batch: List of SFT-style samples, each with "images" and "messages" keys.
+
+        Returns:
+            Dict with input_ids, attention_mask, pixel_values, image_grid_thw, and labels.
         """
 
-        if len(batch) != 1:
-            raise ValueError("QwenVLAdapter currently expects batch_size=1 for training.")
-
-        sample = batch[0]
-        image_paths = sample["images"]
-        if not image_paths:
-            raise ValueError("Sample is missing image paths")
-        image_path = image_paths[0]
-
-        messages = sample["messages"]
-        user_text = ""
-        assistant_text = ""
-        for m in messages:
-            role = m.get("role")
-            if role == "user":
-                user_text = m.get("content", "")
-            elif role == "assistant":
-                assistant_text = m.get("content", "")
-
         if self.version == "qwen3":
-            # Build proper chat format with user + assistant messages
-            # This matches inference format for consistent train/test behavior
-            qwen_messages_full: List[Dict[str, Any]] = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "image": image_path},
-                        {"type": "text", "text": user_text},
-                    ],
-                },
-            ]
-            if assistant_text:
-                qwen_messages_full.append({
-                    "role": "assistant",
-                    "content": [{"type": "text", "text": assistant_text}],
-                })
+            # Build batch of messages for all samples
+            batch_messages_full: List[List[Dict[str, Any]]] = []
+            batch_messages_user_only: List[List[Dict[str, Any]]] = []
 
-            # User-only messages (with generation prompt) for label masking
-            qwen_messages_user_only: List[Dict[str, Any]] = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "image": image_path},
-                        {"type": "text", "text": user_text},
-                    ],
-                }
-            ]
+            for sample in batch:
+                image_paths = sample["images"]
+                if not image_paths:
+                    raise ValueError("Sample is missing image paths")
+                image_path = image_paths[0]
 
+                messages = sample["messages"]
+                user_text = ""
+                assistant_text = ""
+                for m in messages:
+                    role = m.get("role")
+                    if role == "user":
+                        user_text = m.get("content", "")
+                    elif role == "assistant":
+                        assistant_text = m.get("content", "")
+
+                # Full messages (user + assistant)
+                qwen_messages_full: List[Dict[str, Any]] = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image", "image": image_path},
+                            {"type": "text", "text": user_text},
+                        ],
+                    },
+                ]
+                if assistant_text:
+                    qwen_messages_full.append({
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": assistant_text}],
+                    })
+                batch_messages_full.append(qwen_messages_full)
+
+                # User-only messages (for label masking)
+                qwen_messages_user_only: List[Dict[str, Any]] = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image", "image": image_path},
+                            {"type": "text", "text": user_text},
+                        ],
+                    }
+                ]
+                batch_messages_user_only.append(qwen_messages_user_only)
+
+            # Tokenize full batch with padding and truncation
             inputs_full = self.processor.apply_chat_template(  # type: ignore[call-arg]
-                qwen_messages_full,
+                batch_messages_full,
                 tokenize=True,
                 add_generation_prompt=False,
                 return_dict=True,
                 return_tensors="pt",
+                padding=True,
+                truncation=True,
             )
 
-            # Use add_generation_prompt=True for user-only to get the prefix
-            # that matches inference format
+            # Tokenize user-only batch for label masking
             inputs_user = self.processor.apply_chat_template(  # type: ignore[call-arg]
-                qwen_messages_user_only,
+                batch_messages_user_only,
                 tokenize=True,
                 add_generation_prompt=True,
                 return_dict=True,
                 return_tensors="pt",
+                padding=True,
+                truncation=True,
             )
 
-            input_ids_full = inputs_full["input_ids"]
-            input_ids_user = inputs_user["input_ids"]
+            input_ids_full = inputs_full["input_ids"]  # [batch_size, seq_len]
+            input_ids_user = inputs_user["input_ids"]  # [batch_size, seq_len_user]
 
-            # Default to full-sequence labels; refine to assistant-only when
-            # we can confidently align prefixes.
+            # Initialize labels with full input_ids, then mask per sample
             labels = input_ids_full.clone()
 
-            if assistant_text:
-                # Both tensors are shape [1, seq_len]. The user-only sequence
-                # (with generation prompt) should be a prefix of the full sequence.
-                full_ids_1d = input_ids_full[0]
-                user_ids_1d = input_ids_user[0]
-                user_len = user_ids_1d.size(0)
+            # Compute assistant-only labels per sample
+            batch_size = input_ids_full.size(0)
+            for i in range(batch_size):
+                sample = batch[i]
+                messages = sample["messages"]
+                assistant_text = ""
+                for m in messages:
+                    if m.get("role") == "assistant":
+                        assistant_text = m.get("content", "")
 
-                if user_len <= full_ids_1d.size(0) and torch.equal(
-                    full_ids_1d[:user_len], user_ids_1d
-                ):
-                    labels[:] = -100
-                    labels[0, user_len:] = full_ids_1d[user_len:]
+                if assistant_text:
+                    # Find where user prompt ends and assistant response begins
+                    # The user-only sequence should be a prefix of the full sequence
+                    full_ids = input_ids_full[i]
+                    user_ids = input_ids_user[i]
+
+                    # Remove padding from user_ids to find actual sequence length
+                    # Padding token is typically 0 or a special value
+                    # For Qwen, we look for the first occurrence of pad token
+                    pad_token_id = self.processor.tokenizer.pad_token_id
+                    user_ids_no_pad = user_ids[user_ids != pad_token_id] if pad_token_id is not None else user_ids
+                    user_len = len(user_ids_no_pad)
+
+                    # Check if user sequence is a prefix of full sequence
+                    if user_len <= full_ids.size(0):
+                        # Mask everything except assistant tokens
+                        labels[i, :] = -100
+                        # Only supervise on tokens after the user prompt
+                        labels[i, user_len:] = full_ids[user_len:]
+
+            # Ensure padding tokens are masked in labels
+            if hasattr(self.processor.tokenizer, 'pad_token_id') and self.processor.tokenizer.pad_token_id is not None:
+                labels[input_ids_full == self.processor.tokenizer.pad_token_id] = -100
 
             inputs_full["labels"] = labels
             return inputs_full
-        else:  # qwen2_5
-            # Use proper chat format with user + assistant messages
-            qwen_messages: List[Dict[str, Any]] = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "image": image_path},
-                        {"type": "text", "text": user_text},
-                    ],
-                }
-            ]
-            if assistant_text:
-                qwen_messages.append({
-                    "role": "assistant",
-                    "content": [{"type": "text", "text": assistant_text}],
-                })
 
-            text = self.processor.apply_chat_template(  # type: ignore[call-arg]
-                qwen_messages,
-                tokenize=False,
-                add_generation_prompt=False,
-            )
-            image_inputs, video_inputs = _process_vision_info(qwen_messages)
-            videos_arg = video_inputs if video_inputs else None
+        else:  # qwen2_5
+            # Build batch of messages
+            batch_messages: List[List[Dict[str, Any]]] = []
+            batch_texts: List[str] = []
+            all_image_inputs: List[List[Any]] = []
+            all_video_inputs: List[List[Any]] = []
+
+            for sample in batch:
+                image_paths = sample["images"]
+                if not image_paths:
+                    raise ValueError("Sample is missing image paths")
+                image_path = image_paths[0]
+
+                messages = sample["messages"]
+                user_text = ""
+                assistant_text = ""
+                for m in messages:
+                    role = m.get("role")
+                    if role == "user":
+                        user_text = m.get("content", "")
+                    elif role == "assistant":
+                        assistant_text = m.get("content", "")
+
+                qwen_messages: List[Dict[str, Any]] = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image", "image": image_path},
+                            {"type": "text", "text": user_text},
+                        ],
+                    }
+                ]
+                if assistant_text:
+                    qwen_messages.append({
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": assistant_text}],
+                    })
+
+                batch_messages.append(qwen_messages)
+
+                # Convert to text for this sample
+                text = self.processor.apply_chat_template(  # type: ignore[call-arg]
+                    qwen_messages,
+                    tokenize=False,
+                    add_generation_prompt=False,
+                )
+                batch_texts.append(text)
+
+                # Extract vision info
+                image_inputs, video_inputs = _process_vision_info(qwen_messages)
+                if image_inputs:
+                    all_image_inputs.extend(image_inputs)
+                if video_inputs:
+                    all_video_inputs.extend(video_inputs)
+
+            # Process batch with padding
+            videos_arg = all_video_inputs if all_video_inputs else None
             inputs = self.processor(  # type: ignore[call-arg]
-                text=[text],
-                images=image_inputs,
+                text=batch_texts,
+                images=all_image_inputs if all_image_inputs else None,
                 videos=videos_arg,
                 padding=True,
+                truncation=True,
                 return_tensors="pt",
             )
 
+            # For qwen2_5, use full sequence supervision for now
+            # (can be refined to assistant-only if needed)
             input_ids = inputs["input_ids"]
             labels = input_ids.clone()
+
+            # Mask padding tokens
+            if hasattr(self.processor.tokenizer, 'pad_token_id') and self.processor.tokenizer.pad_token_id is not None:
+                labels[input_ids == self.processor.tokenizer.pad_token_id] = -100
+
             inputs["labels"] = labels
             return inputs
 

@@ -2,6 +2,7 @@
 
 import json
 import random
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -51,6 +52,31 @@ class StubTrainingProvider:
         self.consecutive_low_loss = 0
         self.termination_status = None
         self.termination_message = None
+
+        # Set up logging to file
+        self.log_file = self.output_dir / "training.log"
+        self.log_handle = None
+
+    def _log(self, message: str, to_stdout: bool = True):
+        """Write message to both log file and stdout.
+
+        Args:
+            message: Message to log
+            to_stdout: If True, also print to stdout (default: True)
+        """
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_line = f"[{timestamp}] {message}"
+
+        # Write to file
+        if self.log_handle is None:
+            self.log_handle = open(self.log_file, "w", buffering=1)  # Line buffered
+
+        self.log_handle.write(log_line + "\n")
+        self.log_handle.flush()
+
+        # Print to stdout
+        if to_stdout:
+            print(message)
 
     def simulate_step(self) -> dict:
         """Simulate one training step.
@@ -189,17 +215,17 @@ class StubTrainingProvider:
         Args:
             callback: Optional function called after each step with status dict
         """
-        print(f"[Stub] Starting simulated training: {self.epochs} epochs, {self.steps_per_epoch} steps/epoch")
-        print(f"[Stub] Output: {self.output_dir}")
-        print(f"[Stub] Step delay: {self.step_delay}s (total ~{self.epochs * self.steps_per_epoch * self.step_delay:.0f}s)")
+        self._log(f"[Stub] Starting simulated training: {self.epochs} epochs, {self.steps_per_epoch} steps/epoch")
+        self._log(f"[Stub] Output: {self.output_dir}")
+        self._log(f"[Stub] Step delay: {self.step_delay}s (total ~{self.epochs * self.steps_per_epoch * self.step_delay:.0f}s)")
         if self.early_stop_loss > 0:
-            print(f"[Stub] Early stop: loss < {self.early_stop_loss} for {self.early_stop_patience} steps")
-        print()
+            self._log(f"[Stub] Early stop: loss < {self.early_stop_loss} for {self.early_stop_patience} steps")
+        self._log("")
 
         while not self.is_complete():
             # Check for user stop signal
             if self.check_stop_signal():
-                print("\n[Stub] ⏹ Stop signal received from user!")
+                self._log("\n[Stub] Stop signal received from user!")
                 (self.output_dir / "STOP_TRAINING").unlink(missing_ok=True)
                 self.termination_status = "user_stop"
                 self.termination_message = f"Stopped at epoch {self.current_epoch + 1}, step {self.current_step}"
@@ -213,7 +239,7 @@ class StubTrainingProvider:
             if self.early_stop_loss > 0 and loss < self.early_stop_loss:
                 self.consecutive_low_loss += 1
                 if self.consecutive_low_loss >= self.early_stop_patience:
-                    print(f"\n[Stub] ✓ Auto-stopped: loss ({loss:.4f}) < {self.early_stop_loss} for {self.early_stop_patience} steps")
+                    self._log(f"\n[Stub] Auto-stopped: loss ({loss:.4f}) < {self.early_stop_loss} for {self.early_stop_patience} steps")
                     self.termination_status = "auto_low_loss"
                     self.termination_message = f"Loss reached {loss:.4f} (< {self.early_stop_loss})"
                     self.write_status()
@@ -227,7 +253,7 @@ class StubTrainingProvider:
             epoch = status["epoch"]
             step = status["step"]
             display_epoch = min(epoch + 1, self.epochs)  # Cap at max for display
-            print(f"  Epoch {display_epoch}/{self.epochs} | Step {step} | Loss: {loss:.4f}")
+            self._log(f"  Epoch {display_epoch}/{self.epochs} | Step {step} | Loss: {loss:.4f}")
 
             if callback:
                 callback(status)
@@ -240,5 +266,11 @@ class StubTrainingProvider:
             self.termination_message = f"Completed {self.epochs} epochs"
             self.write_status()
 
-        print(f"\n[Stub] Training complete: {self.termination_status}")
+        self._log(f"\n[Stub] Training complete: {self.termination_status}")
+
+        # Close log file
+        if self.log_handle:
+            self.log_handle.close()
+            self.log_handle = None
+
         return self.get_status()

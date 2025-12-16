@@ -1,0 +1,97 @@
+[
+  {
+    "id": "episode_001",
+    "goal": "Log into the application",
+    "workflow_id": "login_workflow",
+    "steps": [
+      {
+        "t": 0.0,
+        "observation": {
+          "image_path": "screenshots/step_0.png",
+          "window_title": "Login - MyApp",
+          "app_name": "MyApp"
+        },
+        "action": {
+          "type": "click",
+          "x": 0.5,
+          "y": 0.4,
+          "target_role": "textfield",
+          "target_name": "Username"
+        },
+        "thought": "Click on the username field to start entering credentials"
+      },
+      {
+        "t": 1.2,
+        "observation": {
+          "image_path": "screenshots/step_1.png",
+          "window_title": "Login - MyApp",
+          "app_name": "MyApp"
+        },
+        "action": {
+          "type": "type",
+          "text": "user@example.com"
+        },
+        "thought": "Enter the username"
+      },
+      {
+        "t": 3.5,
+        "observation": {
+          "image_path": "screenshots/step_2.png",
+          "window_title": "Login - MyApp",
+          "app_name": "MyApp"
+        },
+        "action": {
+          "type": "click",
+          "x": 0.5,
+          "y": 0.55,
+          "target_role": "textfield",
+          "target_name": "Password"
+        },
+        "thought": "Click on the password field"
+      },
+      {
+        "t": 4.8,
+        "observation": {
+          "image_path": "screenshots/step_3.png",
+          "window_title": "Login - MyApp",
+          "app_name": "MyApp"
+        },
+        "action": {
+          "type": "type",
+          "text": "secretpassword"
+        },
+        "thought": "Enter the password"
+      },
+      {
+        "t": 7.2,
+        "observation": {
+          "image_path": "screenshots/step_4.png",
+          "window_title": "Login - MyApp",
+          "app_name": "MyApp"
+        },
+        "action": {
+          "type": "click",
+          "x": 0.5,
+          "y": 0.7,
+          "target_role": "button",
+          "target_name": "Sign In"
+        },
+        "thought": "Click the Sign In button to submit credentials"
+      },
+      {
+        "t": 9.0,
+        "observation": {
+          "image_path": "screenshots/step_5.png",
+          "window_title": "Dashboard - MyApp",
+          "app_name": "MyApp"
+        },
+        "action": {
+          "type": "done"
+        },
+        "thought": "Login successful, dashboard is now visible"
+      }
+    ],
+    "success": true,
+    "summary": "Successfully logged into the application"
+  }
+]

@@ -31,8 +31,11 @@ synthetic_train_dev/
 # Ephemeral training/eval artifacts
 logs/
 checkpoints/
+checkpoints_*/
 /plots/
 eval_*.json
+benchmark_results/
+debug_*/
 
 # Internal documentation (not for public repo)
 docs/internal/

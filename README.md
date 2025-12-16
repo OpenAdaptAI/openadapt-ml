@@ -87,8 +87,7 @@ uv run python -m openadapt_ml.scripts.run_qwen_login_benchmark \
 This will evaluate and plot **Qwen3 base**, **Qwen3 FT**, **Claude Sonnet 4.5**,
 and **GPT-5.1** on the same synthetic login benchmark.
 
-For more details on configs, adapters, and evaluation metrics, see the sections
-below and `docs/state_and_next_steps_qwen_login.md`.
+For complete documentation including training setup, evaluation metrics, SoM mode results, and reproduction instructions, see **[`docs/qwen_login_experiment.md`](docs/qwen_login_experiment.md)**. For implementation details and technical notes, see `docs/state_and_next_steps_qwen_login.md`.
 
 ---
 
@@ -584,11 +583,15 @@ In particular:
 
 ---
 
-## 10. Training on Real Captures
+## 10. Training on Real Data
 
-OpenAdapt-ML can train on real GUI recordings captured with [openadapt-capture](https://github.com/OpenAdaptAI/openadapt-capture).
+OpenAdapt-ML supports training on real GUI recordings from two sources:
+1. **openadapt-capture** - New lightweight recording format
+2. **OpenAdapt database** - Original OpenAdapt recordings (legacy)
 
-### 10.1 Capture a workflow
+### 10.1 Training on openadapt-capture recordings
+
+[openadapt-capture](https://github.com/OpenAdaptAI/openadapt-capture) is a lightweight GUI recording tool.
 
 ```bash
 # Install openadapt-capture
@@ -596,20 +599,17 @@ uv pip install openadapt-capture
 
 # Record a workflow (e.g., turning off Night Shift)
 openadapt-capture record --output ~/captures/turn-off-nightshift
-```
 
-### 10.2 Train on the capture
-
-```bash
+# Train on the capture
 uv run python -m openadapt_ml.scripts.train \
-  --config configs/qwen3vl_capture_4bit.yaml \
+  --config configs/qwen3vl_capture.yaml \
   --capture ~/captures/turn-off-nightshift \
   --open  # Opens training dashboard in browser
 ```
 
 The goal is automatically derived from the directory name (e.g., `"Turn off nightshift"`).
 
-### 10.3 Compare human vs AI predictions
+### 10.2 Compare human vs AI predictions
 
 ```bash
 uv run python -m openadapt_ml.scripts.compare \

@@ -7,7 +7,7 @@ This document outlines the plan for integrating GUI agent benchmarks into openad
 ### Goals
 
 1. **Validate fine-tuning pipeline** - Confirm that models trained on recordings generalize to benchmark tasks
-2. **Establish baselines** - Compare fine-tuned models against off-the-shelf APIs (GPT-4V, Claude, Gemini)
+2. **Establish baselines** - Compare fine-tuned models against off-the-shelf APIs (GPT-5.1, Claude, Gemini)
 3. **Support multiple benchmarks** - Unified interface for WAA, OSWorld, WebArena, and future benchmarks
 
 ### Current Scope
@@ -443,7 +443,7 @@ WAA is the first large-scale benchmark for agents on real Windows OS:
 - **154 tasks** across 11 domains (browser, Office, coding, media, system apps)
 - **MIT licensed** - open source
 - **Azure parallelization** - optional, can run locally
-- **SOTA**: 19.5% success (GPT-4V + OmniParser) vs 74.5% human
+- **SOTA**: 19.5% success (GPT-5.1 + OmniParser) vs 74.5% human
 
 ### 3.2 Adapter Implementation
 
@@ -576,7 +576,7 @@ WAA uses low-level mouse/keyboard events. Mapping to canonical actions:
 
 Before fine-tuning, establish baselines with off-the-shelf models:
 
-1. **GPT-4V** (via API) on WAA tasks
+1. **GPT-5.1** (via API) on WAA tasks
 2. **Claude** (via API) on WAA tasks
 3. **Qwen-VL base** (no fine-tuning) on WAA tasks
 
@@ -645,12 +645,12 @@ WAA tasks span 11 domains. Evaluate per-domain to identify strengths/weaknesses:
 ### Phase 3: Baseline Evaluation
 
 **Deliverables:**
-- API agent wrappers (GPT-4V, Claude)
+- API agent wrappers (GPT-5.1, Claude)
 - Baseline results on WAA tasks
 - Analysis of failure modes
 
 **Acceptance criteria:**
-- Can run GPT-4V on all 154 WAA tasks
+- Can run GPT-5.1 on all 154 WAA tasks
 - Results match or exceed published SOTA (~19.5%)
 
 ---

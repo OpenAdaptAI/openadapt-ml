@@ -33,7 +33,49 @@ The viewer HTML has multiple script blocks with overlapping responsibilities:
 - But `currentIndex` and `updateComparison` may have scoping issues between scripts
 - Also, the base viewer in Script 1 uses `frames` data independently of `comparisonData`
 
-### 2. Model Output Format Issue
+### 2. Goal Mismatch Between Training and Inference (FIXED)
+
+**Symptom**: Predictions show "Goal: Complete the recorded workflow" instead of the actual goal.
+
+**Root Cause**: The `viewer.py` was using a hardcoded default goal instead of reading it from `training_log.json`.
+
+**Fix Applied**:
+1. Added `goal` field to `TrainingState` dataclass in `trainer.py`
+2. Added `goal` to `to_dict()` serialization
+3. Added `goal` parameter to `TrainingLogger.__init__`
+4. Updated `train.py` to pass episode goal to logger
+5. Updated `viewer.py` to read goal from training_log.json (falls back to deriving from capture path name)
+
+**Critical Invariant**: The inference prompt MUST use the same goal as training. Mismatched goals cause the model to output prose instead of DSL.
+
+### 3. Chat Template Token Leakage
+
+**Symptom**: Raw model output starts with `"user\nGoal: ...\nassistant\n..."` instead of just the response.
+
+**Example from predictions_epoch3.json**:
+```json
+{
+  "raw_output": "user\nGoal: Complete the recorded workflow\n\nWhat is the next action?\nassistant\nBased on the current state..."
+}
+```
+
+**Possible Causes**:
+1. **Inference code not stripping input** - The `QwenVLAdapter.generate()` should strip input tokens but may not be working correctly
+2. **Text-based prompt instead of chat template** - The model might receive prompts as plain text with "user\n" instead of using proper chat template special tokens
+3. **Model learned to output these tokens** - If training data included role markers in the text, the model learns to reproduce them
+
+**Investigation Status**: The `QwenVLAdapter.generate()` method at `qwen_vl.py:410-413` does strip input tokens:
+```python
+input_len = inputs["input_ids"].shape[1]
+generated_ids = generation[:, input_len:]
+```
+
+However, `predictions_epoch3.json` shows the full conversation format in output. This needs further investigation to determine if:
+- The file was created by a different code path
+- The stripping logic has a bug with certain chat templates
+- The model was fine-tuned with a different format than inference expects
+
+### 4. Model Output Format Issue
 
 The model outputs narrative text instead of structured `CLICK(x=..., y=...)` format:
 

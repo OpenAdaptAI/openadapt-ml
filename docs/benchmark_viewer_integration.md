@@ -59,7 +59,7 @@ class BenchmarkTask:
 @dataclass
 class BenchmarkExecution:
     task_id: str
-    model_id: str  # e.g., "qwen3vl-2b-epoch5", "gpt-4v"
+    model_id: str  # e.g., "qwen3vl-2b-epoch5", "gpt-5.1"
     success: bool
     steps_taken: int
     execution_time: float

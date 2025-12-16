@@ -1243,6 +1243,7 @@ def _generate_unified_viewer_from_extracted_data(
                                 <option value="incorrect">Incorrect</option>
                             </select>
                             <span class="control-hint" id="gallery-count">0 samples</span>
+                            <span class="control-hint" style="margin-left:auto;opacity:0.7;" title="S = Step (capture step index), E = Epoch (training epoch)">S=Step E=Epoch</span>
                         </div>
                         <div class="gallery-grid-compact" id="gallery-grid"></div>
                         <div class="gallery-empty" id="gallery-empty" style="display:none;">
@@ -1315,6 +1316,7 @@ def _generate_unified_viewer_from_extracted_data(
                             <option value="incorrect">Incorrect</option>
                         </select>
                         <span class="control-hint" id="gallery-count-max">0 samples</span>
+                        <span class="control-hint" style="border-left:1px solid var(--border-color);padding-left:12px;" title="S = Step (capture step index), E = Epoch (training epoch)">S = Step, E = Epoch</span>
                         <button class="gallery-close-btn" id="gallery-close-btn" title="Close">✕</button>
                     </div>
                 </div>
@@ -2431,7 +2433,7 @@ def _generate_unified_viewer_from_extracted_data(
                         </div>
                         <div class="card-content">
                             <div class="card-header">
-                                <span class="step-num">S${{ev.sample_idx + 1}} E${{ev.epoch + 1}}</span>
+                                <span class="step-num" title="Step ${{ev.sample_idx + 1}}, Epoch ${{ev.epoch + 1}}">S${{ev.sample_idx + 1}} E${{ev.epoch + 1}}</span>
                                 <span class="status ${{statusClass}}">${{statusText}}</span>
                             </div>
                         </div>

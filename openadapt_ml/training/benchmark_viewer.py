@@ -108,6 +108,99 @@ def generate_benchmark_viewer(
     return output_path
 
 
+def generate_multi_run_benchmark_viewer(
+    benchmark_dirs: list[Path],
+    output_path: Path | str,
+) -> Path:
+    """Generate benchmark viewer HTML supporting multiple benchmark runs.
+
+    Args:
+        benchmark_dirs: List of benchmark result directories (sorted most recent first)
+        output_path: Path for output benchmark.html
+
+    Returns:
+        Path to generated benchmark.html file
+    """
+    output_path = Path(output_path)
+
+    # Load metadata and summary for all runs
+    all_runs = []
+    for benchmark_dir in benchmark_dirs:
+        metadata_path = benchmark_dir / "metadata.json"
+        summary_path = benchmark_dir / "summary.json"
+
+        if not metadata_path.exists() or not summary_path.exists():
+            continue
+
+        with open(metadata_path) as f:
+            metadata = json.load(f)
+        with open(summary_path) as f:
+            summary = json.load(f)
+
+        # Load all task results for this run
+        tasks_dir = benchmark_dir / "tasks"
+        task_results = []
+
+        if tasks_dir.exists():
+            for task_dir in sorted(tasks_dir.iterdir()):
+                if not task_dir.is_dir():
+                    continue
+
+                task_json = task_dir / "task.json"
+                execution_json = task_dir / "execution.json"
+
+                if not task_json.exists() or not execution_json.exists():
+                    continue
+
+                with open(task_json) as f:
+                    task_data = json.load(f)
+
+                with open(execution_json) as f:
+                    execution_data = json.load(f)
+
+                # Combine task and execution data
+                task_result = {
+                    "task_id": task_data["task_id"],
+                    "instruction": task_data["instruction"],
+                    "domain": task_data.get("domain", "unknown"),
+                    "success": execution_data["success"],
+                    "score": execution_data.get("score", 0.0),
+                    "num_steps": execution_data["num_steps"],
+                    "total_time_seconds": execution_data.get("total_time_seconds", 0.0),
+                    "error": execution_data.get("error"),
+                    "reason": execution_data.get("reason"),
+                    "steps": execution_data.get("steps", []),
+                }
+                task_results.append(task_result)
+
+        all_runs.append({
+            "run_name": metadata.get("run_name", benchmark_dir.name),
+            "model_id": metadata.get("model_id", "unknown"),
+            "created_at": metadata.get("created_at", ""),
+            "benchmark_name": metadata.get("benchmark_name", ""),
+            "dir_name": benchmark_dir.name,  # For screenshot paths
+            "summary": summary,
+            "tasks": task_results,
+        })
+
+    if not all_runs:
+        return generate_empty_benchmark_viewer(output_path)
+
+    # Import shared header components from trainer
+    from openadapt_ml.training.trainer import _get_shared_header_css, _generate_shared_header_html
+
+    # Generate HTML
+    html = _generate_multi_run_benchmark_viewer_html(
+        runs=all_runs,
+        shared_header_css=_get_shared_header_css(),
+        shared_header_html=_generate_shared_header_html("benchmarks"),
+    )
+
+    output_path.write_text(html)
+    print(f"Generated multi-run benchmark viewer: {output_path}")
+    return output_path
+
+
 def generate_empty_benchmark_viewer(output_path: Path | str) -> Path:
     """Generate an empty benchmark viewer with guidance when no real data exists.
 
@@ -790,6 +883,643 @@ def _generate_benchmark_viewer_html(
 
             if (action.key) {{
                 parts.push(`key: ${{action.key}}`);
+            }}
+
+            if (action.target_name) {{
+                parts.push(`target: ${{action.target_name}}`);
+            }}
+
+            return parts.length > 0 ? parts.join(', ') : 'No details';
+        }}
+
+        // Initialize on page load
+        init();
+    </script>
+</body>
+</html>'''
+
+    return html
+
+
+def _generate_multi_run_benchmark_viewer_html(
+    runs: list[dict],
+    shared_header_css: str,
+    shared_header_html: str,
+) -> str:
+    """Generate HTML for multi-run benchmark viewer with run selector.
+
+    Args:
+        runs: List of run dictionaries with metadata, summary, and tasks
+        shared_header_css: CSS for shared header
+        shared_header_html: HTML for shared header
+
+    Returns:
+        Complete HTML string
+    """
+    # Prepare runs data as JSON
+    runs_json = json.dumps(runs)
+
+    # Calculate unique domains across all runs
+    all_domains = set()
+    for run in runs:
+        for task in run["tasks"]:
+            all_domains.add(task["domain"])
+    domains = sorted(all_domains)
+    domains_json = json.dumps(domains)
+
+    # Build run selector options
+    run_options = []
+    for i, run in enumerate(runs):
+        success_rate = run["summary"].get("success_rate", 0) * 100
+        label = f"{run['model_id']} - {success_rate:.0f}% ({run['run_name']})"
+        run_options.append(f'<option value="{i}">{label}</option>')
+    run_options_html = "\n".join(run_options)
+
+    # Generate HTML
+    html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Benchmark Viewer - Multiple Runs</title>
+    <style>
+        :root {{
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-tertiary: #1a1a24;
+            --border-color: rgba(255, 255, 255, 0.06);
+            --text-primary: #f0f0f0;
+            --text-secondary: #888;
+            --text-muted: #555;
+            --accent: #00d4aa;
+            --accent-dim: rgba(0, 212, 170, 0.15);
+            --success: #00d4aa;
+            --failure: #ff4444;
+        }}
+
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+
+        body {{
+            font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.5;
+        }}
+
+        .container {{
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 24px;
+        }}
+
+        {shared_header_css}
+
+        .run-selector-section {{
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }}
+
+        .run-selector-label {{
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+
+        #run-selector {{
+            flex: 1;
+            max-width: 600px;
+            padding: 10px 36px 10px 14px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            background: rgba(0,0,0,0.4);
+            color: var(--text-primary);
+            border: 1px solid rgba(255,255,255,0.1);
+            cursor: pointer;
+            appearance: none;
+            background-image: url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%278%27%3E%3Cpath fill=%27%23888%27 d=%27M0 0l6 8 6-8z%27/%3E%3C/svg%3E');
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            transition: all 0.2s;
+        }}
+
+        #run-selector:hover {{
+            border-color: var(--accent);
+            background-color: rgba(0,212,170,0.1);
+        }}
+
+        #run-selector:focus {{
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(0,212,170,0.2);
+        }}
+
+        .summary-cards {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }}
+
+        .summary-card {{
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.2s;
+        }}
+
+        .summary-card:hover {{
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }}
+
+        .summary-card .label {{
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }}
+
+        .summary-card .value {{
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }}
+
+        .summary-card .subtitle {{
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }}
+
+        .filters {{
+            display: flex;
+            gap: 12px;
+            padding: 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            align-items: center;
+        }}
+
+        .filter-label {{
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }}
+
+        .filter-select {{
+            padding: 8px 32px 8px 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            background: rgba(0,0,0,0.4);
+            color: var(--text-primary);
+            border: 1px solid rgba(255,255,255,0.1);
+            cursor: pointer;
+            appearance: none;
+            background-image: url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%278%27%3E%3Cpath fill=%27%23888%27 d=%27M0 0l6 8 6-8z%27/%3E%3C/svg%3E');
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            transition: all 0.2s;
+        }}
+
+        .filter-select:hover {{
+            border-color: var(--accent);
+            background-color: rgba(0,212,170,0.1);
+        }}
+
+        .task-list {{
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }}
+
+        .task-item {{
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            transition: all 0.2s;
+        }}
+
+        .task-item:hover {{
+            border-color: var(--accent);
+        }}
+
+        .task-header {{
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 16px 20px;
+            cursor: pointer;
+            user-select: none;
+        }}
+
+        .task-header:hover {{
+            background: var(--bg-tertiary);
+        }}
+
+        .task-status {{
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.9rem;
+            flex-shrink: 0;
+        }}
+
+        .task-status.success {{
+            background: var(--success);
+            color: var(--bg-primary);
+        }}
+
+        .task-status.failure {{
+            background: var(--failure);
+            color: var(--bg-primary);
+        }}
+
+        .task-info {{
+            flex: 1;
+            min-width: 0;
+        }}
+
+        .task-id {{
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin-bottom: 4px;
+        }}
+
+        .task-instruction {{
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }}
+
+        .task-meta {{
+            display: flex;
+            gap: 20px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-family: "SF Mono", Monaco, monospace;
+        }}
+
+        .task-domain {{
+            padding: 4px 10px;
+            background: rgba(0,212,170,0.15);
+            border-radius: 4px;
+            font-size: 0.75rem;
+            color: var(--accent);
+            font-weight: 600;
+        }}
+
+        .task-expand-icon {{
+            color: var(--text-muted);
+            transition: transform 0.2s;
+        }}
+
+        .task-item.expanded .task-expand-icon {{
+            transform: rotate(90deg);
+        }}
+
+        .task-details {{
+            display: none;
+            padding: 0 20px 20px;
+            border-top: 1px solid var(--border-color);
+        }}
+
+        .task-item.expanded .task-details {{
+            display: block;
+        }}
+
+        .steps-list {{
+            margin-top: 16px;
+        }}
+
+        .step-item {{
+            display: flex;
+            gap: 16px;
+            padding: 12px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            margin-bottom: 8px;
+        }}
+
+        .step-number {{
+            font-weight: 600;
+            color: var(--accent);
+            min-width: 60px;
+        }}
+
+        .step-screenshot {{
+            max-width: 200px;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }}
+
+        .step-action {{
+            flex: 1;
+        }}
+
+        .action-type {{
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            color: var(--accent);
+            margin-bottom: 4px;
+        }}
+
+        .action-details {{
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: "SF Mono", Monaco, monospace;
+        }}
+
+        .no-tasks {{
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }}
+
+        .no-tasks-icon {{
+            font-size: 3rem;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }}
+    </style>
+</head>
+<body>
+    {shared_header_html}
+
+    <div class="container">
+        <div class="run-selector-section">
+            <span class="run-selector-label">Benchmark Run:</span>
+            <select id="run-selector">
+                {run_options_html}
+            </select>
+        </div>
+
+        <div class="summary-cards">
+            <div class="summary-card">
+                <div class="label">Total Tasks</div>
+                <div class="value" id="total-tasks">0</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">Success Rate</div>
+                <div class="value" id="success-rate">0%</div>
+                <div class="subtitle" id="success-count">0 / 0 passed</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">Avg Steps</div>
+                <div class="value" id="avg-steps">0</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">Avg Time</div>
+                <div class="value" id="avg-time">0s</div>
+            </div>
+        </div>
+
+        <div class="filters">
+            <span class="filter-label">Status:</span>
+            <select class="filter-select" id="filter-status">
+                <option value="all">All Tasks</option>
+                <option value="success">Success Only</option>
+                <option value="failure">Failure Only</option>
+            </select>
+
+            <span class="filter-label">Domain:</span>
+            <select class="filter-select" id="filter-domain">
+                <option value="all">All Domains</option>
+            </select>
+        </div>
+
+        <div class="task-list" id="task-list"></div>
+
+        <div class="no-tasks" id="no-tasks" style="display: none;">
+            <div class="no-tasks-icon">📋</div>
+            <div>No tasks match the current filters</div>
+        </div>
+    </div>
+
+    <script>
+        // Data from backend
+        const allRuns = {runs_json};
+        const allDomains = {domains_json};
+
+        // State
+        let currentRunIndex = 0;
+        let currentFilters = {{
+            status: 'all',
+            domain: 'all'
+        }};
+
+        // Get current run data
+        function getCurrentRun() {{
+            return allRuns[currentRunIndex];
+        }}
+
+        function getCurrentTasks() {{
+            return getCurrentRun().tasks;
+        }}
+
+        function getCurrentSummary() {{
+            return getCurrentRun().summary;
+        }}
+
+        // Initialize
+        function init() {{
+            populateDomainFilter();
+            updateDisplay();
+
+            // Event listeners
+            document.getElementById('run-selector').addEventListener('change', (e) => {{
+                currentRunIndex = parseInt(e.target.value);
+                updateDisplay();
+            }});
+
+            document.getElementById('filter-status').addEventListener('change', (e) => {{
+                currentFilters.status = e.target.value;
+                renderTaskList();
+            }});
+
+            document.getElementById('filter-domain').addEventListener('change', (e) => {{
+                currentFilters.domain = e.target.value;
+                renderTaskList();
+            }});
+        }}
+
+        function updateDisplay() {{
+            updateSummaryCards();
+            renderTaskList();
+        }}
+
+        function updateSummaryCards() {{
+            const summary = getCurrentSummary();
+            const tasks = getCurrentTasks();
+
+            document.getElementById('total-tasks').textContent = summary.num_tasks || tasks.length;
+
+            const successRate = (summary.success_rate || 0) * 100;
+            document.getElementById('success-rate').textContent = successRate.toFixed(1) + '%';
+            document.getElementById('success-count').textContent =
+                `${{summary.num_success || 0}} / ${{summary.num_tasks || tasks.length}} passed`;
+
+            const avgSteps = summary.avg_steps || 0;
+            document.getElementById('avg-steps').textContent = avgSteps.toFixed(1);
+
+            const avgTime = summary.avg_time_seconds || 0;
+            document.getElementById('avg-time').textContent = avgTime.toFixed(2) + 's';
+        }}
+
+        function populateDomainFilter() {{
+            const select = document.getElementById('filter-domain');
+            // Clear existing options except "All Domains"
+            select.innerHTML = '<option value="all">All Domains</option>';
+
+            allDomains.forEach(domain => {{
+                const option = document.createElement('option');
+                option.value = domain;
+                option.textContent = domain.charAt(0).toUpperCase() + domain.slice(1);
+                select.appendChild(option);
+            }});
+        }}
+
+        function filterTasks() {{
+            const tasks = getCurrentTasks();
+            return tasks.filter(task => {{
+                if (currentFilters.status !== 'all') {{
+                    const isSuccess = task.success;
+                    if (currentFilters.status === 'success' && !isSuccess) return false;
+                    if (currentFilters.status === 'failure' && isSuccess) return false;
+                }}
+
+                if (currentFilters.domain !== 'all' && task.domain !== currentFilters.domain) {{
+                    return false;
+                }}
+
+                return true;
+            }});
+        }}
+
+        function renderTaskList() {{
+            const filteredTasks = filterTasks();
+            const container = document.getElementById('task-list');
+            const noTasks = document.getElementById('no-tasks');
+
+            if (filteredTasks.length === 0) {{
+                container.innerHTML = '';
+                noTasks.style.display = 'block';
+                return;
+            }}
+
+            noTasks.style.display = 'none';
+            container.innerHTML = filteredTasks.map(task => renderTaskItem(task)).join('');
+
+            // Add click handlers
+            document.querySelectorAll('.task-header').forEach(header => {{
+                header.addEventListener('click', () => {{
+                    const item = header.closest('.task-item');
+                    item.classList.toggle('expanded');
+                }});
+            }});
+        }}
+
+        function renderTaskItem(task) {{
+            const statusClass = task.success ? 'success' : 'failure';
+            const statusIcon = task.success ? '✓' : '✗';
+
+            const stepsHtml = task.steps && task.steps.length > 0
+                ? task.steps.map(step => renderStep(step, task)).join('')
+                : '<div style="padding: 12px; color: var(--text-muted);">No step details available</div>';
+
+            return `
+                <div class="task-item" data-task-id="${{task.task_id}}">
+                    <div class="task-header">
+                        <div class="task-status ${{statusClass}}">${{statusIcon}}</div>
+                        <div class="task-info">
+                            <div class="task-id">${{task.task_id}}</div>
+                            <div class="task-instruction">${{task.instruction}}</div>
+                        </div>
+                        <div class="task-domain">${{task.domain}}</div>
+                        <div class="task-meta">
+                            <span>${{task.num_steps}} steps</span>
+                            <span>${{task.total_time_seconds.toFixed(2)}}s</span>
+                        </div>
+                        <div class="task-expand-icon">▶</div>
+                    </div>
+                    <div class="task-details">
+                        <div class="steps-list">
+                            ${{stepsHtml}}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }}
+
+        function renderStep(step, task) {{
+            const actionType = step.action.type || 'unknown';
+            const actionDetails = formatActionDetails(step.action);
+            const runDirName = getCurrentRun().dir_name;
+
+            // Build screenshot path relative to benchmark.html
+            const screenshotPath = step.screenshot_path
+                ? `benchmark_tasks/${{runDirName}}/${{task.task_id}}/${{step.screenshot_path}}`
+                : '';
+
+            const screenshotHtml = screenshotPath
+                ? `<img src="${{screenshotPath}}" class="step-screenshot" alt="Step ${{step.step_idx}}" />`
+                : '';
+
+            return `
+                <div class="step-item">
+                    <div class="step-number">Step ${{step.step_idx}}</div>
+                    ${{screenshotHtml}}
+                    <div class="step-action">
+                        <div class="action-type">${{actionType}}</div>
+                        <div class="action-details">${{actionDetails}}</div>
+                        ${{step.reasoning ? `<div style="margin-top: 8px; font-style: italic; color: var(--text-secondary);">${{step.reasoning}}</div>` : ''}}
+                    </div>
+                </div>
+            `;
+        }}
+
+        function formatActionDetails(action) {{
+            const parts = [];
+
+            if (action.x !== null && action.y !== null) {{
+                parts.push(`x: ${{action.x.toFixed(3)}}, y: ${{action.y.toFixed(3)}}`);
+            }}
+
+            if (action.text) {{
+                parts.push(`text: "${{action.text}}"`);
+            }}
+
+            if (action.key) {{
+                parts.push(`key: ${{action.key}}`);
+            }}
+
+            if (action.target_node_id) {{
+                parts.push(`element: [${{action.target_node_id}}]`);
             }}
 
             if (action.target_name) {{

@@ -195,34 +195,31 @@ Today the system only tests login. A second scenario demonstrates robustness and
     at least **0.05** higher `action_type_accuracy` than a login-only model,
     and symmetrically for settings-only vs mixed.
 
-### 2.4 Priority 4 — Real OpenAdapt Data Bridge
+### 2.4 Priority 4 — Real Capture Data Bridge
 
-**Why**  
+**Why**
 Synthetic-only is useful for unit tests; real world workflows are the end goal.
 
-**Build Targets**
+**Status**: DONE
 
-- **`openadapt_bridge.py` ingestion module**
-  - Map OpenAdapt recordings → Session/Episode/Step/Action.
-  - Extract screenshot paths.
-  - Map low-level events to CLICK/TYPE/DONE.
-  - Heuristics or annotations for episode-level goals.
+Implementation uses openadapt-capture recordings (the modern capture tool) rather than the deprecated legacy OpenAdapt database.
 
-- **Real-data evaluation CLI**
-  - `scripts/eval_openadapt_policy.py`.
-  - Reuse existing offline metrics.
+**Completed**
 
-- **Baseline experiment**
-  - Compare:
-    - Qwen base.
-    - Qwen synthetic-FT.
-  - Report metrics on real traces.
+- **`openadapt_ml/ingest/capture.py` ingestion module**
+  - Maps openadapt-capture recordings → Episode/Step/Action
+  - Extracts screenshots from video or screenshots/ directory
+  - Maps events to CLICK/TYPE/DONE actions
+  - Goals derived from directory name or specified via --goal
+
+- **Training integration**
+  - `--capture` flag in train.py to train on real recordings
+  - Viewer and comparison tools work with real captures
 
 **Acceptance Criteria**
 
-- Real OpenAdapt sessions load cleanly into canonical schema.
-- Offline eval runs without modification.
-- Synthetic-FT model shows any signal > baseline.
+- Real openadapt-capture recordings load cleanly into canonical schema. ✓
+- Training pipeline works end-to-end with captures. ✓
 
 ### 2.5 Priority 5a — API VLM Adapter + Local CLI
 
