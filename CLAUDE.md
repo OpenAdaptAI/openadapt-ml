@@ -61,11 +61,46 @@ openadapt-ml is a model-agnostic, domain-agnostic ML engine for GUI automation a
 
 The benchmark integration module is implemented in `openadapt_ml/benchmarks/`:
 - `base.py` - BenchmarkAdapter interface, data classes
-- `agent.py` - BenchmarkAgent, PolicyAgent, ScriptedAgent, RandomAgent
+- `agent.py` - BenchmarkAgent, PolicyAgent, APIBenchmarkAgent, ScriptedAgent, RandomAgent
 - `runner.py` - evaluate_agent_on_benchmark(), compute_metrics()
 - `waa.py` - WAAAdapter (requires WAA repo), WAAMockAdapter (for testing)
 - `azure.py` - AzureWAAOrchestrator for parallel VM execution
 - `cli.py` - Command-line interface for WAA evaluation
+
+### APIBenchmarkAgent
+
+The `APIBenchmarkAgent` wraps hosted VLM APIs (Claude, GPT-4V) for benchmark evaluation baselines.
+This enables comparing fine-tuned models against off-the-shelf VLMs.
+
+```python
+from openadapt_ml.benchmarks import APIBenchmarkAgent, evaluate_agent_on_benchmark
+
+# Claude baseline
+agent = APIBenchmarkAgent(provider="anthropic")
+results = evaluate_agent_on_benchmark(agent, adapter)
+
+# GPT-4V baseline
+agent = APIBenchmarkAgent(provider="openai")
+results = evaluate_agent_on_benchmark(agent, adapter)
+```
+
+CLI usage:
+```bash
+# Run Claude evaluation on mock tasks
+uv run python -m openadapt_ml.benchmarks.cli run-api --provider anthropic --tasks 5
+
+# Run GPT-4V evaluation
+uv run python -m openadapt_ml.benchmarks.cli run-api --provider openai --tasks 5
+
+# Disable accessibility tree in prompts
+uv run python -m openadapt_ml.benchmarks.cli run-api --no-a11y --tasks 5
+```
+
+The agent:
+- Converts BenchmarkObservation to API format (screenshot + structured prompt)
+- Parses VLM responses into BenchmarkActions using regex patterns
+- Supports CLICK(x,y), CLICK([id]), TYPE("text"), KEY(key), SCROLL(dir), DONE()
+- Stores raw VLM responses in `action.raw_action` for debugging
 
 ### Azure Automation
 
@@ -170,6 +205,48 @@ uv run python -m openadapt_ml.scripts.compare \
   --open
 ```
 
+## Benchmark Data Collection & Testing
+
+```bash
+# Test benchmark data collection (Phase 1)
+# Creates directory structure with screenshots, execution traces, and metadata
+uv run python -m openadapt_ml.benchmarks.cli test-collection --tasks 5
+
+# Custom run name and output directory
+uv run python -m openadapt_ml.benchmarks.cli test-collection \
+  --tasks 10 \
+  --run-name my_test_run \
+  --output benchmark_results \
+  --model-id "my-agent-v1"
+
+# Run the standalone test script (equivalent to test-collection)
+uv run python test_data_collection.py
+```
+
+**Output directory structure:**
+```
+benchmark_results/
+├── {run_name}/
+│   ├── metadata.json        # Benchmark name, model ID, timestamp
+│   ├── summary.json         # Aggregate metrics (success rate, avg steps)
+│   └── tasks/
+│       ├── task_001/
+│       │   ├── task.json       # Task definition
+│       │   ├── execution.json  # Execution trace with steps
+│       │   └── screenshots/
+│       │       ├── step_000.png
+│       │       ├── step_001.png
+│       │       └── ...
+│       └── task_002/
+│           └── ...
+```
+
+**Key files:**
+- `execution.json`: Contains step-by-step trace with actions, reasoning, timestamps
+- `task.json`: Task definition with instruction, domain, time limits
+- `summary.json`: High-level metrics suitable for benchmark viewer
+- `screenshots/`: PNG screenshots at each step
+
 ## Viewer Setup Troubleshooting
 
 **Problem**: Viewer shows "No model loaded" after training.
@@ -266,12 +343,17 @@ The training dashboard and capture viewer share UI components for visual consist
 ## TODO / Known Issues
 
 ### PyPI Publishing
-**Status**: TODO
+**Status**: DONE
 
-openadapt-capture and openadapt-privacy are published to PyPI, but openadapt-ml is not yet. Should set up:
-- Package metadata in pyproject.toml
-- GitHub Actions workflow for publishing
-- Version management
+Completed by background agent:
+- Updated `pyproject.toml` with package metadata (description, authors, classifiers, URLs, license)
+- Created `LICENSE` (MIT, matching related projects)
+- Created `.github/workflows/publish.yml` for automated PyPI publishing on version tags
+- Build system: hatchling
+
+To publish:
+1. Set up PyPI trusted publishing (PyPI → Account Settings → Publishing)
+2. `git tag v0.1.0 && git push origin v0.1.0`
 
 ### Azure WAA Evaluation - ACR Auth Issue
 **Status**: FIXED - setup_azure.py now configures ACR authentication automatically
@@ -316,21 +398,36 @@ az ml workspace sync-keys -n openadapt-ml -g openadapt-agents
 - [ACR Pull Role Assignment](https://learn.microsoft.com/en-us/azure/container-registry/container-registry-authentication-managed-identity)
 
 ### Training Dashboard - Terminal Output Streaming
-**Status**: TODO - nice to have
+**Status**: DONE
 
 **Goal**: Show training command line output in the browser dashboard in real-time.
 
-**Possible approaches**:
-1. **File-based polling** (simplest): Training writes stdout to `training_output/training.log`, browser polls and displays in a `<pre>` element with auto-scroll
-2. **WebSocket**: Run training in subprocess, stream stdout via WebSocket server to browser
-3. **Server-sent events (SSE)**: Similar to WebSocket but simpler, one-way streaming
+**Implementation**: File-based polling approach
+1. Training writes stdout to `training_output/training.log` with timestamps
+2. Browser polls training.log every 2 seconds alongside training_log.json
+3. Displays last 500 lines in scrollable terminal panel with auto-scroll
+4. Terminal panel features:
+   - Dark terminal theme (black background, green/colored text)
+   - Auto-scroll toggle (on by default)
+   - Text wrap toggle
+   - Collapse/expand button
+   - Line counter
+   - Syntax highlighting (errors in red, warnings in orange, success in green)
 
-**Recommended**: File-based polling is simplest and consistent with current JSON polling approach. Add:
-- `--log-stdout` flag to train.py that tees output to training.log
-- Add scrollable terminal panel to dashboard.html
-- Poll training.log alongside training_log.json
+**Files changed**:
+- `openadapt_ml/training/trainer.py`:
+  - Added terminal panel CSS styles
+  - Added terminal panel HTML section
+  - Added JavaScript polling function `fetchTerminalOutput()`
+  - Added `TrainingLogger._log_to_terminal()` method
+  - Updated `train_supervised()` to log key messages to training.log
+- `openadapt_ml/training/stub_provider.py`:
+  - Added `_log()` method for dual stdout/file logging
+  - All training output now written to training.log
+- `openadapt_ml/cloud/local.py`:
+  - No changes needed - serve command already serves all files from training_output
 
-**Priority**: Low - current dashboard shows key metrics (loss, epoch, step). Terminal output mainly useful for debugging.
+**Usage**: Terminal output automatically appears in dashboard during training. Works with both stub and real training.
 
 ### Early Termination Controls
 **Status**: DONE
@@ -349,19 +446,16 @@ az ml workspace sync-keys -n openadapt-ml -g openadapt-agents
 - `openadapt_ml/training/trainer.py` - Added `updateTerminationStatus()` JS function
 
 ### Cloud Cost Estimation in Viewers
-**Status**: TODO
+**Status**: DONE
 
-**Goal**: Show estimated cloud costs in training dashboard and viewer.
+Added cost display panel to viewer that shows:
+- Running cost based on instance type and elapsed time
+- Instance type and hourly rate
+- Only visible for cloud training (hidden for local/stub)
 
-**Requirements**:
-- Display running cost based on instance type and elapsed time
-- Show estimated total cost for completion
-- Include cost breakdown by resource type (GPU, storage, transfer)
-
-**Implementation notes**:
+Supported rates:
 - Lambda Labs: $0.75/hr for A10, $1.29/hr for A100
-- Azure ML: Variable based on VM type
-- Should be visible in both dashboard.html and viewer.html
+- Automatic detection from `instance_type` in training_log.json
 
 ### Current Working Capture
 **Path**: `/Users/abrichr/oa/src/openadapt-capture/turn-off-nightshift`
@@ -370,15 +464,27 @@ az ml workspace sync-keys -n openadapt-ml -g openadapt-agents
 **Notes**: Real-world macOS settings navigation capture for training/evaluation
 
 ### Evaluation Samples Display Enhancement
-**Status**: TODO - needs fleshing out
+**Status**: DONE
 
-**Current state**: Shows human/predicted coords, model thinking text, legend
-**Future improvements**:
-- Show the actual screenshot image (need to sync from Lambda or embed base64)
-- Visual overlay showing click positions on image
-- Side-by-side human vs predicted action comparison
-- Full model output (not truncated)
-- Filter/search evaluations by epoch or correctness
+Enhanced evaluation gallery in dashboard with:
+- **Filter controls**: Dropdown filters for epoch and correctness (All/Correct/Incorrect)
+- **Visual markers**: H (human) and AI (predicted) click markers on screenshots
+- **Expandable model output**: "Show full output" toggle for raw model reasoning
+- **Better layout**: Image container with overlay, content section with coordinates
+- **Sample count**: "Showing X of Y samples" with filter status
+
+Files changed:
+- `openadapt_ml/training/trainer.py` - Enhanced CSS, HTML, and JS for eval gallery
+
+### Viewer Playback Controls
+**Status**: DONE
+
+Added full playback controls to the viewer:
+- **Buttons**: ⏮ Rewind, ◀ Prev, ▶ Play/Pause, ▶ Next, ⏭ End
+- **Speed control**: 0.5x, 1x, 2x, 4x playback speeds
+- **Progress bar**: Click-to-seek to any step
+- **Keyboard shortcuts**: Space (play/pause), Home/End (jump), Arrow keys (step)
+- **Enhanced details panel**: Shows full model output with scrollable raw prediction data
 
 ### Viewer Code Consolidation
 **Status**: DONE
@@ -407,7 +513,7 @@ Verified:
 - Backend flag options: `claude`, `openai` in CLI ✓
 
 ### Benchmark Viewer Integration
-**Status**: TODO - HIGH PRIORITY
+**Status**: Phase 1 DONE, Phases 2-4 TODO
 
 **Goal**: Integrate benchmark evaluation results (WAA, WebArena, OSWorld) into the unified viewer.
 
@@ -421,7 +527,85 @@ Verified:
 5. **Aggregate metrics**: Success rate by domain, difficulty rankings
 
 **Implementation phases**:
-1. Data collection: Save screenshots during benchmark runs
-2. Viewer backend: `generate_benchmark_viewer()` function
-3. UI components: Summary dashboard, task list, replay
-4. Analysis: Failure clustering, regression detection
+1. ✅ **Data collection** (DONE): Save screenshots during benchmark runs
+   - Created `openadapt_ml/benchmarks/data_collection.py` with `ExecutionTraceCollector`
+   - Updated `runner.py` to save execution traces automatically
+   - Added CLI command: `uv run python -m openadapt_ml.benchmarks.cli test-collection --tasks 5`
+   - Directory structure: `benchmark_results/{run_name}/tasks/{task_id}/`
+   - Each task has: `task.json`, `execution.json`, `screenshots/`
+   - Test script: `test_data_collection.py` validates all files are created
+2. **Viewer backend** (TODO): `generate_benchmark_viewer()` function
+3. **UI components** (TODO): Summary dashboard, task list, replay
+4. **Analysis** (TODO): Failure clustering, regression detection
+
+**Phase 1 verification:**
+```bash
+# Test data collection
+uv run python -m openadapt_ml.benchmarks.cli test-collection --tasks 5
+
+# Verify output
+ls -la benchmark_results/{run_name}/tasks/task_001/
+# Should contain: task.json, execution.json, screenshots/
+
+# Check JSON structure
+cat benchmark_results/{run_name}/summary.json
+cat benchmark_results/{run_name}/tasks/task_001/execution.json
+```
+
+## Preventing Stale Data Issues
+
+**CRITICAL**: When working on dashboard/viewer code, follow this process to avoid showing stale data:
+
+### After Code Changes
+
+1. **Always regenerate HTML files** after modifying trainer.py, viewer.py, or local.py:
+   ```bash
+   uv run python -m openadapt_ml.cloud.local viewer
+   ```
+
+2. **Verify regeneration worked** by checking key values:
+   ```bash
+   # Check elapsed time was updated (should NOT be 0)
+   grep "baseElapsedTime" training_output/current/dashboard.html
+
+   # Check comparison data exists in viewer
+   grep "predictionsByCheckpoint" training_output/current/viewer.html
+   ```
+
+3. **Hard refresh browser** to bypass cache:
+   - macOS: `Cmd+Shift+R`
+   - Windows/Linux: `Ctrl+Shift+R`
+   - Or use DevTools → Network → "Disable cache" checkbox
+
+4. **Use HTTP serving** (not file://) for auto-refresh:
+   ```bash
+   uv run python -m openadapt_ml.cloud.local serve --port 8080 --open
+   ```
+
+### Before Showing User
+
+Before presenting dashboard/viewer to user, verify:
+- [ ] Elapsed time shows correct value (not 0m 0s)
+- [ ] Comparison screenshots load (not blank/404)
+- [ ] Model predictions appear in dropdown
+- [ ] Loss curve shows data
+- [ ] Timestamp info panel shows recent dates
+
+### Automatic Data Loading Checklist
+
+The viewer should automatically load:
+- [ ] Capture data from `comparison_epoch*.html` files (extracts `window.comparisonData`)
+- [ ] Predictions from same comparison HTML files (human + predicted actions per step)
+- [ ] Evaluations from `training_log.json` (if present)
+- [ ] Recording events from capture data (note: `recording.end` depends on capture source)
+
+### Common Issues
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Elapsed time shows 0m 0s | `elapsed_time` not loaded from training_log.json | Check `state.elapsed_time = data.get("elapsed_time", 0.0)` in local.py |
+| No comparison screenshots | Paths point to Lambda not local | Update `capture_path` in training_log.json to local path |
+| Missing model predictions | No `comparison_epoch*.html` files or wrong data format | Run compare script: `uv run python -m openadapt_ml.scripts.compare --capture ... --checkpoint ...` |
+| Predictions not extracted | HTML uses `window.comparisonData` but regex expects `const` | Use regex `(?:const\s+\|window\.)comparisonData` pattern |
+| Stale data after code change | Browser caching HTML | Hard refresh (Cmd+Shift+R) or disable cache |
+| Screenshots 404 | Screenshot symlink broken | Recreate: `ln -sf /path/to/capture/screenshots training_output/current/screenshots` |

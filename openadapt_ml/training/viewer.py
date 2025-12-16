@@ -75,7 +75,7 @@ def generate_unified_viewer_from_output_dir(output_dir: Path) -> Path | None:
     # Try to load training log to get capture path and goal
     training_log_path = output_dir / "training_log.json"
     capture_path = None
-    goal = "Complete the recorded workflow"
+    goal = "Complete the recorded workflow"  # Fallback default
     capture_id = "unknown"
 
     evaluations: list[dict] = []
@@ -83,6 +83,18 @@ def generate_unified_viewer_from_output_dir(output_dir: Path) -> Path | None:
     if training_log_path.exists():
         with open(training_log_path) as f:
             log_data = json.load(f)
+
+        # Load goal from training log (CRITICAL: must match training prompt)
+        goal = log_data.get("goal", "")
+        if not goal:
+            # Fallback: derive from capture path name
+            capture_path_str = log_data.get("capture_path", "")
+            if capture_path_str:
+                # Convert kebab-case/snake_case to readable text
+                dir_name = Path(capture_path_str).name
+                goal = dir_name.replace("-", " ").replace("_", " ").strip().capitalize()
+            if not goal:
+                goal = "Complete the recorded workflow"
 
         capture_path_str = log_data.get("capture_path", "")
         if capture_path_str:
@@ -143,9 +155,9 @@ def generate_unified_viewer_from_output_dir(output_dir: Path) -> Path | None:
         # Extract comparisonData from the HTML
         try:
             html_content = comp_file.read_text()
-            # Look for const comparisonData = [...];
+            # Look for comparisonData = [...]; (supports both const and window. prefix)
             data_match = re.search(
-                r'const\s+comparisonData\s*=\s*(\[.*?\]);',
+                r'(?:const\s+|window\.)comparisonData\s*=\s*(\[.*?\]);',
                 html_content,
                 re.DOTALL
             )
@@ -181,7 +193,7 @@ def generate_unified_viewer_from_output_dir(output_dir: Path) -> Path | None:
         try:
             html_content = preview_file.read_text()
             data_match = re.search(
-                r'const\s+comparisonData\s*=\s*(\[.*?\]);',
+                r'(?:const\s+|window\.)comparisonData\s*=\s*(\[.*?\]);',
                 html_content,
                 re.DOTALL
             )
@@ -221,6 +233,13 @@ def generate_unified_viewer_from_output_dir(output_dir: Path) -> Path | None:
     # Copy transcript and audio files from capture if available
     _copy_transcript_and_audio(capture_path, output_dir)
 
+    # Get capture modification time if available
+    capture_modified_time = None
+    if capture_path and capture_path.exists():
+        import datetime
+        mtime = capture_path.stat().st_mtime
+        capture_modified_time = datetime.datetime.fromtimestamp(mtime).isoformat()
+
     # Generate the unified viewer using standalone HTML template
     # (Consolidated approach - always use standalone for reliability)
     viewer_path = output_dir / "viewer.html"
@@ -232,6 +251,7 @@ def generate_unified_viewer_from_output_dir(output_dir: Path) -> Path | None:
         capture_id=capture_id,
         goal=goal,
         evaluations=evaluations,
+        capture_modified_time=capture_modified_time,
     )
 
     return viewer_path
@@ -244,6 +264,7 @@ def _generate_unified_viewer_from_extracted_data(
     capture_id: str = "unknown",
     goal: str = "Untitled",
     evaluations: list[dict] | None = None,
+    capture_modified_time: str | None = None,
 ) -> None:
     """Generate unified viewer from extracted comparison data.
 
@@ -264,6 +285,7 @@ def _generate_unified_viewer_from_extracted_data(
         "steps": len(base_data),
     }])
     current_capture_json = json.dumps(capture_id)
+    capture_modified_time_json = json.dumps(capture_modified_time)
 
     # Find first image to get dimensions (for display)
     first_image_path = base_data[0].get("image_path", "") if base_data else ""
@@ -776,6 +798,33 @@ def _generate_unified_viewer_from_extracted_data(
             color: var(--text-muted);
             margin-left: auto;
         }}
+        .timestamp-info-panel {{
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 16px;
+            margin-bottom: 16px;
+            display: flex;
+            gap: 24px;
+            align-items: center;
+            flex-wrap: wrap;
+        }}
+        .timestamp-item {{
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }}
+        .timestamp-label {{
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }}
+        .timestamp-value {{
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-family: "SF Mono", Monaco, monospace;
+        }}
         .transcript-panel {{
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
@@ -1131,6 +1180,25 @@ def _generate_unified_viewer_from_extracted_data(
             </div>
         </div>
 
+        <div class="timestamp-info-panel" id="timestamp-info-panel">
+            <div class="timestamp-item">
+                <div class="timestamp-label">Generated</div>
+                <div class="timestamp-value" id="timestamp-generated">--</div>
+            </div>
+            <div class="timestamp-item">
+                <div class="timestamp-label">Data From</div>
+                <div class="timestamp-value" id="timestamp-data-from">--</div>
+            </div>
+            <div class="timestamp-item">
+                <div class="timestamp-label">Capture</div>
+                <div class="timestamp-value" id="timestamp-capture-path">--</div>
+            </div>
+            <div class="timestamp-item">
+                <div class="timestamp-label">Capture Modified</div>
+                <div class="timestamp-value" id="timestamp-capture-modified">--</div>
+            </div>
+        </div>
+
         <div class="comparison-panel">
             <div class="comparison-header">
                 <h2>Action Comparison</h2>
@@ -1261,6 +1329,7 @@ def _generate_unified_viewer_from_extracted_data(
     const evaluations = {evaluations_json};
     const availableCaptures = {captures_json};
     const currentCaptureId = {current_capture_json};
+    const captureModifiedTime = {capture_modified_time_json};
 
     // Build evaluation map: step_idx -> [{{epoch, correct, distance}}]
     const evalByStep = {{}};
@@ -1331,6 +1400,79 @@ def _generate_unified_viewer_from_extracted_data(
         }} catch (e) {{
             // Silently fail if training_log.json not available
             console.log('Could not load training costs:', e);
+        }}
+    }}
+
+    async function loadAndDisplayTimestamps() {{
+        try {{
+            const response = await fetch('training_log.json?t=' + Date.now());
+            if (!response.ok) throw new Error('Could not load training_log.json');
+
+            const data = await response.json();
+
+            // Format current timestamp (when viewer was generated)
+            const now = new Date();
+            const generatedTime = now.toLocaleString('en-US', {{
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            }});
+            document.getElementById('timestamp-generated').textContent = generatedTime;
+
+            // Format training log timestamp
+            if (data.started_at) {{
+                const startedAt = new Date(data.started_at);
+                const dataFromTime = startedAt.toLocaleString('en-US', {{
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                }});
+                document.getElementById('timestamp-data-from').textContent = dataFromTime;
+            }} else {{
+                document.getElementById('timestamp-data-from').textContent = 'N/A';
+            }}
+
+            // Display capture path (shortened if too long)
+            if (data.capture_path) {{
+                const capturePath = data.capture_path;
+                const pathParts = capturePath.split('/');
+                const captureName = pathParts[pathParts.length - 1];
+                document.getElementById('timestamp-capture-path').textContent = captureName;
+                document.getElementById('timestamp-capture-path').title = capturePath;
+            }} else {{
+                document.getElementById('timestamp-capture-path').textContent = currentCaptureId || 'N/A';
+            }}
+
+            // Display capture modification time (passed from Python)
+            if (captureModifiedTime) {{
+                const modifiedAt = new Date(captureModifiedTime);
+                const modifiedTime = modifiedAt.toLocaleString('en-US', {{
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                }});
+                document.getElementById('timestamp-capture-modified').textContent = modifiedTime;
+            }} else {{
+                document.getElementById('timestamp-capture-modified').textContent = 'N/A';
+            }}
+        }} catch (e) {{
+            console.log('Could not load timestamps:', e);
+            // Set fallback values
+            document.getElementById('timestamp-generated').textContent = new Date().toLocaleString();
+            document.getElementById('timestamp-data-from').textContent = 'N/A';
+            document.getElementById('timestamp-capture-path').textContent = currentCaptureId || 'N/A';
+            if (captureModifiedTime) {{
+                const modifiedAt = new Date(captureModifiedTime);
+                document.getElementById('timestamp-capture-modified').textContent = modifiedAt.toLocaleString();
+            }} else {{
+                document.getElementById('timestamp-capture-modified').textContent = 'N/A';
+            }}
         }}
     }}
 
@@ -2184,6 +2326,7 @@ def _generate_unified_viewer_from_extracted_data(
     updateMetrics();
     updateDisplay();
     loadAndDisplayCosts();
+    loadAndDisplayTimestamps();
     loadTranscript();  // Load transcript and setup audio sync
 
     // Render timeline after transcript loads (needs segment data)
@@ -2446,9 +2589,9 @@ def _enhance_comparison_to_unified_viewer(
 
     html = base_html_file.read_text()
 
-    # Extract base data from the existing comparisonData
+    # Extract base data from the existing comparisonData (supports both const and window. prefix)
     data_match = re.search(
-        r'const\s+comparisonData\s*=\s*(\[.*?\]);',
+        r'(?:const\s+|window\.)comparisonData\s*=\s*(\[.*?\]);',
         html,
         re.DOTALL
     )
@@ -2809,9 +2952,11 @@ def _add_static_nav_to_comparison(
         )
         print(f"  Updated navigation in {comparison_path.name}")
     elif '<div class="container">' in html:
+        # Insert nav BEFORE the container, not inside it
+        # This ensures the unified header is not affected by container padding
         html = html.replace(
             '<div class="container">',
-            '<div class="container">\n' + nav_html
+            nav_html + '\n    <div class="container">'
         )
         print(f"  Added navigation to {comparison_path.name}")
     elif '<body>' in html:

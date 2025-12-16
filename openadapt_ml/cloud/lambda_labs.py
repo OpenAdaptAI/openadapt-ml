@@ -1311,7 +1311,44 @@ def main():
         cost = (elapsed / 3600) * price_per_hour
 
         if training_completed and not args.no_terminate:
-            # Download results before terminating
+            # Run comparison on Lambda before downloading and terminating (if capture was provided)
+            if args.capture:
+                print("\n" + "=" * 50)
+                print("Running comparison on Lambda instance...")
+                print("=" * 50)
+
+                # Determine the final checkpoint path (main checkpoint after training)
+                checkpoint_path = "/home/ubuntu/openadapt-ml/checkpoints/qwen3vl2b_capture_lora"
+
+                # Check if checkpoint exists
+                result = client.ssh_run(
+                    instance,
+                    f"ls {checkpoint_path}/adapter_config.json 2>/dev/null && echo 'exists'",
+                    timeout=30
+                )
+
+                if "exists" in result.stdout:
+                    # Run comparison on Lambda
+                    output_name = f"comparison_{time_module.strftime('%H%M%S')}.html"
+                    cmd = f"""cd ~/openadapt-ml && source .venv/bin/activate && \
+                        python -m openadapt_ml.scripts.compare \
+                        --capture ~/capture \
+                        --checkpoint {checkpoint_path} \
+                        --output training_output/{output_name} 2>&1"""
+
+                    print("  Generating comparison viewer (this may take a few minutes)...")
+                    result = client.ssh_run(instance, cmd, timeout=600)
+
+                    if result.returncode == 0:
+                        print(f"  Comparison generated: {output_name}")
+                    else:
+                        print(f"  Warning: Comparison generation failed")
+                        if result.stderr:
+                            print(f"  Error: {result.stderr}")
+                else:
+                    print("  Warning: Final checkpoint not found, skipping comparison")
+
+            # Download results (including comparison if generated)
             print("\n" + "=" * 50)
             print("Downloading results...")
             print("=" * 50)

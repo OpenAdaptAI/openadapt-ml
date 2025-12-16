@@ -600,6 +600,7 @@ def cmd_viewer(args: argparse.Namespace) -> int:
         state.learning_rate = data.get("learning_rate", 0)
         state.losses = data.get("losses", [])
         state.status = data.get("status", "completed")
+        state.elapsed_time = data.get("elapsed_time", 0.0)  # Load elapsed time for completed training
 
         config = TrainingConfig(
             num_train_epochs=data.get("total_epochs", 5),

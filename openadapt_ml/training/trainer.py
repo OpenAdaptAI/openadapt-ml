@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 import torch
 from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader, Dataset
 
 from openadapt_ml.models.base_adapter import BaseVLMAdapter
@@ -91,6 +92,8 @@ class TrainingConfig:
     weight_decay: float = 0.0
     max_grad_norm: float = 1.0
     logging_steps: int = 10
+    # Learning rate scheduler
+    lr_scheduler_type: str = "linear"  # Options: linear, cosine, constant, none
     # Early stopping: stop when loss is below threshold for patience consecutive steps
     early_stop_loss: float = 1e-4
     early_stop_patience: int = 10
@@ -112,6 +115,7 @@ class TrainingState:
     hostname: str = field(default_factory=lambda: __import__('socket').gethostname())
     capture_path: str = ""
     config_path: str = ""
+    goal: str = ""  # Task goal/description for the training run
     # Training progress
     epoch: int = 0
     step: int = 0
@@ -180,6 +184,7 @@ class TrainingState:
             "hostname": self.hostname,
             "capture_path": self.capture_path,
             "config_path": self.config_path,
+            "goal": self.goal,
             "instance_type": self.instance_type,
             "instance_ip": self.instance_ip,
             "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self.start_time)),
@@ -215,6 +220,7 @@ class TrainingLogger:
         config: TrainingConfig,
         capture_path: str = "",
         config_path: str = "",
+        goal: str = "",
         instance_ip: str = "",
         instance_type: str = "",
         cloud_provider: str = "",
@@ -235,6 +241,7 @@ class TrainingLogger:
             job_id=job_id,
             capture_path=capture_path,
             config_path=config_path,
+            goal=goal,
             instance_ip=instance_ip,
             instance_type=instance_type,
             total_epochs=config.num_train_epochs,
@@ -245,6 +252,9 @@ class TrainingLogger:
         self.log_file = self.output_dir / "training_log.json"
         self.terminal_log_file = self.output_dir / "training.log"
         self.terminal_log_handle = None
+
+        # Save config snapshot
+        self._save_config_snapshot()
 
     def _log_to_terminal(self, message: str):
         """Write message to training.log file.
@@ -285,6 +295,14 @@ class TrainingLogger:
         if self.terminal_log_handle:
             self.terminal_log_handle.close()
             self.terminal_log_handle = None
+
+    def _save_config_snapshot(self) -> None:
+        """Save training config snapshot to JSON."""
+        from dataclasses import asdict
+        config_file = self.output_dir / "config.json"
+        config_dict = asdict(self.config)
+        with open(config_file, "w") as f:
+            json.dump(config_dict, f, indent=2)
 
     def _save_log(self) -> None:
         """Save training log to JSON."""
@@ -1421,6 +1439,10 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
         let remainingSteps = {remaining_steps};
         let isTrainingComplete = {'true' if is_training_complete else 'false'};
 
+        // Auto-stop when loss <= threshold (INVARIANT: training should stop when loss <= 1.0)
+        const AUTO_STOP_LOSS_THRESHOLD = 1.0;
+        let autoStopTriggered = false;
+
         function updateElapsedDisplay() {{
             // Don't update elapsed if training is complete
             if (isTrainingComplete) {{
@@ -1564,6 +1586,41 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
                     }} else {{
                         deltaEl.textContent = `↑ ${{delta.toFixed(4)}}`;
                         deltaEl.className = 'stat-delta negative';
+                    }}
+
+                    // AUTO-STOP: Trigger stop when loss <= threshold and training is running
+                    if (!autoStopTriggered && !isTrainingComplete && data.loss <= AUTO_STOP_LOSS_THRESHOLD) {{
+                        autoStopTriggered = true;
+                        console.log(`Auto-stop triggered: loss ${{data.loss.toFixed(4)}} <= threshold ${{AUTO_STOP_LOSS_THRESHOLD}}`);
+
+                        // Show notification
+                        const notif = document.createElement('div');
+                        notif.className = 'auto-stop-notification';
+                        notif.innerHTML = `
+                            <strong>Auto-Stop Triggered</strong><br>
+                            Loss ${{data.loss.toFixed(4)}} ≤ ${{AUTO_STOP_LOSS_THRESHOLD}} threshold.<br>
+                            Stopping training...
+                        `;
+                        notif.style.cssText = `
+                            position: fixed; top: 20px; right: 20px; z-index: 9999;
+                            background: #2d4a3e; color: #4ade80; padding: 15px 20px;
+                            border-radius: 8px; border: 1px solid #4ade80;
+                            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                            animation: slideIn 0.3s ease;
+                        `;
+                        document.body.appendChild(notif);
+
+                        // Call stop endpoint
+                        fetch('/api/stop', {{ method: 'POST' }})
+                            .then(r => r.json())
+                            .then(result => {{
+                                console.log('Stop result:', result);
+                                setTimeout(() => notif.remove(), 5000);
+                            }})
+                            .catch(err => {{
+                                console.error('Stop failed:', err);
+                                notif.innerHTML += '<br><span style="color:#f87171">Stop request failed</span>';
+                            }});
                     }}
 
                     // Other stats
@@ -2165,6 +2222,53 @@ def _create_dataloader(dataset: Dataset, batch_size: int) -> DataLoader:
     return DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=lambda x: x)
 
 
+def _create_lr_scheduler(
+    optimizer: Optimizer,
+    config: TrainingConfig,
+    num_training_steps: int,
+) -> Optional[LambdaLR]:
+    """Create learning rate scheduler based on config.
+
+    Args:
+        optimizer: The optimizer to schedule.
+        config: Training configuration with lr_scheduler_type and warmup_ratio.
+        num_training_steps: Total number of training steps.
+
+    Returns:
+        LambdaLR scheduler or None if scheduler_type is "none" or "constant".
+    """
+    scheduler_type = config.lr_scheduler_type.lower()
+
+    if scheduler_type in ("none", "constant"):
+        return None
+
+    num_warmup_steps = int(num_training_steps * config.warmup_ratio)
+
+    if scheduler_type == "linear":
+        def lr_lambda(current_step: int) -> float:
+            if current_step < num_warmup_steps:
+                # Linear warmup
+                return float(current_step) / float(max(1, num_warmup_steps))
+            # Linear decay
+            return max(
+                0.0,
+                float(num_training_steps - current_step) / float(max(1, num_training_steps - num_warmup_steps))
+            )
+    elif scheduler_type == "cosine":
+        import math
+        def lr_lambda(current_step: int) -> float:
+            if current_step < num_warmup_steps:
+                # Linear warmup
+                return float(current_step) / float(max(1, num_warmup_steps))
+            # Cosine decay
+            progress = float(current_step - num_warmup_steps) / float(max(1, num_training_steps - num_warmup_steps))
+            return max(0.0, 0.5 * (1.0 + math.cos(math.pi * progress)))
+    else:
+        raise ValueError(f"Unknown lr_scheduler_type: {scheduler_type}. Use 'linear', 'cosine', 'constant', or 'none'.")
+
+    return LambdaLR(optimizer, lr_lambda)
+
+
 def train_supervised(
     adapter: BaseVLMAdapter,
     dataset: Dataset,
@@ -2194,11 +2298,21 @@ def train_supervised(
     dataloader = _create_dataloader(dataset, batch_size=config.per_device_train_batch_size)
 
     if optimizer is None:
-        optimizer = torch.optim.AdamW(adapter.model.parameters(), lr=config.learning_rate)  # type: ignore[arg-type]
+        optimizer = torch.optim.AdamW(
+            adapter.model.parameters(),  # type: ignore[arg-type]
+            lr=config.learning_rate,
+            weight_decay=config.weight_decay,
+        )
 
     # Create logger if not provided
     if logger is None:
         logger = TrainingLogger(config.output_dir, config)
+
+    # Calculate total training steps for scheduler
+    num_training_steps = len(dataloader) * config.num_train_epochs // config.gradient_accumulation_steps
+
+    # Create learning rate scheduler
+    lr_scheduler = _create_lr_scheduler(optimizer, config, num_training_steps)
 
     total_steps = 0
     adapter.train()
@@ -2219,6 +2333,10 @@ def train_supervised(
                 msg = "Stop signal received from dashboard. Stopping training..."
                 print(msg)
                 logger._log_to_terminal(msg)
+                # Set termination status for dashboard
+                logger.state.termination_status = "user_stop"
+                logger.state.termination_message = "Training stopped by user via dashboard"
+                logger.save()
                 user_stopped = True
                 stop_file.unlink()  # Remove signal file
                 break
@@ -2245,16 +2363,21 @@ def train_supervised(
             if (total_steps + 1) % config.gradient_accumulation_steps == 0:
                 torch.nn.utils.clip_grad_norm_(adapter.model.parameters(), config.max_grad_norm)  # type: ignore[arg-type]
                 optimizer.step()
+                if lr_scheduler is not None:
+                    lr_scheduler.step()
                 optimizer.zero_grad()
 
             total_steps += 1
             loss_val = loss.item()
 
+            # Get current learning rate from optimizer
+            current_lr = optimizer.param_groups[0]['lr']
+
             # Log step
-            logger.on_step(epoch, total_steps, loss_val, config.learning_rate)
+            logger.on_step(epoch, total_steps, loss_val, current_lr)
 
             if config.logging_steps and total_steps % config.logging_steps == 0:
-                msg = f"epoch={epoch} step={total_steps} loss={loss_val:.4f}"
+                msg = f"epoch={epoch} step={total_steps} loss={loss_val:.4f} lr={current_lr:.6f}"
                 print(msg)
                 logger._log_to_terminal(msg)
 
@@ -2268,6 +2391,13 @@ def train_supervised(
                     )
                     print(msg)
                     logger._log_to_terminal(msg)
+                    # Set termination status for dashboard
+                    logger.state.termination_status = "auto_low_loss"
+                    logger.state.termination_message = (
+                        f"Loss reached {loss_val:.6f} (< {config.early_stop_loss}) "
+                        f"for {config.early_stop_patience} consecutive steps"
+                    )
+                    logger.save()
                     early_stopped = True
                     break
             else:
@@ -2305,6 +2435,12 @@ def train_supervised(
                 print(f"Warning: Epoch evaluation failed: {e}")
                 import traceback
                 traceback.print_exc()
+
+    # Set termination status if not already set (normal completion)
+    if not logger.state.termination_status:
+        logger.state.termination_status = "auto_complete"
+        logger.state.termination_message = f"Training completed all {config.num_train_epochs} epochs"
+        logger.save()
 
     logger.on_train_end()
     return True
