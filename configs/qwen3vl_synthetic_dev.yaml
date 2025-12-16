@@ -27,3 +27,4 @@ training:
   weight_decay: 0.0
   max_grad_norm: 1.0
   logging_steps: 1
+  lr_scheduler_type: linear

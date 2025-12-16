@@ -10,8 +10,15 @@ Usage:
     # Run Azure evaluation
     python -m openadapt_ml.benchmarks.cli run-azure --config azure_config.json --workers 40
 
+    # Run API-backed evaluation (Claude/GPT-5.1 baseline)
+    python -m openadapt_ml.benchmarks.cli run-api --provider anthropic --tasks 5
+    python -m openadapt_ml.benchmarks.cli run-api --provider openai --tasks 5
+
     # Test with mock adapter
     python -m openadapt_ml.benchmarks.cli test-mock --tasks 20
+
+    # Test data collection (with screenshots and execution traces)
+    python -m openadapt_ml.benchmarks.cli test-collection --tasks 5
 """
 
 from __future__ import annotations
@@ -361,6 +368,209 @@ def cmd_test_mock(args: argparse.Namespace) -> None:
     print()
 
 
+def cmd_test_collection(args: argparse.Namespace) -> None:
+    """Test benchmark data collection with mock adapter.
+
+    This command runs a benchmark evaluation with data collection enabled,
+    creating a full directory structure with screenshots, execution traces,
+    and metadata suitable for the benchmark viewer.
+    """
+    import json
+    from pathlib import Path
+
+    from openadapt_ml.benchmarks import RandomAgent, WAAMockAdapter
+    from openadapt_ml.benchmarks.runner import EvaluationConfig, evaluate_agent_on_benchmark
+
+    print(f"\n=== Testing Benchmark Data Collection ===")
+    print(f"  Tasks:       {args.tasks}")
+    print(f"  Max steps:   {args.max_steps}")
+    print(f"  Output dir:  {args.output}")
+    print(f"  Run name:    {args.run_name or '(auto-generated)'}")
+    print()
+
+    # Create mock adapter
+    adapter = WAAMockAdapter(num_tasks=args.tasks, domains=["browser", "office"])
+    agent = RandomAgent(action_types=["click", "type", "scroll", "done"], seed=args.seed)
+
+    # Configure evaluation with data collection
+    config = EvaluationConfig(
+        max_steps=args.max_steps,
+        parallel=1,
+        save_trajectories=True,
+        save_execution_traces=True,
+        model_id=args.model_id,
+        output_dir=args.output,
+        run_name=args.run_name,
+        verbose=True,
+    )
+
+    # Run evaluation
+    results = evaluate_agent_on_benchmark(
+        agent=agent,
+        adapter=adapter,
+        config=config,
+    )
+
+    # Print results
+    success_count = sum(1 for r in results if r.success)
+    success_rate = success_count / len(results) if results else 0.0
+    avg_steps = sum(r.num_steps for r in results) / len(results) if results else 0.0
+
+    print(f"\n=== Results ===")
+    print(f"Total tasks:  {len(results)}")
+    print(f"Success:      {success_count} ({success_rate:.1%})")
+    print(f"Failure:      {len(results) - success_count}")
+    print(f"Avg steps:    {avg_steps:.1f}")
+
+    # Find the actual output directory by reading metadata
+    output_dir = Path(args.output)
+    run_dirs = sorted(output_dir.glob("*/metadata.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if run_dirs:
+        run_dir = run_dirs[0].parent
+        with open(run_dirs[0]) as f:
+            metadata = json.load(f)
+        run_name = metadata.get("run_name", run_dir.name)
+    else:
+        run_dir = output_dir
+        run_name = "unknown"
+
+    print(f"\n=== Output Directory ===")
+    print(f"Location:     {run_dir.absolute()}")
+    print(f"\nDirectory structure:")
+    print(f"  {run_dir.name}/")
+    print(f"  ├── metadata.json")
+    print(f"  ├── summary.json")
+    print(f"  └── tasks/")
+    print(f"      ├── task_001/")
+    print(f"      │   ├── task.json")
+    print(f"      │   ├── execution.json")
+    print(f"      │   └── screenshots/")
+    print(f"      │       ├── step_000.png")
+    print(f"      │       ├── step_001.png")
+    print(f"      │       └── ...")
+    print(f"      └── ...")
+    print(f"\nYou can inspect the results at: {run_dir.absolute()}")
+    print()
+
+
+def cmd_run_api(args: argparse.Namespace) -> None:
+    """Run evaluation using API-backed VLM (Claude/GPT-5.1).
+
+    This provides baselines for comparing against fine-tuned models.
+    """
+    from openadapt_ml.benchmarks import (
+        APIBenchmarkAgent,
+        WAAMockAdapter,
+        compute_domain_metrics,
+        compute_metrics,
+    )
+    from openadapt_ml.benchmarks.runner import EvaluationConfig, evaluate_agent_on_benchmark
+
+    provider_names = {
+        "anthropic": "Claude",
+        "openai": "GPT-5.1",
+    }
+
+    print(f"\n=== API-Backed Benchmark Evaluation ===")
+    print(f"  Provider:    {args.provider} ({provider_names.get(args.provider, 'Unknown')})")
+    print(f"  Tasks:       {args.tasks}")
+    print(f"  Max steps:   {args.max_steps}")
+    print(f"  Output dir:  {args.output}")
+    print()
+
+    # Check for API key
+    import os
+    key_name = "ANTHROPIC_API_KEY" if args.provider == "anthropic" else "OPENAI_API_KEY"
+    if not os.getenv(key_name):
+        print(f"WARNING: {key_name} environment variable not set!")
+        print(f"  Set it in your .env file or export it before running.")
+        print()
+
+    # Create mock adapter for testing (real WAA would require Windows)
+    # In a real scenario, this would be WAAAdapter on Windows
+    if args.use_real_waa:
+        if sys.platform != "win32" and not args.force:
+            print("ERROR: WAA requires Windows. Use --force to override.")
+            sys.exit(1)
+        from openadapt_ml.benchmarks import WAAAdapter
+        waa_path = get_waa_path(args.waa_path)
+        adapter = WAAAdapter(waa_repo_path=waa_path)
+        task_ids = None
+        if args.task_ids:
+            task_ids = [t.strip() for t in args.task_ids.split(",")]
+    else:
+        adapter = WAAMockAdapter(num_tasks=args.tasks, domains=["browser", "office"])
+        task_ids = None
+
+    # Create API-backed agent
+    agent = APIBenchmarkAgent(
+        provider=args.provider,
+        max_tokens=args.max_tokens,
+        use_accessibility_tree=not args.no_a11y,
+        use_history=not args.no_history,
+    )
+
+    # Configure evaluation
+    model_id = args.model_id if args.model_id else f"{args.provider}-api"
+    config = EvaluationConfig(
+        max_steps=args.max_steps,
+        parallel=1,  # API calls should be sequential to avoid rate limits
+        save_trajectories=True,
+        save_execution_traces=True,
+        model_id=model_id,
+        output_dir=args.output,
+        run_name=args.run_name,
+        verbose=args.verbose,
+    )
+
+    # Run evaluation
+    print("Starting evaluation...")
+    print("  (Each step calls the API - this may take a while)")
+    print()
+
+    try:
+        results = evaluate_agent_on_benchmark(
+            agent=agent,
+            adapter=adapter,
+            task_ids=task_ids,
+            config=config,
+        )
+    except Exception as e:
+        print(f"\nERROR: {e}")
+        if "API key" in str(e) or "api_key" in str(e).lower():
+            print(f"\nMake sure {key_name} is set in your environment.")
+        sys.exit(1)
+
+    # Print results
+    metrics = compute_metrics(results)
+    print("\n=== Results ===")
+    print(f"Tasks:        {metrics['num_tasks']}")
+    print(f"Success rate: {metrics['success_rate']:.1%}")
+    print(f"Successes:    {metrics['success_count']}")
+    print(f"Failures:     {metrics['fail_count']}")
+    print(f"Avg score:    {metrics['avg_score']:.3f}")
+    print(f"Avg steps:    {metrics['avg_steps']:.1f}")
+    print()
+
+    # Domain breakdown
+    tasks = adapter.list_tasks()
+    domain_metrics = compute_domain_metrics(results, tasks)
+    if domain_metrics:
+        print("=== By Domain ===")
+        for domain, dm in domain_metrics.items():
+            print(f"  {domain}: {dm['success_rate']:.1%} ({dm['success_count']}/{dm['num_tasks']})")
+    print()
+
+    # Find output directory
+    output_dir = Path(args.output)
+    run_dirs = sorted(output_dir.glob("*/metadata.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if run_dirs:
+        run_dir = run_dirs[0].parent
+        print(f"Results saved to: {run_dir.absolute()}")
+        print(f"View with: uv run python -m openadapt_ml.cloud.local serve --open")
+    print()
+
+
 def cmd_create_config(args: argparse.Namespace) -> None:
     """Create a sample Azure config file."""
     from openadapt_ml.benchmarks.azure import AzureConfig
@@ -611,6 +821,33 @@ Quick Start:
     p_mock.add_argument("--max-steps", type=int, default=10, help="Max steps per task")
     p_mock.add_argument("--seed", type=int, default=42, help="Random seed")
 
+    # Test collection
+    p_collection = subparsers.add_parser("test-collection", help="Test benchmark data collection")
+    p_collection.add_argument("--tasks", type=int, default=5, help="Number of mock tasks (default: 5)")
+    p_collection.add_argument("--max-steps", type=int, default=10, help="Max steps per task (default: 10)")
+    p_collection.add_argument("--seed", type=int, default=42, help="Random seed")
+    p_collection.add_argument("--model-id", default="random-agent-test", help="Model identifier")
+    p_collection.add_argument("--output", default="benchmark_results", help="Output directory")
+    p_collection.add_argument("--run-name", help="Run name (default: auto-generated)")
+
+    # Run API-backed evaluation
+    p_api = subparsers.add_parser("run-api", help="Run evaluation with API-backed VLM (Claude/GPT-5.1)")
+    p_api.add_argument("--provider", choices=["anthropic", "openai"], default="anthropic",
+                       help="API provider (anthropic=Claude, openai=GPT-5.1)")
+    p_api.add_argument("--tasks", type=int, default=5, help="Number of mock tasks (default: 5)")
+    p_api.add_argument("--max-steps", type=int, default=10, help="Max steps per task (default: 10)")
+    p_api.add_argument("--max-tokens", type=int, default=512, help="Max tokens for API response")
+    p_api.add_argument("--no-a11y", action="store_true", help="Disable accessibility tree in prompt")
+    p_api.add_argument("--no-history", action="store_true", help="Disable action history in prompt")
+    p_api.add_argument("--output", default="benchmark_results", help="Output directory")
+    p_api.add_argument("--run-name", help="Run name (default: auto-generated)")
+    p_api.add_argument("--model-id", help="Model identifier (default: {provider}-api)")
+    p_api.add_argument("--use-real-waa", action="store_true", help="Use real WAA adapter (Windows only)")
+    p_api.add_argument("--waa-path", help="Path to WAA repository")
+    p_api.add_argument("--task-ids", help="Comma-separated task IDs for real WAA")
+    p_api.add_argument("--force", action="store_true", help="Force run on non-Windows")
+    p_api.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+
     # Create config
     p_config = subparsers.add_parser("create-config", help="Create sample Azure config")
     p_config.add_argument("--output", default="azure_config.json", help="Output path")
@@ -633,6 +870,10 @@ Quick Start:
         cmd_run_azure(args)
     elif args.command == "test-mock":
         cmd_test_mock(args)
+    elif args.command == "test-collection":
+        cmd_test_collection(args)
+    elif args.command == "run-api":
+        cmd_run_api(args)
     elif args.command == "create-config":
         cmd_create_config(args)
     else:

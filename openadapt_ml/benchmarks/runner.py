@@ -28,6 +28,7 @@ from openadapt_ml.benchmarks.base import (
     BenchmarkResult,
     BenchmarkTask,
 )
+from openadapt_ml.benchmarks.data_collection import ExecutionTraceCollector
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,10 @@ class EvaluationConfig:
         verbose: Whether to print progress.
         on_step: Optional callback called after each step.
         on_task_complete: Optional callback called after each task.
+        save_execution_traces: Whether to save execution traces for viewer.
+        model_id: Model identifier for execution traces.
+        output_dir: Output directory for benchmark results.
+        run_name: Name for this evaluation run.
     """
 
     max_steps: int = 50
@@ -51,6 +56,10 @@ class EvaluationConfig:
     verbose: bool = True
     on_step: Callable[[BenchmarkObservation, BenchmarkAction, int], None] | None = None
     on_task_complete: Callable[[BenchmarkResult], None] | None = None
+    save_execution_traces: bool = True
+    model_id: str = "unknown"
+    output_dir: str = "benchmark_results"
+    run_name: str | None = None
 
 
 def evaluate_agent_on_benchmark(
@@ -86,11 +95,27 @@ def evaluate_agent_on_benchmark(
     if config.verbose:
         logger.info(f"Evaluating {len(tasks)} tasks on {adapter.name}")
 
+    # Initialize execution trace collector if enabled
+    trace_collector = None
+    if config.save_execution_traces:
+        trace_collector = ExecutionTraceCollector(
+            benchmark_name=adapter.name,
+            run_name=config.run_name,
+            model_id=config.model_id,
+            output_dir=config.output_dir,
+        )
+        if config.verbose:
+            logger.info(f"Saving execution traces to: {trace_collector.run_dir}")
+
     # Run evaluation
     if config.parallel > 1 and adapter.supports_parallel:
-        results = _evaluate_parallel(agent, adapter, tasks, config)
+        results = _evaluate_parallel(agent, adapter, tasks, config, trace_collector)
     else:
-        results = _evaluate_sequential(agent, adapter, tasks, config)
+        results = _evaluate_sequential(agent, adapter, tasks, config, trace_collector)
+
+    # Save summary if trace collection is enabled
+    if trace_collector is not None:
+        trace_collector.save_summary(results)
 
     # Log summary
     if config.verbose:
@@ -110,6 +135,7 @@ def _evaluate_sequential(
     adapter: BenchmarkAdapter,
     tasks: list[BenchmarkTask],
     config: EvaluationConfig,
+    trace_collector: ExecutionTraceCollector | None = None,
 ) -> list[BenchmarkResult]:
     """Run evaluation sequentially.
 
@@ -118,6 +144,7 @@ def _evaluate_sequential(
         adapter: Benchmark adapter.
         tasks: Tasks to evaluate.
         config: Evaluation configuration.
+        trace_collector: Optional trace collector for saving execution data.
 
     Returns:
         List of results.
@@ -127,7 +154,7 @@ def _evaluate_sequential(
         if config.verbose:
             logger.info(f"Task {i + 1}/{len(tasks)}: {task.task_id}")
 
-        result = _run_single_task(agent, adapter, task, config)
+        result = _run_single_task(agent, adapter, task, config, trace_collector)
         results.append(result)
 
         if config.on_task_complete:
@@ -141,6 +168,7 @@ def _evaluate_parallel(
     adapter: BenchmarkAdapter,
     tasks: list[BenchmarkTask],
     config: EvaluationConfig,
+    trace_collector: ExecutionTraceCollector | None = None,
 ) -> list[BenchmarkResult]:
     """Run evaluation in parallel.
 
@@ -152,6 +180,7 @@ def _evaluate_parallel(
         adapter: Benchmark adapter.
         tasks: Tasks to evaluate.
         config: Evaluation configuration.
+        trace_collector: Optional trace collector for saving execution data.
 
     Returns:
         List of results.
@@ -161,7 +190,7 @@ def _evaluate_parallel(
     with ThreadPoolExecutor(max_workers=config.parallel) as executor:
         # Submit all tasks
         future_to_task = {
-            executor.submit(_run_single_task, agent, adapter, task, config): task
+            executor.submit(_run_single_task, agent, adapter, task, config, trace_collector): task
             for task in tasks
         }
 
@@ -198,6 +227,7 @@ def _run_single_task(
     adapter: BenchmarkAdapter,
     task: BenchmarkTask,
     config: EvaluationConfig,
+    trace_collector: ExecutionTraceCollector | None = None,
 ) -> BenchmarkResult:
     """Run a single task and return result.
 
@@ -206,12 +236,17 @@ def _run_single_task(
         adapter: Benchmark adapter.
         task: Task to run.
         config: Evaluation configuration.
+        trace_collector: Optional trace collector for saving execution data.
 
     Returns:
         BenchmarkResult.
     """
     start_time = time.perf_counter()
     history: list[tuple[BenchmarkObservation, BenchmarkAction]] = []
+
+    # Start trace collection if enabled
+    if trace_collector is not None:
+        trace_collector.start_task(task)
 
     try:
         # Reset agent and environment
@@ -226,7 +261,16 @@ def _run_single_task(
             # Get action from agent
             action = agent.act(obs, task, history if config.save_trajectories else None)
 
-            # Record step
+            # Extract reasoning if available from PolicyAgent
+            reasoning = None
+            if hasattr(action, "raw_action") and action.raw_action:
+                reasoning = action.raw_action.get("thought")
+
+            # Record step in trace collector
+            if trace_collector is not None:
+                trace_collector.record_step(steps, obs, action, reasoning)
+
+            # Record step in history
             if config.save_trajectories:
                 history.append((obs, action))
 
@@ -250,11 +294,15 @@ def _run_single_task(
         result.num_steps = steps
         result.total_time_seconds = time.perf_counter() - start_time
 
+        # Finish trace collection if enabled
+        if trace_collector is not None:
+            trace_collector.finish_task(result)
+
         return result
 
     except Exception as e:
         logger.error(f"Error running task {task.task_id}: {e}")
-        return BenchmarkResult(
+        result = BenchmarkResult(
             task_id=task.task_id,
             success=False,
             score=0.0,
@@ -263,6 +311,12 @@ def _run_single_task(
             error=str(e),
             total_time_seconds=time.perf_counter() - start_time,
         )
+
+        # Finish trace collection even on error
+        if trace_collector is not None:
+            trace_collector.finish_task(result)
+
+        return result
 
 
 def compute_metrics(results: list[BenchmarkResult]) -> dict:

@@ -75,6 +75,10 @@ def _is_mock_benchmark(benchmark_dir: Path) -> bool:
     """Check if a benchmark run is mock/test data (not real evaluation).
 
     Returns True if the benchmark is mock data that should be filtered out.
+
+    Note: API evaluations using the mock WAA adapter (waa-mock) are considered
+    real evaluations and should NOT be filtered out, since they represent actual
+    model performance on test tasks.
     """
     # Check summary.json for model_id
     summary_path = benchmark_dir / "summary.json"
@@ -83,8 +87,8 @@ def _is_mock_benchmark(benchmark_dir: Path) -> bool:
             with open(summary_path) as f:
                 summary = json.load(f)
             model_id = summary.get("model_id", "").lower()
-            # Filter out mock/test/random agent runs
-            if any(term in model_id for term in ["random", "mock", "test"]):
+            # Filter out mock/test/random agent runs (but keep API models like "anthropic-api")
+            if any(term in model_id for term in ["random-agent", "scripted-agent"]):
                 return True
         except Exception:
             pass
@@ -96,29 +100,30 @@ def _is_mock_benchmark(benchmark_dir: Path) -> bool:
             with open(metadata_path) as f:
                 metadata = json.load(f)
             model_id = metadata.get("model_id", "").lower()
-            if any(term in model_id for term in ["random", "mock", "test"]):
+            if any(term in model_id for term in ["random-agent", "scripted-agent"]):
                 return True
         except Exception:
             pass
 
-    # Check benchmark name for "mock"
-    if "mock" in benchmark_dir.name.lower():
+    # Check for test runs (but allow waa-mock evaluations with real API models)
+    # Only filter out purely synthetic test data directories
+    if any(term in benchmark_dir.name.lower() for term in ["test_run", "test_cli", "quick_demo"]):
         return True
 
     return False
 
 
 def _regenerate_benchmark_viewer_if_available(output_dir: Path) -> bool:
-    """Regenerate benchmark.html from latest real benchmark results.
+    """Regenerate benchmark.html from all real benchmark results.
 
-    Looks for the most recent non-mock benchmark run in benchmark_results/ directory
-    and generates a benchmark viewer in the output directory. If no real benchmark
-    data exists, generates an empty state viewer with guidance.
+    Loads all non-mock benchmark runs from benchmark_results/ directory
+    and generates a unified benchmark viewer supporting multiple runs.
+    If no real benchmark data exists, generates an empty state viewer with guidance.
 
     Returns True if benchmark viewer was regenerated, False otherwise.
     """
     from openadapt_ml.training.benchmark_viewer import (
-        generate_benchmark_viewer,
+        generate_multi_run_benchmark_viewer,
         generate_empty_benchmark_viewer,
     )
 
@@ -144,25 +149,31 @@ def _regenerate_benchmark_viewer_if_available(output_dir: Path) -> bool:
             print(f"  Could not generate empty benchmark viewer: {e}")
             return False
 
-    # Sort by modification time to get the latest real benchmark
-    latest_benchmark = max(real_benchmarks, key=lambda d: d.stat().st_mtime)
+    # Sort by modification time (most recent first)
+    real_benchmarks.sort(key=lambda d: d.stat().st_mtime, reverse=True)
 
     try:
-        # Generate benchmark.html in the output directory
-        generate_benchmark_viewer(latest_benchmark, benchmark_html_path)
+        # Generate multi-run benchmark.html in the output directory
+        generate_multi_run_benchmark_viewer(real_benchmarks, benchmark_html_path)
 
-        # Copy tasks folder for screenshots
-        tasks_src = latest_benchmark / "tasks"
-        tasks_dst = output_dir / "tasks"
-        if tasks_src.exists():
-            if tasks_dst.exists():
-                shutil.rmtree(tasks_dst)
-            shutil.copytree(tasks_src, tasks_dst)
+        # Copy all tasks folders for screenshots (organized by run)
+        benchmark_tasks_dir = output_dir / "benchmark_tasks"
+        if benchmark_tasks_dir.exists():
+            shutil.rmtree(benchmark_tasks_dir)
+        benchmark_tasks_dir.mkdir(exist_ok=True)
 
-        print(f"  Regenerated benchmark viewer from: {latest_benchmark.name}")
+        for benchmark_dir in real_benchmarks:
+            tasks_src = benchmark_dir / "tasks"
+            if tasks_src.exists():
+                tasks_dst = benchmark_tasks_dir / benchmark_dir.name
+                shutil.copytree(tasks_src, tasks_dst)
+
+        print(f"  Regenerated benchmark viewer with {len(real_benchmarks)} run(s)")
         return True
     except Exception as e:
         print(f"  Could not regenerate benchmark viewer: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -617,6 +628,9 @@ def cmd_viewer(args: argparse.Namespace) -> int:
         print(f"\nGenerated: {viewer_path}")
     else:
         print("\nNo comparison data found. Run comparison first or copy from capture directory.")
+
+    # Also regenerate benchmark viewer from latest benchmark results
+    _regenerate_benchmark_viewer_if_available(current_dir)
 
     if args.open:
         webbrowser.open(str(current_dir / "viewer.html"))

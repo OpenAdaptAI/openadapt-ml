@@ -14,7 +14,13 @@ def test_training_loop_with_dummy_adapter() -> None:
     dataset = NextActionDataset(samples)
 
     adapter = DummyAdapter()
-    cfg = TrainingConfig(num_train_epochs=1, per_device_train_batch_size=2, gradient_accumulation_steps=1, logging_steps=0)
+    cfg = TrainingConfig(
+        num_train_epochs=1,
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=1,
+        logging_steps=0,
+        lr_scheduler_type="linear",
+    )
 
     # Should run without raising; we don't assert on loss values here.
     train_supervised(adapter, dataset, cfg)

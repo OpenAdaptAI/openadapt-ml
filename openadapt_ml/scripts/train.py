@@ -55,7 +55,7 @@ def main(
     use_som = cfg.get("synthetic_data", {}).get("use_som", False)
 
     if capture_path:
-        # Load from real capture
+        # Load from real openadapt-capture recording
         print(f"Loading capture from: {capture_path}")
         episodes = _load_capture_episodes(capture_path, goal=goal)
         data_source = f"capture '{Path(capture_path).name}'"
@@ -105,6 +105,7 @@ def main(
         weight_decay=train_cfg_raw.get("weight_decay", 0.0),
         max_grad_norm=train_cfg_raw.get("max_grad_norm", 1.0),
         logging_steps=train_cfg_raw.get("logging_steps", 10),
+        lr_scheduler_type=train_cfg_raw.get("lr_scheduler_type", "linear"),
         early_stop_loss=train_cfg_raw.get("early_stop_loss", 1e-4),
         early_stop_patience=train_cfg_raw.get("early_stop_patience", 10),
         output_dir=output_dir,
@@ -117,12 +118,16 @@ def main(
     print(f"Loaded {len(episodes)} episodes and {len(samples)} SFT samples{som_label} from {data_source}.")
     print("Starting training...")
 
+    # Get goal from episodes (for logging/viewer)
+    episode_goal = episodes[0].goal if episodes else ""
+
     # Create logger with metadata for dashboard
     logger = TrainingLogger(
         output_dir=train_cfg.output_dir,
         config=train_cfg,
         capture_path=str(capture_path) if capture_path else "",
         config_path=str(config_path),
+        goal=goal or episode_goal,  # Use explicit goal or episode goal
     )
 
     # Pass the first episode for periodic evaluation (if available)
@@ -150,12 +155,20 @@ def main(
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Train Qwen-VL adapter on data.")
+    parser = argparse.ArgumentParser(
+        description="Train Qwen-VL adapter on synthetic data or openadapt-capture recordings."
+    )
     parser.add_argument("--config", type=str, required=True, help="Path to YAML config file.")
     parser.add_argument("--capture", type=str, help="Path to openadapt-capture recording directory.")
-    parser.add_argument("--goal", type=str, help="Task goal/description for the capture.")
+    parser.add_argument("--goal", type=str, help="Task goal/description (overrides recording's task description).")
     parser.add_argument("--output-dir", type=str, help="Output directory for logs and dashboard.")
     parser.add_argument("--open", action="store_true", help="Open training dashboard in browser.")
     args = parser.parse_args()
 
-    main(args.config, capture_path=args.capture, goal=args.goal, output_dir=args.output_dir, open_dashboard=args.open)
+    main(
+        args.config,
+        capture_path=args.capture,
+        goal=args.goal,
+        output_dir=args.output_dir,
+        open_dashboard=args.open,
+    )

@@ -24,6 +24,8 @@ training:
   weight_decay: 0.01
   max_grad_norm: 0.5
   logging_steps: 1
-  # Early stopping: stop if loss stays below threshold
-  early_stop_loss: 0.01
-  early_stop_patience: 20
+  lr_scheduler_type: linear
+  # Early stopping: stop when loss <= 1.0 (INVARIANT: training should never continue past this)
+  # Loss <= 1.0 indicates the model has learned the task; further training is diminishing returns
+  early_stop_loss: 1.0
+  early_stop_patience: 5

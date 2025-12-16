@@ -23,7 +23,8 @@ training:
   weight_decay: 0.01
   max_grad_norm: 0.5
   logging_steps: 1
-  # Early stopping: stop when loss < threshold for N consecutive steps
-  early_stop_loss: 0.1
-  early_stop_patience: 10
+  # Early stopping: stop when loss <= 1.0 (INVARIANT: training should never continue past this)
+  # Loss <= 1.0 indicates the model has learned the task; further training is diminishing returns
+  early_stop_loss: 1.0
+  early_stop_patience: 5
   # Gradient checkpointing handled in trainer.py

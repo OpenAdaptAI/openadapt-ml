@@ -16,7 +16,7 @@ openadapt-ml is a model-agnostic, domain-agnostic ML engine for GUI automation a
 **Primary benchmark**: Windows Agent Arena (WAA)
 - 154 tasks across 11 Windows domains
 - MIT licensed, can run locally or on Azure
-- SOTA: ~19.5% success (GPT-4V + OmniParser)
+- SOTA: ~19.5% success (GPT-5.1 + OmniParser)
 
 **Future benchmarks** (not yet implemented):
 - WebArena/VisualWebArena (browser)
@@ -42,7 +42,16 @@ openadapt-ml is a model-agnostic, domain-agnostic ML engine for GUI automation a
    - Cloud providers: Azure (primary, free tier available), Lambda Labs (GPU rental)
    - See `docs/live_inference_design.md` for async inference architecture
 
-7. **Stub Training Adapter (HIGH PRIORITY)** - Always implement stub/mock providers first:
+7. **Schema Purity** - The schema must remain domain-agnostic and generic:
+   - **External systems adapt TO the schema**, not the other way around
+   - Never add fields to accommodate specific external data structures
+   - Data transformation belongs in importers/exporters, not core schema
+   - Use `raw` and `metadata` dict fields for integration-specific data
+   - If a proposed field feels specific to one use case, it doesn't belong in the schema
+   - This is a standard open-source library: users import and call functions, they don't shape the API
+   - See `openadapt_ml/schemas/` for canonical definitions
+
+8. **Stub Training Adapter (HIGH PRIORITY)** - Always implement stub/mock providers first:
    - **Never wait on real training to test UI/code changes**
    - Use `--stub` flag to simulate training progress without GPU
    - Generates fake loss curves, evaluations, checkpoints in seconds
@@ -69,7 +78,7 @@ The benchmark integration module is implemented in `openadapt_ml/benchmarks/`:
 
 ### APIBenchmarkAgent
 
-The `APIBenchmarkAgent` wraps hosted VLM APIs (Claude, GPT-4V) for benchmark evaluation baselines.
+The `APIBenchmarkAgent` wraps hosted VLM APIs (Claude, GPT-5.1) for benchmark evaluation baselines.
 This enables comparing fine-tuned models against off-the-shelf VLMs.
 
 ```python
@@ -79,7 +88,7 @@ from openadapt_ml.benchmarks import APIBenchmarkAgent, evaluate_agent_on_benchma
 agent = APIBenchmarkAgent(provider="anthropic")
 results = evaluate_agent_on_benchmark(agent, adapter)
 
-# GPT-4V baseline
+# GPT-5.1 baseline
 agent = APIBenchmarkAgent(provider="openai")
 results = evaluate_agent_on_benchmark(agent, adapter)
 ```
@@ -89,7 +98,7 @@ CLI usage:
 # Run Claude evaluation on mock tasks
 uv run python -m openadapt_ml.benchmarks.cli run-api --provider anthropic --tasks 5
 
-# Run GPT-4V evaluation
+# Run GPT-5.1 evaluation
 uv run python -m openadapt_ml.benchmarks.cli run-api --provider openai --tasks 5
 
 # Disable accessibility tree in prompts

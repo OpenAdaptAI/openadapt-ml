@@ -11,6 +11,7 @@ Core classes:
 
 Agent implementations:
     - PolicyAgent: Wraps openadapt-ml AgentPolicy
+    - APIBenchmarkAgent: Uses hosted VLM APIs (Claude, GPT-5.1)
     - ScriptedAgent: Follows predefined action sequence
     - RandomAgent: Takes random actions (baseline)
 
@@ -23,6 +24,7 @@ Example:
     from openadapt_ml.benchmarks import (
         BenchmarkAdapter,
         PolicyAgent,
+        APIBenchmarkAgent,
         evaluate_agent_on_benchmark,
         compute_metrics,
     )
@@ -32,6 +34,10 @@ Example:
 
     # Wrap policy as benchmark agent
     agent = PolicyAgent(policy)
+
+    # Or use API-backed agent for baselines
+    agent = APIBenchmarkAgent(provider="anthropic")  # Claude
+    agent = APIBenchmarkAgent(provider="openai")     # GPT-5.1
 
     # Run evaluation
     results = evaluate_agent_on_benchmark(agent, adapter, max_steps=50)
@@ -43,6 +49,7 @@ Example:
 """
 
 from openadapt_ml.benchmarks.agent import (
+    APIBenchmarkAgent,
     BenchmarkAgent,
     PolicyAgent,
     RandomAgent,
@@ -87,6 +94,7 @@ __all__ = [
     # Agents
     "BenchmarkAgent",
     "PolicyAgent",
+    "APIBenchmarkAgent",
     "ScriptedAgent",
     "RandomAgent",
     # Evaluation

@@ -193,6 +193,58 @@ def parse_action_som(text: str) -> Action:
     return Action(type="failed", raw={"text": text})
 
 
+def _generate_generic_thought(step_index: int, step: Step, goal: str, total_steps: int) -> str:
+    """Generate a thought for real captures (non-synthetic scenarios).
+
+    This creates action-appropriate thoughts that teach the model to output
+    the correct DSL format while connecting actions to the goal.
+    """
+    action = step.action
+    t = action.type
+
+    # Progress context
+    progress = f"Step {step_index + 1} of {total_steps}."
+
+    if t == "click":
+        if action.x is not None and action.y is not None:
+            # Describe the click location relative to screen regions
+            x, y = action.x, action.y
+            h_pos = "left" if x < 0.33 else ("center" if x < 0.66 else "right")
+            v_pos = "top" if y < 0.33 else ("middle" if y < 0.66 else "bottom")
+            return (
+                f"{progress} To progress toward '{goal}', I need to click on an element "
+                f"in the {v_pos}-{h_pos} area of the screen."
+            )
+        return f"{progress} I need to click on the relevant UI element to continue toward '{goal}'."
+
+    if t == "double_click":
+        return f"{progress} I need to double-click to select or activate this element for '{goal}'."
+
+    if t == "type":
+        if action.text:
+            # Don't reveal the actual text, just indicate typing is needed
+            return f"{progress} I need to type text into the focused input field to continue toward '{goal}'."
+        return f"{progress} I need to enter text in the current field."
+
+    if t == "scroll":
+        return f"{progress} I need to scroll to reveal more content or reach the target element for '{goal}'."
+
+    if t == "drag":
+        return f"{progress} I need to drag an element to complete this part of '{goal}'."
+
+    if t == "key_press":
+        return f"{progress} I need to press a key to continue the workflow."
+
+    if t == "wait":
+        return f"{progress} I should wait for the UI to update before the next action."
+
+    if t == "done":
+        return f"The goal '{goal}' has been achieved. The workflow is complete."
+
+    # Fallback
+    return f"{progress} Taking the next action to progress toward '{goal}'."
+
+
 def _generate_thought_for_step(
     step_index: int,
     step: Step,
@@ -202,7 +254,8 @@ def _generate_thought_for_step(
 ) -> str:
     """Generate a simple but semantically meaningful Thought for a step.
 
-    This handles both login (6 steps) and registration (12 steps) workflows.
+    This handles both login (6 steps) and registration (12 steps) workflows,
+    as well as generic real-world captures.
     The goal text is included where helpful so the model can learn to connect
     actions back to the stated objective.
     """
@@ -212,8 +265,12 @@ def _generate_thought_for_step(
 
     if scenario == "registration":
         return _generate_registration_thought(step_index, step, goal, total_steps)
-    else:
+    elif scenario == "login" and total_steps <= 7:
+        # Only use login-specific thoughts for actual login scenarios (6-7 steps)
         return _generate_login_thought(step_index, step, goal, total_steps)
+    else:
+        # Use generic thoughts for real captures and other scenarios
+        return _generate_generic_thought(step_index, step, goal, total_steps)
 
 
 def _generate_login_thought(step_index: int, step: Step, goal: str, total_steps: int) -> str:
