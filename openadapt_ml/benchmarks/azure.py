@@ -376,10 +376,16 @@ class AzureMLClient:
             name="waa-agent-env",
         )
 
+        import time
+        import uuid
+        timestamp = int(time.time())
+        unique_id = str(uuid.uuid4())[:8]
+        job_name = f"waa-{compute_name}-{timestamp}-{unique_id}"
         job = ml_command(
             command=command,
             environment=env,
             compute=compute_name,
+            name=job_name,  # Unique job name for Azure ML
             display_name=display_name or f"waa-job-{compute_name}",
             environment_variables=environment_variables or {},
         )
@@ -625,9 +631,11 @@ class AzureWAAOrchestrator:
         # TODO: Serialize agent config and pass to remote worker
         # For now, workers use a default agent configuration
         _ = agent  # Reserved for agent serialization
+        # WAA Docker image has client at /client (see Dockerfile-WinArena)
+        # The run.py script is at /client/run.py (not a module, so use python run.py)
         return f"""
-        cd /workspace/WindowsAgentArena && \
-        python -m client.run \
+        cd /client && \
+        python run.py \
             --task_ids '{task_ids_json}' \
             --max_steps {max_steps} \
             --output_dir /outputs

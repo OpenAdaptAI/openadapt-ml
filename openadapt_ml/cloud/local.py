@@ -143,6 +143,16 @@ def _regenerate_benchmark_viewer_if_available(output_dir: Path) -> bool:
         # No real benchmark data - generate empty state viewer
         try:
             generate_empty_benchmark_viewer(benchmark_html_path)
+
+            # Still create symlink for azure_jobs.json access (even without real benchmarks)
+            if benchmark_results_dir.exists():
+                benchmark_results_link = output_dir / "benchmark_results"
+                if benchmark_results_link.is_symlink():
+                    benchmark_results_link.unlink()
+                elif benchmark_results_link.exists():
+                    shutil.rmtree(benchmark_results_link)
+                benchmark_results_link.symlink_to(benchmark_results_dir.absolute())
+
             print("  Generated benchmark viewer: No real evaluation data yet")
             return True
         except Exception as e:
@@ -167,6 +177,14 @@ def _regenerate_benchmark_viewer_if_available(output_dir: Path) -> bool:
             if tasks_src.exists():
                 tasks_dst = benchmark_tasks_dir / benchmark_dir.name
                 shutil.copytree(tasks_src, tasks_dst)
+
+        # Create symlink for benchmark_results directory (for azure_jobs.json access)
+        benchmark_results_link = output_dir / "benchmark_results"
+        if benchmark_results_link.is_symlink():
+            benchmark_results_link.unlink()
+        elif benchmark_results_link.exists():
+            shutil.rmtree(benchmark_results_link)
+        benchmark_results_link.symlink_to(benchmark_results_dir.absolute())
 
         print(f"  Regenerated benchmark viewer with {len(real_benchmarks)} run(s)")
         return True
@@ -535,6 +553,24 @@ def cmd_serve(args: argparse.Namespace) -> int:
                         }))
 
                 threading.Thread(target=run_benchmark, daemon=True).start()
+            elif self.path == '/api/vms/register':
+                # Register a new VM
+                content_length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(content_length).decode('utf-8') if content_length else '{}'
+                try:
+                    vm_data = json.loads(body)
+                    result = self._register_vm(vm_data)
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps(result).encode())
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
             else:
                 self.send_error(404, "Not found")
 
@@ -552,9 +588,644 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
                 self.wfile.write(progress.encode())
+            elif self.path.startswith('/api/benchmark-live'):
+                # Return live evaluation state
+                live_file = Path("benchmark_live.json")  # Relative to serve_dir (cwd)
+                if live_file.exists():
+                    live_state = live_file.read_text()
+                else:
+                    live_state = json.dumps({"status": "idle"})
+
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(live_state.encode())
+            elif self.path.startswith('/api/tasks'):
+                # Return background task status (VM, Docker, benchmarks)
+                try:
+                    tasks = self._fetch_background_tasks()
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps(tasks).encode())
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
+            elif self.path.startswith('/api/azure-jobs'):
+                # Return LIVE Azure job status from Azure ML
+                try:
+                    jobs = self._fetch_live_azure_jobs()
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps(jobs).encode())
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
+            elif self.path.startswith('/api/vms'):
+                # Return VM registry with live status
+                try:
+                    vms = self._fetch_vm_registry()
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps(vms).encode())
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
+            elif self.path.startswith('/api/azure-job-logs'):
+                # Return live logs for running Azure job
+                try:
+                    # Parse job_id from query string
+                    from urllib.parse import urlparse, parse_qs
+                    query = parse_qs(urlparse(self.path).query)
+                    job_id = query.get('job_id', [None])[0]
+
+                    logs = self._fetch_azure_job_logs(job_id)
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps(logs).encode())
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
             else:
                 # Default file serving
                 super().do_GET()
+
+        def _fetch_live_azure_jobs(self):
+            """Fetch live job status from Azure ML."""
+            import subprocess
+            result = subprocess.run(
+                ["az", "ml", "job", "list",
+                 "--resource-group", "openadapt-agents",
+                 "--workspace-name", "openadapt-ml",
+                 "--query", "[].{name:name,display_name:display_name,status:status,creation_context:creation_context.created_at}",
+                 "-o", "json"],
+                capture_output=True, text=True, timeout=30
+            )
+            if result.returncode != 0:
+                raise Exception(f"Azure CLI error: {result.stderr}")
+
+            jobs = json.loads(result.stdout)
+            # Format for frontend
+            experiment_id = "ad29082c-0607-4fda-8cc7-38944eb5a518"
+            wsid = "/subscriptions/78add6c6-c92a-4a53-b751-eb644ac77e59/resourceGroups/openadapt-agents/providers/Microsoft.MachineLearningServices/workspaces/openadapt-ml"
+
+            formatted = []
+            for job in jobs[:10]:  # Limit to 10 most recent
+                formatted.append({
+                    "job_id": job.get("name", "unknown"),
+                    "display_name": job.get("display_name", ""),
+                    "status": job.get("status", "unknown").lower(),
+                    "started_at": job.get("creation_context", ""),
+                    "azure_dashboard_url": f"https://ml.azure.com/experiments/id/{experiment_id}/runs/{job.get('name', '')}?wsid={wsid}",
+                    "is_live": True  # Flag to indicate this is live data
+                })
+            return formatted
+
+        def _fetch_azure_job_logs(self, job_id: str | None):
+            """Fetch logs for an Azure ML job (streaming for running jobs)."""
+            import subprocess
+
+            if not job_id:
+                # Get the most recent running job
+                jobs = self._fetch_live_azure_jobs()
+                running = [j for j in jobs if j['status'] == 'running']
+                if running:
+                    job_id = running[0]['job_id']
+                else:
+                    return {"logs": "No running jobs found", "job_id": None, "status": "idle"}
+
+            # Try to stream logs for running job using az ml job stream
+            try:
+                result = subprocess.run(
+                    ["az", "ml", "job", "stream",
+                     "--name", job_id,
+                     "--resource-group", "openadapt-agents",
+                     "--workspace-name", "openadapt-ml"],
+                    capture_output=True, text=True, timeout=3  # Short timeout
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    return {"logs": result.stdout[-5000:], "job_id": job_id, "status": "streaming"}
+            except subprocess.TimeoutExpired:
+                pass  # Fall through to job show
+
+            # Get job details instead
+            result = subprocess.run(
+                ["az", "ml", "job", "show",
+                 "--name", job_id,
+                 "--resource-group", "openadapt-agents",
+                 "--workspace-name", "openadapt-ml",
+                 "-o", "json"],
+                capture_output=True, text=True, timeout=10
+            )
+
+            if result.returncode == 0:
+                job_info = json.loads(result.stdout)
+                return {
+                    "logs": f"Job {job_id} is {job_info.get('status', 'unknown')}\\n\\nCommand: {job_info.get('command', 'N/A')}",
+                    "job_id": job_id,
+                    "status": job_info.get('status', 'unknown').lower(),
+                    "command": job_info.get('command', '')
+                }
+
+            return {"logs": f"Could not fetch logs: {result.stderr}", "job_id": job_id, "status": "error"}
+
+        def _get_vm_detailed_metadata(self, vm_ip: str, container_name: str, logs: str, phase: str) -> dict:
+            """Get detailed VM metadata for the VM Details panel.
+
+            Returns:
+                dict with disk_usage_gb, memory_usage_mb, setup_script_phase, probe_response, qmp_connected, dependencies
+            """
+            import subprocess
+            import re
+
+            metadata = {
+                "disk_usage_gb": None,
+                "memory_usage_mb": None,
+                "setup_script_phase": None,
+                "probe_response": None,
+                "qmp_connected": False,
+                "dependencies": []
+            }
+
+            # 1. Get disk usage from docker stats
+            try:
+                disk_result = subprocess.run(
+                    ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
+                     "-i", str(Path.home() / ".ssh" / "id_rsa"),
+                     f"azureuser@{vm_ip}",
+                     f"docker exec {container_name} df -h /storage 2>/dev/null | tail -1"],
+                    capture_output=True, text=True, timeout=10
+                )
+                if disk_result.returncode == 0 and disk_result.stdout.strip():
+                    # Parse: "Filesystem      Size  Used Avail Use% Mounted on"
+                    # Example: "/dev/sda1        30G  9.2G   20G  31% /storage"
+                    parts = disk_result.stdout.split()
+                    if len(parts) >= 3:
+                        used_str = parts[2]  # e.g., "9.2G"
+                        total_str = parts[1]  # e.g., "30G"
+                        # Convert to GB (handle M/G suffixes)
+                        def to_gb(s):
+                            if s.endswith('G'):
+                                return float(s[:-1])
+                            elif s.endswith('M'):
+                                return float(s[:-1]) / 1024
+                            elif s.endswith('K'):
+                                return float(s[:-1]) / (1024 * 1024)
+                            return 0
+                        metadata["disk_usage_gb"] = f"{to_gb(used_str):.1f} GB / {to_gb(total_str):.0f} GB used"
+            except Exception:
+                pass
+
+            # 2. Get memory usage from docker stats
+            try:
+                mem_result = subprocess.run(
+                    ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
+                     "-i", str(Path.home() / ".ssh" / "id_rsa"),
+                     f"azureuser@{vm_ip}",
+                     f"docker stats {container_name} --no-stream --format '{{{{.MemUsage}}}}'"],
+                    capture_output=True, text=True, timeout=10
+                )
+                if mem_result.returncode == 0 and mem_result.stdout.strip():
+                    # Example: "1.5GiB / 4GiB"
+                    metadata["memory_usage_mb"] = mem_result.stdout.strip()
+            except Exception:
+                pass
+
+            # 3. Parse setup script phase from logs
+            metadata["setup_script_phase"] = self._parse_setup_phase_from_logs(logs, phase)
+
+            # 4. Check /probe endpoint
+            try:
+                probe_result = subprocess.run(
+                    ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
+                     "-i", str(Path.home() / ".ssh" / "id_rsa"),
+                     f"azureuser@{vm_ip}",
+                     "curl -s --connect-timeout 2 http://20.20.20.21:5000/probe 2>/dev/null"],
+                    capture_output=True, text=True, timeout=10
+                )
+                if probe_result.returncode == 0 and probe_result.stdout.strip():
+                    metadata["probe_response"] = probe_result.stdout.strip()
+                else:
+                    metadata["probe_response"] = "Not responding"
+            except Exception:
+                metadata["probe_response"] = "Connection failed"
+
+            # 5. Check QMP connection (port 7200)
+            try:
+                qmp_result = subprocess.run(
+                    ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
+                     "-i", str(Path.home() / ".ssh" / "id_rsa"),
+                     f"azureuser@{vm_ip}",
+                     "nc -z -w2 localhost 7200 2>&1"],
+                    capture_output=True, text=True, timeout=10
+                )
+                metadata["qmp_connected"] = qmp_result.returncode == 0
+            except Exception:
+                pass
+
+            # 6. Parse dependencies from logs
+            metadata["dependencies"] = self._parse_dependencies_from_logs(logs, phase)
+
+            return metadata
+
+        def _parse_setup_phase_from_logs(self, logs: str, current_phase: str) -> str:
+            """Parse the current setup script phase from logs.
+
+            Looks for patterns indicating which script is running:
+            - install.bat
+            - setup.ps1
+            - on-logon.ps1
+            """
+            if current_phase == "ready":
+                return "Setup complete"
+            elif current_phase == "oobe":
+                # Check for specific script patterns
+                if "on-logon.ps1" in logs.lower():
+                    return "Running on-logon.ps1"
+                elif "setup.ps1" in logs.lower():
+                    return "Running setup.ps1"
+                elif "install.bat" in logs.lower():
+                    return "Running install.bat"
+                else:
+                    return "Windows installation in progress"
+            elif current_phase == "booting":
+                return "Booting Windows"
+            elif current_phase in ["downloading", "extracting", "configuring", "building"]:
+                return "Preparing Windows VM"
+            else:
+                return "Initializing..."
+
+        def _parse_dependencies_from_logs(self, logs: str, phase: str) -> list[dict]:
+            """Parse dependency installation status from logs.
+
+            Returns list of dependencies with their installation status:
+            - Python
+            - Chrome
+            - LibreOffice
+            - VSCode
+            - etc.
+            """
+            dependencies = [
+                {"name": "Python", "icon": "🐍", "status": "pending"},
+                {"name": "Chrome", "icon": "🌐", "status": "pending"},
+                {"name": "LibreOffice", "icon": "📝", "status": "pending"},
+                {"name": "VSCode", "icon": "💻", "status": "pending"},
+                {"name": "WAA Server", "icon": "🔧", "status": "pending"},
+            ]
+
+            if phase not in ["oobe", "ready"]:
+                # Not yet at Windows setup phase
+                return dependencies
+
+            logs_lower = logs.lower()
+
+            # Check for installation patterns
+            if "python" in logs_lower and ("installing python" in logs_lower or "python.exe" in logs_lower):
+                dependencies[0]["status"] = "installing"
+            elif "python" in logs_lower and "installed" in logs_lower:
+                dependencies[0]["status"] = "complete"
+
+            if "chrome" in logs_lower and ("downloading" in logs_lower or "installing" in logs_lower):
+                dependencies[1]["status"] = "installing"
+            elif "chrome" in logs_lower and "installed" in logs_lower:
+                dependencies[1]["status"] = "complete"
+
+            if "libreoffice" in logs_lower and ("downloading" in logs_lower or "installing" in logs_lower):
+                dependencies[2]["status"] = "installing"
+            elif "libreoffice" in logs_lower and "installed" in logs_lower:
+                dependencies[2]["status"] = "complete"
+
+            if "vscode" in logs_lower or "visual studio code" in logs_lower:
+                if "installing" in logs_lower:
+                    dependencies[3]["status"] = "installing"
+                elif "installed" in logs_lower:
+                    dependencies[3]["status"] = "complete"
+
+            if "waa" in logs_lower or "flask" in logs_lower:
+                if "starting" in logs_lower or "running" in logs_lower:
+                    dependencies[4]["status"] = "installing"
+                elif phase == "ready":
+                    dependencies[4]["status"] = "complete"
+
+            return dependencies
+
+        def _fetch_background_tasks(self):
+            """Fetch status of all background tasks: Azure VM, Docker containers, benchmarks."""
+            import subprocess
+            from datetime import datetime
+            import time
+
+            tasks = []
+
+            # 1. Check Azure WAA VM status
+            try:
+                result = subprocess.run(
+                    ["az", "vm", "get-instance-view",
+                     "--name", "waa-eval-vm",
+                     "--resource-group", "openadapt-agents",
+                     "--query", "instanceView.statuses",
+                     "-o", "json"],
+                    capture_output=True, text=True, timeout=10
+                )
+                if result.returncode == 0:
+                    statuses = json.loads(result.stdout)
+                    power_state = "unknown"
+                    for s in statuses:
+                        if s.get("code", "").startswith("PowerState/"):
+                            power_state = s["code"].replace("PowerState/", "")
+
+                    # Get VM IP
+                    ip_result = subprocess.run(
+                        ["az", "vm", "list-ip-addresses",
+                         "--name", "waa-eval-vm",
+                         "--resource-group", "openadapt-agents",
+                         "--query", "[0].virtualMachine.network.publicIpAddresses[0].ipAddress",
+                         "-o", "tsv"],
+                        capture_output=True, text=True, timeout=10
+                    )
+                    vm_ip = ip_result.stdout.strip() if ip_result.returncode == 0 else None
+
+                    if power_state == "running":
+                        tasks.append({
+                            "task_id": "azure-vm-waa",
+                            "task_type": "vm_provision",
+                            "status": "completed",
+                            "title": "Azure VM Host",
+                            "description": f"Linux host running at {vm_ip}" if vm_ip else "Linux host running",
+                            "progress_percent": 100.0,
+                            "elapsed_seconds": 0,
+                            "metadata": {
+                                "vm_name": "waa-eval-vm",
+                                "ip_address": vm_ip
+                                # No VNC link - that's for the Windows container
+                            }
+                        })
+
+                        # 2. Check Docker container status on VM (if running)
+                        if vm_ip:
+                            try:
+                                docker_result = subprocess.run(
+                                    ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
+                                     "-i", str(Path.home() / ".ssh" / "id_rsa"),
+                                     f"azureuser@{vm_ip}",
+                                     "docker ps --format '{{.Names}}|{{.Status}}|{{.Image}}'"],
+                                    capture_output=True, text=True, timeout=15
+                                )
+                                if docker_result.returncode == 0 and docker_result.stdout.strip():
+                                    for line in docker_result.stdout.strip().split('\n'):
+                                        parts = line.split('|')
+                                        if len(parts) >= 3:
+                                            container_name, status, image = parts[0], parts[1], parts[2]
+                                            # Parse "Up X minutes" to determine if healthy
+                                            is_healthy = "Up" in status
+
+                                            # Check for Windows VM specifically
+                                            if "windows" in image.lower() or container_name == "winarena":
+                                                # Get detailed progress from docker logs
+                                                log_check = subprocess.run(
+                                                    ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
+                                                     "-i", str(Path.home() / ".ssh" / "id_rsa"),
+                                                     f"azureuser@{vm_ip}",
+                                                     f"docker logs {container_name} 2>&1 | tail -30"],
+                                                    capture_output=True, text=True, timeout=10
+                                                )
+                                                logs = log_check.stdout if log_check.returncode == 0 else ""
+
+                                                # Parse progress from logs
+                                                phase = "unknown"
+                                                progress = 0.0
+                                                description = "Starting..."
+
+                                                if "Windows started successfully" in logs:
+                                                    # Check if WAA server is ready
+                                                    server_check = subprocess.run(
+                                                        ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
+                                                         "-i", str(Path.home() / ".ssh" / "id_rsa"),
+                                                         f"azureuser@{vm_ip}",
+                                                         "curl -s --connect-timeout 2 http://20.20.20.21:5000/probe 2>/dev/null"],
+                                                        capture_output=True, text=True, timeout=10
+                                                    )
+                                                    if server_check.returncode == 0 and server_check.stdout.strip():
+                                                        phase = "ready"
+                                                        progress = 100.0
+                                                        description = "WAA Server ready - benchmarks can run"
+                                                    else:
+                                                        phase = "oobe"
+                                                        progress = 80.0  # Phase 5/6 - VM install in progress
+                                                        description = "Phase 5/6: Windows installing (check VNC for %). OEM scripts will run after."
+                                                elif "Booting Windows" in logs:
+                                                    phase = "booting"
+                                                    progress = 70.0  # Phase 4/6
+                                                    description = "Phase 4/6: Booting Windows from installer..."
+                                                elif "Building Windows" in logs or "Creating a" in logs:
+                                                    phase = "building"
+                                                    progress = 60.0  # Phase 3/6
+                                                    description = "Phase 3/6: Building Windows VM disk..."
+                                                elif "Adding" in logs and "image" in logs:
+                                                    phase = "configuring"
+                                                    progress = 50.0  # Phase 2/6
+                                                    description = "Phase 2/6: Configuring Windows image with WAA scripts..."
+                                                elif "Extracting" in logs:
+                                                    phase = "extracting"
+                                                    progress = 35.0  # Phase 1/6 (after download)
+                                                    description = "Phase 1/6: Extracting Windows ISO..."
+                                                else:
+                                                    # Check for download progress (e.g., "1234K ........ 45% 80M 30s")
+                                                    import re
+                                                    download_match = re.search(r'(\d+)%\s+[\d.]+[KMG]\s+(\d+)s', logs)
+                                                    if download_match:
+                                                        phase = "downloading"
+                                                        dl_pct = float(download_match.group(1))
+                                                        progress = dl_pct * 0.30  # 0-30% for download phase
+                                                        eta = download_match.group(2)
+                                                        description = f"Phase 0/6: Downloading Windows 11... {download_match.group(1)}% ({eta}s left)"
+
+                                                # Improve phase detection - if Windows is booted but WAA not ready,
+                                                # it might be at login screen waiting for OEM scripts
+                                                if phase == "oobe" and "Boot0004" in logs:
+                                                    # Windows finished installing, at login/desktop
+                                                    description = "Phase 5/6: Windows ready. Login via VNC, then run: \\\\host.lan\\Data\\install.bat"
+                                                    progress = 85.0
+
+                                                # Get detailed metadata for VM Details panel
+                                                vm_metadata = self._get_vm_detailed_metadata(vm_ip, container_name, logs, phase)
+
+                                                tasks.append({
+                                                    "task_id": f"docker-{container_name}",
+                                                    "task_type": "docker_container",
+                                                    "status": "completed" if phase == "ready" else "running",
+                                                    "title": "Windows 11 + WAA Server",
+                                                    "description": description,
+                                                    "progress_percent": progress,
+                                                    "elapsed_seconds": 0,
+                                                    "phase": phase,
+                                                    "metadata": {
+                                                        "container": container_name,
+                                                        "image": image,
+                                                        "status": status,
+                                                        "phase": phase,
+                                                        "windows_ready": phase in ["oobe", "ready"],
+                                                        "waa_server_ready": phase == "ready",
+                                                        "vnc_url": f"http://{vm_ip}:8006",
+                                                        "windows_username": "Docker",
+                                                        "windows_password": "(empty - just press Enter)",
+                                                        "recent_logs": logs[-500:] if logs else "",
+                                                        # Enhanced VM details
+                                                        "disk_usage_gb": vm_metadata["disk_usage_gb"],
+                                                        "memory_usage_mb": vm_metadata["memory_usage_mb"],
+                                                        "setup_script_phase": vm_metadata["setup_script_phase"],
+                                                        "probe_response": vm_metadata["probe_response"],
+                                                        "qmp_connected": vm_metadata["qmp_connected"],
+                                                        "dependencies": vm_metadata["dependencies"],
+                                                    }
+                                                })
+                            except Exception as e:
+                                # SSH failed, VM might still be starting
+                                pass
+            except subprocess.TimeoutExpired:
+                pass
+            except Exception:
+                pass
+
+            # 3. Check local benchmark progress
+            progress_file = Path("benchmark_progress.json")
+            if progress_file.exists():
+                try:
+                    progress = json.loads(progress_file.read_text())
+                    if progress.get("status") == "running":
+                        tasks.append({
+                            "task_id": "benchmark-local",
+                            "task_type": "benchmark_run",
+                            "status": "running",
+                            "title": f"{progress.get('provider', 'API').upper()} Benchmark",
+                            "description": progress.get("message", "Running benchmark..."),
+                            "progress_percent": (progress.get("tasks_complete", 0) / max(progress.get("tasks_total", 1), 1)) * 100,
+                            "elapsed_seconds": 0,
+                            "metadata": progress
+                        })
+                except Exception:
+                    pass
+
+            return tasks
+
+        def _fetch_vm_registry(self):
+            """Fetch VM registry with live status checks."""
+            import subprocess
+            from datetime import datetime
+
+            # Path to VM registry file (relative to project root)
+            project_root = Path(__file__).parent.parent.parent
+            registry_file = project_root / "benchmark_results" / "vm_registry.json"
+
+            if not registry_file.exists():
+                return []
+
+            try:
+                with open(registry_file) as f:
+                    vms = json.load(f)
+            except Exception as e:
+                return {"error": f"Failed to read VM registry: {e}"}
+
+            # Check status for each VM
+            for vm in vms:
+                vm["status"] = "unknown"
+                vm["last_checked"] = datetime.now().isoformat()
+                vm["vnc_reachable"] = False
+                vm["waa_probe_status"] = "unknown"
+
+                # Check VNC (HTTP HEAD request)
+                try:
+                    vnc_url = f"http://{vm['ssh_host']}:{vm['vnc_port']}"
+                    result = subprocess.run(
+                        ["curl", "-I", "-s", "--connect-timeout", "3", vnc_url],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    if result.returncode == 0 and "200" in result.stdout:
+                        vm["vnc_reachable"] = True
+                except Exception:
+                    pass
+
+                # Check WAA probe via SSH
+                try:
+                    internal_ip = vm.get("internal_ip", "20.20.20.21")
+                    waa_port = vm.get("waa_port", 5000)
+                    ssh_cmd = f"curl -s --connect-timeout 2 http://{internal_ip}:{waa_port}/probe 2>/dev/null"
+
+                    result = subprocess.run(
+                        ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=3",
+                         "-i", str(Path.home() / ".ssh" / "id_rsa"),
+                         f"{vm['ssh_user']}@{vm['ssh_host']}",
+                         ssh_cmd],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        vm["waa_probe_status"] = "ready"
+                        vm["status"] = "online"
+                    else:
+                        vm["waa_probe_status"] = "not responding"
+                        vm["status"] = "offline"
+                except Exception:
+                    vm["waa_probe_status"] = "ssh failed"
+                    vm["status"] = "offline"
+
+            return vms
+
+        def _register_vm(self, vm_data):
+            """Register a new VM in the registry."""
+            # Path to VM registry file (relative to project root)
+            project_root = Path(__file__).parent.parent.parent
+            registry_file = project_root / "benchmark_results" / "vm_registry.json"
+
+            # Load existing registry
+            vms = []
+            if registry_file.exists():
+                try:
+                    with open(registry_file) as f:
+                        vms = json.load(f)
+                except Exception:
+                    pass
+
+            # Add new VM
+            new_vm = {
+                "name": vm_data.get("name", "unnamed-vm"),
+                "ssh_host": vm_data.get("ssh_host", ""),
+                "ssh_user": vm_data.get("ssh_user", "azureuser"),
+                "vnc_port": vm_data.get("vnc_port", 8006),
+                "waa_port": vm_data.get("waa_port", 5000),
+                "docker_container": vm_data.get("docker_container", "win11-waa"),
+                "internal_ip": vm_data.get("internal_ip", "20.20.20.21")
+            }
+
+            vms.append(new_vm)
+
+            # Save registry
+            try:
+                registry_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(registry_file, 'w') as f:
+                    json.dump(vms, f, indent=2)
+                return {"status": "success", "vm": new_vm}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
 
         def do_OPTIONS(self):
             # Handle CORS preflight
@@ -612,6 +1283,36 @@ def cmd_viewer(args: argparse.Namespace) -> int:
         state.losses = data.get("losses", [])
         state.status = data.get("status", "completed")
         state.elapsed_time = data.get("elapsed_time", 0.0)  # Load elapsed time for completed training
+        state.goal = data.get("goal", "")
+        state.config_path = data.get("config_path", "")
+        state.capture_path = data.get("capture_path", "")
+
+        # Load model config from training_log.json or fall back to reading config file
+        state.model_name = data.get("model_name", "")
+        state.lora_r = data.get("lora_r", 0)
+        state.lora_alpha = data.get("lora_alpha", 0)
+        state.load_in_4bit = data.get("load_in_4bit", False)
+
+        # If model config not in JSON, try to read from config file
+        if not state.model_name and state.config_path:
+            try:
+                import yaml
+                # Try relative to project root first, then as absolute path
+                project_root = Path(__file__).parent.parent.parent
+                config_file = project_root / state.config_path
+                if not config_file.exists():
+                    config_file = Path(state.config_path)
+                if config_file.exists():
+                    with open(config_file) as cf:
+                        cfg = yaml.safe_load(cf)
+                    if cfg and "model" in cfg:
+                        state.model_name = cfg["model"].get("name", "")
+                        state.load_in_4bit = cfg["model"].get("load_in_4bit", False)
+                    if cfg and "lora" in cfg:
+                        state.lora_r = cfg["lora"].get("r", 0)
+                        state.lora_alpha = cfg["lora"].get("lora_alpha", 0)
+            except Exception as e:
+                print(f"  Warning: Could not read config file: {e}")
 
         config = TrainingConfig(
             num_train_epochs=data.get("total_epochs", 5),

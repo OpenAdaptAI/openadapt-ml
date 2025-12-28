@@ -29,6 +29,7 @@ from openadapt_ml.benchmarks.base import (
     BenchmarkTask,
 )
 from openadapt_ml.benchmarks.data_collection import ExecutionTraceCollector
+from openadapt_ml.benchmarks.live_tracker import LiveEvaluationTracker
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,8 @@ class EvaluationConfig:
         model_id: Model identifier for execution traces.
         output_dir: Output directory for benchmark results.
         run_name: Name for this evaluation run.
+        enable_live_tracking: Whether to enable live evaluation progress tracking.
+        live_tracking_file: Path to live tracking JSON file.
     """
 
     max_steps: int = 50
@@ -60,6 +63,8 @@ class EvaluationConfig:
     model_id: str = "unknown"
     output_dir: str = "benchmark_results"
     run_name: str | None = None
+    enable_live_tracking: bool = True
+    live_tracking_file: str = "benchmark_live.json"
 
 
 def evaluate_agent_on_benchmark(
@@ -107,15 +112,29 @@ def evaluate_agent_on_benchmark(
         if config.verbose:
             logger.info(f"Saving execution traces to: {trace_collector.run_dir}")
 
+    # Initialize live evaluation tracker if enabled
+    live_tracker = None
+    if config.enable_live_tracking:
+        live_tracker = LiveEvaluationTracker(
+            output_file=config.live_tracking_file,
+            total_tasks=len(tasks),
+        )
+        if config.verbose:
+            logger.info(f"Live tracking enabled: {config.live_tracking_file}")
+
     # Run evaluation
     if config.parallel > 1 and adapter.supports_parallel:
-        results = _evaluate_parallel(agent, adapter, tasks, config, trace_collector)
+        results = _evaluate_parallel(agent, adapter, tasks, config, trace_collector, live_tracker)
     else:
-        results = _evaluate_sequential(agent, adapter, tasks, config, trace_collector)
+        results = _evaluate_sequential(agent, adapter, tasks, config, trace_collector, live_tracker)
 
     # Save summary if trace collection is enabled
     if trace_collector is not None:
         trace_collector.save_summary(results)
+
+    # Mark live tracking as complete
+    if live_tracker is not None:
+        live_tracker.finish()
 
     # Log summary
     if config.verbose:
@@ -136,6 +155,7 @@ def _evaluate_sequential(
     tasks: list[BenchmarkTask],
     config: EvaluationConfig,
     trace_collector: ExecutionTraceCollector | None = None,
+    live_tracker: LiveEvaluationTracker | None = None,
 ) -> list[BenchmarkResult]:
     """Run evaluation sequentially.
 
@@ -145,6 +165,7 @@ def _evaluate_sequential(
         tasks: Tasks to evaluate.
         config: Evaluation configuration.
         trace_collector: Optional trace collector for saving execution data.
+        live_tracker: Optional live evaluation tracker.
 
     Returns:
         List of results.
@@ -154,7 +175,7 @@ def _evaluate_sequential(
         if config.verbose:
             logger.info(f"Task {i + 1}/{len(tasks)}: {task.task_id}")
 
-        result = _run_single_task(agent, adapter, task, config, trace_collector)
+        result = _run_single_task(agent, adapter, task, config, trace_collector, live_tracker)
         results.append(result)
 
         if config.on_task_complete:
@@ -169,6 +190,7 @@ def _evaluate_parallel(
     tasks: list[BenchmarkTask],
     config: EvaluationConfig,
     trace_collector: ExecutionTraceCollector | None = None,
+    live_tracker: LiveEvaluationTracker | None = None,
 ) -> list[BenchmarkResult]:
     """Run evaluation in parallel.
 
@@ -181,6 +203,7 @@ def _evaluate_parallel(
         tasks: Tasks to evaluate.
         config: Evaluation configuration.
         trace_collector: Optional trace collector for saving execution data.
+        live_tracker: Optional live evaluation tracker.
 
     Returns:
         List of results.
@@ -190,7 +213,7 @@ def _evaluate_parallel(
     with ThreadPoolExecutor(max_workers=config.parallel) as executor:
         # Submit all tasks
         future_to_task = {
-            executor.submit(_run_single_task, agent, adapter, task, config, trace_collector): task
+            executor.submit(_run_single_task, agent, adapter, task, config, trace_collector, live_tracker): task
             for task in tasks
         }
 
@@ -228,6 +251,7 @@ def _run_single_task(
     task: BenchmarkTask,
     config: EvaluationConfig,
     trace_collector: ExecutionTraceCollector | None = None,
+    live_tracker: LiveEvaluationTracker | None = None,
 ) -> BenchmarkResult:
     """Run a single task and return result.
 
@@ -237,6 +261,7 @@ def _run_single_task(
         task: Task to run.
         config: Evaluation configuration.
         trace_collector: Optional trace collector for saving execution data.
+        live_tracker: Optional live evaluation tracker.
 
     Returns:
         BenchmarkResult.
@@ -247,6 +272,10 @@ def _run_single_task(
     # Start trace collection if enabled
     if trace_collector is not None:
         trace_collector.start_task(task)
+
+    # Start live tracking if enabled
+    if live_tracker is not None:
+        live_tracker.start_task(task)
 
     try:
         # Reset agent and environment
@@ -269,6 +298,10 @@ def _run_single_task(
             # Record step in trace collector
             if trace_collector is not None:
                 trace_collector.record_step(steps, obs, action, reasoning)
+
+            # Record step in live tracker
+            if live_tracker is not None:
+                live_tracker.record_step(steps, obs, action, reasoning)
 
             # Record step in history
             if config.save_trajectories:
@@ -297,6 +330,10 @@ def _run_single_task(
         # Finish trace collection if enabled
         if trace_collector is not None:
             trace_collector.finish_task(result)
+
+        # Finish live tracking if enabled
+        if live_tracker is not None:
+            live_tracker.finish_task(result)
 
         return result
 

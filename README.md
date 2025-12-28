@@ -747,7 +747,7 @@ uv run python -m openadapt_ml.cloud.local serve --port 8080 --open
 
 ![Benchmark Viewer](docs/images/benchmark_viewer.png)
 
-*View benchmark evaluation results with task-level filtering, success/failure status, and run comparison. Shows Claude achieving 30% success rate on WAA mock tasks.*
+*View benchmark evaluation results with task-level filtering, success/failure status, and run comparison. Shows Claude achieving 30% on mock evaluation tasks (simulated environment for testing the pipeline - real WAA evaluation requires Windows VMs).*
 
 ---
 
@@ -764,6 +764,12 @@ uv run python -m openadapt_ml.cloud.local serve --port 8080 --open
 - **Evaluation**:
   - v1 focuses on smoke tests and qualitative behavior on synthetic data.
     More formal evaluation scripts and metrics are planned.
+- **Windows Agent Arena (WAA) on Azure**:
+  - WAA requires nested virtualization (Windows VM inside Docker via QEMU)
+  - Azure ML managed compute does not support nested virtualization
+  - For real WAA evaluation, use dedicated VMs with Dv3/Ev3 series or run locally
+  - Mock evaluation (`test-mock`) validates the pipeline without Windows VMs
+  - See `CLAUDE.md` for detailed workarounds and infrastructure setup
 
 For deeper architectural details, see [`docs/design.md`](docs/design.md).
 
