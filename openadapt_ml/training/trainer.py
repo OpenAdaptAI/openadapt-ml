@@ -116,6 +116,11 @@ class TrainingState:
     capture_path: str = ""
     config_path: str = ""
     goal: str = ""  # Task goal/description for the training run
+    # Model configuration
+    model_name: str = ""  # e.g. "Qwen/Qwen3-VL-2B-Instruct"
+    lora_r: int = 0  # LoRA rank
+    lora_alpha: int = 0  # LoRA alpha
+    load_in_4bit: bool = False  # Quantization
     # Training progress
     epoch: int = 0
     step: int = 0
@@ -185,6 +190,11 @@ class TrainingState:
             "capture_path": self.capture_path,
             "config_path": self.config_path,
             "goal": self.goal,
+            # Model configuration
+            "model_name": self.model_name,
+            "lora_r": self.lora_r,
+            "lora_alpha": self.lora_alpha,
+            "load_in_4bit": self.load_in_4bit,
             "instance_type": self.instance_type,
             "instance_ip": self.instance_ip,
             "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self.start_time)),
@@ -227,6 +237,11 @@ class TrainingLogger:
         cloud_dashboard_url: str = "",
         cloud_instance_id: str = "",
         job_id: str = "",
+        # Model configuration
+        model_name: str = "",
+        lora_r: int = 0,
+        lora_alpha: int = 0,
+        load_in_4bit: bool = False,
     ):
         # Generate job_id if not provided
         if not job_id:
@@ -242,6 +257,10 @@ class TrainingLogger:
             capture_path=capture_path,
             config_path=config_path,
             goal=goal,
+            model_name=model_name,
+            lora_r=lora_r,
+            lora_alpha=lora_alpha,
+            load_in_4bit=load_in_4bit,
             instance_ip=instance_ip,
             instance_type=instance_type,
             total_epochs=config.num_train_epochs,
@@ -595,6 +614,42 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
         }}
         .setup-log-line.current {{
             color: var(--accent);
+        }}
+        .config-panel {{
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 24px;
+        }}
+        .config-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }}
+        .config-item {{
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }}
+        .config-label {{
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        .config-value {{
+            font-family: "SF Mono", Monaco, monospace;
+            font-size: 0.85rem;
+            color: var(--text-primary);
+        }}
+        .config-value.model {{
+            color: var(--accent);
+        }}
+        .config-value.goal {{
+            font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
+            font-size: 0.8rem;
+            opacity: 0.9;
         }}
         .status {{
             display: flex;
@@ -1095,6 +1150,31 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
             </div>
         </div>
 
+        <div class="config-panel" id="config-panel">
+            <div class="config-grid">
+                <div class="config-item">
+                    <span class="config-label">Model</span>
+                    <span class="config-value model" id="config-model">{state.model_name or 'Not specified'}</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Goal</span>
+                    <span class="config-value goal" id="config-goal">{state.goal or 'Not specified'}</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">LoRA</span>
+                    <span class="config-value" id="config-lora">{f'r={state.lora_r}, α={state.lora_alpha}' if state.lora_r else 'Not specified'}</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Quantization</span>
+                    <span class="config-value" id="config-quant">{'4-bit' if state.load_in_4bit else 'None'}</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Config</span>
+                    <span class="config-value" id="config-path">{state.config_path or 'Not specified'}</span>
+                </div>
+            </div>
+        </div>
+
         <div class="stats-grid">
             <div class="stat-card" id="card-epoch">
                 <div class="stat-label">Epoch Progress</div>
@@ -1517,6 +1597,28 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
                     if (jobConfigEl && data.config_path) {{
                         jobConfigEl.textContent = data.config_path;
                     }}
+                }}
+
+                // Update config panel
+                const configModel = document.getElementById('config-model');
+                const configGoal = document.getElementById('config-goal');
+                const configLora = document.getElementById('config-lora');
+                const configQuant = document.getElementById('config-quant');
+                const configPath = document.getElementById('config-path');
+                if (configModel && data.model_name) {{
+                    configModel.textContent = data.model_name;
+                }}
+                if (configGoal && data.goal) {{
+                    configGoal.textContent = data.goal;
+                }}
+                if (configLora && (data.lora_r || data.lora_alpha)) {{
+                    configLora.textContent = `r=${{data.lora_r || 0}}, α=${{data.lora_alpha || 0}}`;
+                }}
+                if (configQuant) {{
+                    configQuant.textContent = data.load_in_4bit ? '4-bit' : 'None';
+                }}
+                if (configPath && data.config_path) {{
+                    configPath.textContent = data.config_path;
                 }}
 
                 // Update setup panel if setup logs present

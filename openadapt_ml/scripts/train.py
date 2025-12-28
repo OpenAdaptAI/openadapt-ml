@@ -121,6 +121,10 @@ def main(
     # Get goal from episodes (for logging/viewer)
     episode_goal = episodes[0].goal if episodes else ""
 
+    # Extract LoRA parameters for dashboard display
+    lora_r = lora_cfg.get("r", 0) if lora_cfg else 0
+    lora_alpha = lora_cfg.get("lora_alpha", 0) if lora_cfg else 0
+
     # Create logger with metadata for dashboard
     logger = TrainingLogger(
         output_dir=train_cfg.output_dir,
@@ -128,6 +132,10 @@ def main(
         capture_path=str(capture_path) if capture_path else "",
         config_path=str(config_path),
         goal=goal or episode_goal,  # Use explicit goal or episode goal
+        model_name=model_name,
+        lora_r=lora_r,
+        lora_alpha=lora_alpha,
+        load_in_4bit=load_in_4bit,
     )
 
     # Pass the first episode for periodic evaluation (if available)

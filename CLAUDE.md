@@ -406,6 +406,101 @@ az ml workspace sync-keys -n openadapt-ml -g openadapt-agents
 - [Azure ML Managed Identity ACR Authentication](https://learn.microsoft.com/en-us/azure/machine-learning/how-to-identity-based-service-authentication)
 - [ACR Pull Role Assignment](https://learn.microsoft.com/en-us/azure/container-registry/container-registry-authentication-managed-identity)
 
+### Azure WAA Evaluation - Dedicated VM Setup
+**Status**: WORKING - Use official WAA repo scripts (verified Dec 2025)
+
+**Problem**: WAA requires running a Windows VM inside Docker (via QEMU). Azure ML managed compute doesn't support nested virtualization.
+
+**Solution**: Use dedicated Azure VMs with nested virtualization + **official WAA repository scripts**.
+
+> **CRITICAL**: You MUST clone the WAA repo and use their `run-local.sh` script. Do NOT use the pre-built `windowsarena/winarena:latest` image directly - it won't work because it needs the correct unattend.xml for Enterprise Evaluation ISO which is only built by their script.
+
+**Working Quick Start** (verified Dec 2025):
+```bash
+# 1. Create Azure VM with Docker
+uv run python -m openadapt_ml.benchmarks.cli vm setup-waa
+
+# 2. SSH into VM
+ssh azureuser@<vm-ip>
+
+# 3. Clone WAA repo and set up ISO
+cd /mnt
+sudo git clone https://github.com/microsoft/WindowsAgentArena.git
+sudo chown -R azureuser:azureuser WindowsAgentArena
+cd WindowsAgentArena
+
+# 4. Download Windows ISO to correct location
+mkdir -p src/win-arena-container/vm/image
+curl -L -o src/win-arena-container/vm/image/setup.iso \
+  "https://go.microsoft.com/fwlink/?linkid=2334167"
+
+# 5. Create config.json with API key
+cat > config.json << EOF
+{"OPENAI_API_KEY": "your-key-here"}
+EOF
+
+# 6. Prepare Windows golden image (~25 min) - MUST use their script
+cd scripts
+./run-local.sh --prepare-image true --start-client false
+# Wait for "Shutdown completed!" message
+
+# 7. Run benchmark
+./run-local.sh --prepare-image false --start-client true --model gpt-4o
+
+# For faster reruns (skip Docker image rebuild):
+# ./run-local.sh --prepare-image false --start-client true --model gpt-4o --skip-build true
+
+# 8. Delete VM when done (IMPORTANT: stops billing)
+uv run python -m openadapt_ml.benchmarks.cli vm delete
+```
+
+**Why the official script is required**:
+1. **Builds fresh Docker image** with correct `win11x64-enterprise-eval.xml` unattend file
+2. **Copies OEM folder** correctly into the image
+3. **Sets up network paths** (`\\host.lan\Data` → `C:\oem`)
+4. **Pre-built image won't work** - it's missing the Evaluation ISO unattend.xml
+
+**What the script does**:
+1. Builds `winarena:latest` Docker image with correct unattend.xml
+2. Extracts ISO, adds drivers, OEM folder, and unattend.xml
+3. Boots Windows, waits for WAA Flask server to respond
+4. With `--prepare-image true`: Shuts down to save golden image
+5. With `--start-client true`: Runs benchmark tasks
+
+**Key requirements**:
+1. **VM Size**: `Standard_D4ds_v5` or larger (nested virtualization required)
+2. **Docker storage**: Scripts use `/mnt/WindowsAgentArena/src/win-arena-container/vm/storage`
+3. **ISO location**: `src/win-arena-container/vm/image/setup.iso`
+4. **API key**: `config.json` in repo root with OPENAI_API_KEY
+5. **Valid model name**: Must use real OpenAI model (e.g., `gpt-4o`, `gpt-4o-mini`). Invalid names cause benchmark to hang on API retries.
+
+**Architecture**:
+```
+Azure VM (Standard_D4ds_v5, nested virt enabled)
+  └── Docker (data on /mnt)
+       └── winarena:latest (built by run-local.sh)
+            └── QEMU running Windows 11 VM (IP: 20.20.20.21)
+                 └── WAA Flask server on port 5000
+                 └── Navi agent executing tasks
+```
+
+**Monitor progress**:
+- VNC: `http://<vm-ip>:8006`
+- Logs: `tail -f /tmp/waa_benchmark.log` (if running via nohup)
+
+**Files**:
+- `openadapt_ml/benchmarks/cli.py` - `vm` subcommand with setup-waa, probe
+- `docs/waa_setup.md` - Detailed setup guide
+
+**Alternative: Mock evaluation** for testing without Windows:
+```bash
+uv run python -m openadapt_ml.benchmarks.cli test-mock --tasks 20
+```
+
+**References**:
+- [Windows Agent Arena GitHub](https://github.com/microsoft/WindowsAgentArena)
+- [Azure nested virtualization](https://learn.microsoft.com/en-us/azure/virtual-machines/acu)
+
 ### Training Dashboard - Terminal Output Streaming
 **Status**: DONE
 
@@ -618,3 +713,23 @@ The viewer should automatically load:
 | Predictions not extracted | HTML uses `window.comparisonData` but regex expects `const` | Use regex `(?:const\s+\|window\.)comparisonData` pattern |
 | Stale data after code change | Browser caching HTML | Hard refresh (Cmd+Shift+R) or disable cache |
 | Screenshots 404 | Screenshot symlink broken | Recreate: `ln -sf /path/to/capture/screenshots training_output/current/screenshots` |
+
+### UI/Display Guidelines
+
+**Placeholder data must be clearly marked** when displaying values that may not reflect actual data:
+- If task counts, worker counts, etc. come from local tracking (not synced with Azure), mark them with an asterisk: "3* tasks • 1* worker(s)"
+- Add a footnote: "[*: placeholder, actual values may differ]"
+- This applies to any data that is locally cached but not confirmed from the authoritative source
+
+### Azure ML Integration Notes
+
+**Experiment ID**: The Azure ML experiments page URL requires an experiment ID which is workspace-specific:
+- Current hardcoded ID: `ad29082c-0607-4fda-8cc7-38944eb5a518`
+- **TODO**: Retrieve experiment_id dynamically from Azure using `az ml experiment list`
+- The experiment name is `openadapt-ml` but the URL requires the UUID format
+
+**Azure ML URL format**:
+- Jobs list: `https://ml.azure.com/experiments/id/{experiment_id}?wsid={workspace_id}`
+- Specific job: `https://ml.azure.com/experiments/id/{experiment_id}/runs/{run_id}?wsid={workspace_id}`
+
+**WAA Docker command**: Use `python run.py` not `python -m client.run` (the client directory is not a Python package)
