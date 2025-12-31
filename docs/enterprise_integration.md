@@ -4,6 +4,65 @@ This guide explains how to export workflow recordings from your enterprise autom
 
 **Ideal for**: Teams with libraries of recorded workflow demonstrations, including multiple examples of the same or similar workflows.
 
+---
+
+## When to Use Episode Format
+
+Use Episode format if your data involves:
+
+- Human or agent interaction with graphical user interfaces
+- Multi-step workflows with intermediate UI states
+- Action replay, evaluation, or imitation learning
+
+If your data consists only of static images or independent text samples, a generic dataset format may be sufficient.
+
+---
+
+## GUI Automation Data Requirements
+
+GUI automation datasets have requirements that differ from image-only or text-only ML datasets:
+
+- Screenshot + action temporal alignment
+- Goal-conditioned retrieval
+- Multi-step trajectory support
+- Training-ready SFT format
+- Verification/outcome annotation (did the action succeed?)
+
+The Episode schema makes these properties explicit by design.
+
+---
+
+## Why Start with Episode Format?
+
+Retrofitting GUI automation data into a trajectory format later is costly and error-prone.
+
+Information such as:
+- Action timing
+- UI state transitions
+- Intent alignment
+
+is often lost once data is flattened into image-only or text-only datasets.
+
+**Once screenshots and actions are decoupled, the original trajectory cannot be reconstructed reliably.**
+
+Capturing trajectories at export time avoids this loss.
+
+**Data Portability**: Episodes serialize to JSON. No proprietary formats or binary dependencies. The Episode format is an open schema and does not require OpenAdapt tooling at training or inference time.
+
+---
+
+## Typical Integration
+
+1. Export your recordings to Episode format
+2. Validate with `validate_episodes()`
+3. Index with `DemoRetriever` for retrieval
+4. Fine-tune with `train_from_json.py`
+5. Evaluate on held-out tasks
+
+All components work together—no glue code required.
+
+---
+
 ## Quick Start
 
 ```python
@@ -221,6 +280,33 @@ class Action(BaseModel):
     scroll_direction: str | None
     end_x: float | None        # For drag
     end_y: float | None        # For drag
+```
+
+## Optional Metadata (Extension Pattern)
+
+Episodes and Steps include a free-form `metadata` dict field. This allows attaching domain-specific annotations without modifying the core schema.
+
+Common examples:
+
+| Field | Purpose |
+|-------|---------|
+| `domain` | Business or application domain (improves retrieval) |
+| `quality_label` | Training eligibility flag (`include`/`exclude`) |
+| `segment_id` | Workflow segmentation key |
+| `source_session_id` | Original recording reference |
+| `verified` | Human-verified action flag |
+
+```json
+{
+  "id": "workflow_123",
+  "goal": "Submit expense report",
+  "metadata": {
+    "domain": "expense_reporting",
+    "quality_label": "include",
+    "segment_id": "expense_flow_v2"
+  },
+  "steps": [...]
+}
 ```
 
 ## Validation
