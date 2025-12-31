@@ -6,6 +6,22 @@ This guide explains how to export workflow recordings from your enterprise autom
 
 ---
 
+## Export Strategy: Staged Approach
+
+Episode JSON is the canonical format. Other formats are **projections** for specific use cases.
+
+| Layer | Format | Purpose | Relationship |
+|-------|--------|---------|--------------|
+| **Canonical** | Episode JSON | Interchange, validation, retrieval, replay | Source of truth |
+| **Analytics** | Parquet | SQL queries, filtering, governance | Derived projection |
+| **Training** | WebDataset (tar shards) | High-throughput streaming training | Derived projection |
+
+All derived formats can be regenerated from Episode JSON. **The reverse is not true.**
+
+Episode JSON is the canonical contract. Exporters for analytics and training projections are documented in `docs/parquet_export_design.md`.
+
+---
+
 ## When to Use Episode Format
 
 Use Episode format if your data involves:
@@ -36,18 +52,26 @@ The Episode schema makes these properties explicit by design.
 
 Retrofitting GUI automation data into a trajectory format later is costly and error-prone.
 
-Information such as:
-- Action timing
-- UI state transitions
-- Intent alignment
+**Information lost when starting with flat formats:**
 
-is often lost once data is flattened into image-only or text-only datasets.
+| What's Lost | Why It Matters |
+|-------------|----------------|
+| Action timing | Can't replay at original speed or detect timing issues |
+| UI state transitions | Can't verify which action caused which state change |
+| Intent alignment | Can't match human goal to action sequence |
+| Episode boundaries | Can't group steps into coherent workflows |
+| Causal ordering | Can't distinguish "click then type" from "type then click" |
 
 **Once screenshots and actions are decoupled, the original trajectory cannot be reconstructed reliably.**
 
-Capturing trajectories at export time avoids this loss.
+Capturing trajectories at export time avoids this cost. If you need Parquet for analytics or WebDataset for training, derive them from Episodes—not the other way around.
 
-**Data Portability**: Episodes serialize to JSON. No proprietary formats or binary dependencies. The Episode format is an open schema and does not require OpenAdapt tooling at training or inference time.
+**Data Portability**: Episodes serialize to JSON.
+
+- Human-readable and diffable
+- Version control friendly
+- Tool-agnostic (any JSON parser works)
+- Schema-validated via Pydantic
 
 ---
 
@@ -55,11 +79,11 @@ Capturing trajectories at export time avoids this loss.
 
 1. Export your recordings to Episode format
 2. Validate with `validate_episodes()`
-3. Index with `DemoRetriever` for retrieval
+3. Index with `DemoIndex` for retrieval (optionally filter/boost by app or domain)
 4. Fine-tune with `train_from_json.py`
 5. Evaluate on held-out tasks
 
-All components work together—no glue code required.
+Components are designed to compose with minimal integration effort.
 
 ---
 
@@ -173,7 +197,7 @@ if demos:
     prompt = f"{demo_text}\n\nNow perform: {task}"
 ```
 
-**Validated result (n=45)**: Demo-conditioning improves first-action accuracy from 46.7% to 100%.
+**Validated result (n=45)**: Demo-conditioning improves first-action accuracy from 46.7% to 100%. See `docs/experiments/demo_conditioned_prompting_results.md` for methodology and full results.
 
 ## Option 2: Fine-Tuning
 
@@ -354,6 +378,37 @@ result = exp.run_with_demo(
 )
 print(f"Predicted action: {result.action_parsed}")
 ```
+
+**Note on multi-step evaluation**: Evaluating full task completion requires a live execution loop or curated state-verified screenshots. First-action accuracy is the validated metric for static evaluation.
+
+---
+
+## Deriving Other Formats (Planned)
+
+Episode JSON is the source of truth. Exporters for derived formats are in development.
+
+### Analytics (Parquet) — Design Complete
+
+For SQL queries, filtering, and enterprise data governance. See `docs/parquet_export_design.md` for schema and API design.
+
+Query example with DuckDB:
+
+```sql
+SELECT goal, COUNT(*) as step_count
+FROM 'episodes.parquet'
+WHERE action_type = 'click'
+GROUP BY goal
+```
+
+### Training (WebDataset) — Planned
+
+For high-throughput streaming training at scale (1M+ steps across distributed GPUs). Design in progress.
+
+**All projections are one-way transforms.** Keep Episode JSON as your source of truth.
+
+> **Note:** Starting with a flat format (Parquet/CSV) or an image-only format makes it difficult to reconstruct the original trajectory later. Capturing in Episode format from the start avoids this cost.
+
+---
 
 ## Support
 
