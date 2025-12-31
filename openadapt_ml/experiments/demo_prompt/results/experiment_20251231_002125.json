@@ -1,0 +1,83 @@
+{
+  "timestamp": "20251231_002125",
+  "provider": "anthropic",
+  "screenshot": "/Users/abrichr/oa/src/openadapt-capture/turn-off-nightshift/screenshots/capture_31807990_step_0.png",
+  "demo": "DEMONSTRATION:\nGoal: Turn off Night Shift in macOS System Settings\n\nThe following shows the step-by-step procedure:\n\nStep 1:\n  [Screen: Desktop with Terminal window visible]\n  [Action: CLICK(0.01, 0.01) - Click Apple menu icon in top-left]\n  [Result: Apple menu dropdown opened]\n\nStep 2:\n  [Screen: Apple menu visible with options]\n  [Action: CLICK on \"System Settings...\" menu item]\n  [Result: System Settings application opened]\n\nStep 3:\n  [Screen: System Settings window with sidebar]\n  [Action: CLICK on \"Displays\" in the sidebar]\n  [Result: Displays panel shown in main area]\n\nStep 4:\n  [Screen: Displays panel showing display settings]\n  [Action: CLICK on \"Night Shift...\" button]\n  [Result: Night Shift popup/sheet appeared]\n\nStep 5:\n  [Screen: Night Shift popup with Schedule dropdown]\n  [Action: CLICK on Schedule dropdown, select \"Off\"]\n  [Result: Night Shift schedule set to Off, Night Shift disabled]\n\n---",
+  "test_cases": [
+    {
+      "test_case": {
+        "name": "near_toggle",
+        "task": "Turn ON Night Shift in macOS System Settings",
+        "similarity": "near",
+        "notes": "Same procedure, just toggle to opposite state"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "response": "I need to turn ON Night Shift in macOS. Based on the terminal window showing an attempt to control Night Shift, I should access System Settings to properly enable it. Let me click on the Apple menu.\n\nACTION: CLICK(20, 8)",
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "response": "I need to turn ON Night Shift in macOS System Settings. Let me start by clicking on the Apple menu icon to access System Settings.\n\nACTION: CLICK(20, 8)",
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(1243, 8)",
+          "response": "I need to analyze the screenshot to understand how to turn on Night Shift in macOS System Settings.\n\nThe screenshot shows a Terminal window with some command output. To access Night Shift settings in macOS, I need to open System Settings. I can see various system icons in the menu bar at the top of the screen.\n\nACTION: CLICK(1243, 8)",
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "medium_same_panel",
+        "task": "Adjust Night Shift color temperature to warmer setting",
+        "similarity": "medium",
+        "notes": "Same navigation path, different final action"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1218, 8)",
+          "response": "The task requires adjusting the Night Shift color temperature to a warmer setting. Looking at the screenshot, I can see a macOS Terminal window. The system menu bar at the top right contains various control icons. I need to find the Night Shift or display settings controls.\n\nACTION: CLICK(1218, 8)",
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(19, 8)",
+          "response": "I need to adjust the Night Shift color temperature to make it warmer. First, I should access the System Settings to find the Night Shift controls.\n\nACTION: CLICK(19, 8)",
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(1114, 8)",
+          "response": "I need to analyze the screenshot and the goal to determine the next action.\n\nThe screenshot shows a Terminal window on macOS. The goal is to \"Adjust Night Shift color temperature to warmer setting.\"\n\nLooking at the top menu bar, I can see various system icons. To adjust Night Shift settings, I would need to access System Preferences or use the Control Center. I can see what appears to be system control icons in the top-right corner of the screen.\n\nThe most direct way to adjust Night Shift would be to click on the Control Center icon or the display settings in the menu bar.\n\nACTION: CLICK(1114, 8)",
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "far_different_setting",
+        "task": "Turn on True Tone display in macOS System Settings",
+        "similarity": "far",
+        "notes": "Same app but different panel (True Tone is in Displays)"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1217, 8)",
+          "response": "I need to access System Settings to turn on True Tone display. Let me analyze the screen to find how to access it.\n\nACTION: CLICK(1217, 8)",
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "response": "I need to turn on True Tone display in macOS System Settings. Let me start by clicking on the Apple menu in the top-left corner.\n\nACTION: CLICK(20, 8)",
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "response": "I need to open System Settings to enable True Tone display. I'll click on the Apple menu in the top-left corner to access System Settings.\n\nACTION: CLICK(20, 8)",
+          "error": null
+        }
+      }
+    }
+  ]
+}

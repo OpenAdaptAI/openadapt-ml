@@ -1,0 +1,64 @@
+{
+  "summary": {
+    "test_name": "negative_control_irrelevant_demo",
+    "timestamp": "2025-12-31T00:51:35.424967",
+    "provider": "anthropic",
+    "num_test_cases": 2,
+    "results": [
+      {
+        "name": "near_toggle",
+        "task": "Turn ON Night Shift in macOS System Settings",
+        "zero_shot_action": "CLICK(20, 8)",
+        "irrelevant_demo_action": "CLICK(20, 8)",
+        "same_action": true,
+        "zero_shot_error": null,
+        "irrelevant_demo_error": null
+      },
+      {
+        "name": "medium_same_panel",
+        "task": "Adjust Night Shift color temperature to warmer setting",
+        "zero_shot_action": "CLICK(1335, 8)",
+        "irrelevant_demo_action": "CLICK(1334, 8)",
+        "same_action": false,
+        "zero_shot_error": null,
+        "irrelevant_demo_error": null
+      }
+    ]
+  },
+  "detailed_results": {
+    "near_toggle": {
+      "task": "Turn ON Night Shift in macOS System Settings",
+      "zero_shot": {
+        "condition": "zero_shot",
+        "action_parsed": "CLICK(20, 8)",
+        "response": "I need to turn on Night Shift in macOS System Settings. Based on the screenshot, I can see the Terminal is currently active. To access System Settings and enable Night Shift, I should click on the Apple menu in the top-left corner.\n\nACTION: CLICK(20, 8)",
+        "error": null,
+        "timestamp": "2025-12-31T00:51:26.198320"
+      },
+      "with_irrelevant_demo": {
+        "condition": "with_demo",
+        "action_parsed": "CLICK(20, 8)",
+        "response": "I need to turn on Night Shift in macOS System Settings. Currently, I'm viewing a Terminal window. I need to navigate to System Settings, so I'll click on the Apple menu in the top-left corner of the screen.\n\nACTION: CLICK(20, 8)",
+        "error": null,
+        "timestamp": "2025-12-31T00:51:29.475550"
+      }
+    },
+    "medium_same_panel": {
+      "task": "Adjust Night Shift color temperature to warmer setting",
+      "zero_shot": {
+        "condition": "zero_shot",
+        "action_parsed": "CLICK(1335, 8)",
+        "response": "I need to adjust the Night Shift color temperature setting on macOS. First, I should click on the system preferences icon in the menu bar to access the display settings.\n\nACTION: CLICK(1335, 8)",
+        "error": null,
+        "timestamp": "2025-12-31T00:51:32.660195"
+      },
+      "with_irrelevant_demo": {
+        "condition": "with_demo",
+        "action_parsed": "CLICK(1334, 8)",
+        "response": "I need to adjust the Night Shift color temperature to a warmer setting. Let me start by accessing the Night Shift settings.\n\nACTION: CLICK(1334, 8)",
+        "error": null,
+        "timestamp": "2025-12-31T00:51:35.424947"
+      }
+    }
+  }
+}
