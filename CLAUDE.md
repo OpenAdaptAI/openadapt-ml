@@ -11,7 +11,18 @@ openadapt-ml is a model-agnostic, domain-agnostic ML engine for GUI automation a
 - Supervised fine-tuning pipeline
 - Runtime policy API
 
-## Current Focus: Benchmark Integration
+## Current Focus: Demo Retrieval
+
+**Validated**: Demo-conditioned prompting improves action accuracy (Dec 2024)
+- Zero-shot: 33% correct first actions
+- With demo: 100% correct first actions
+- See `docs/experiments/demo_conditioned_prompting_results.md`
+
+**Next step**: Build demo retrieval to automatically select relevant demos from a library.
+
+**Key insight**: OpenAdapt's value is **trajectory-conditioned disambiguation of UI affordances**, not "better reasoning".
+
+## Benchmark Integration
 
 **Primary benchmark**: Windows Agent Arena (WAA)
 - 154 tasks across 11 Windows domains
@@ -289,10 +300,13 @@ uv run python -m openadapt_ml.cloud.local serve --open
 - `docs/benchmark_integration_plan.md` - Benchmark integration architecture
 - `docs/azure_waa_setup.md` - Azure WAA setup guide (quota increase, costs, troubleshooting)
 - `docs/design.md` - Overall system design
+- `docs/experiments/demo_conditioned_prompting_results.md` - Demo experiment results (validated Dec 2024)
 - `openadapt_ml/cloud/` - Cloud GPU providers (Lambda Labs, Azure)
 - `openadapt_ml/benchmarks/` - Benchmark integration module (WAA, base classes)
+- `openadapt_ml/experiments/demo_prompt/` - Demo-conditioned prompting experiment
 - `openadapt_ml/grounding/` - Grounding module (GeminiGrounder, etc.)
 - `openadapt_ml/ingest/capture.py` - Converts openadapt-capture recordings to Episodes
+- `scripts/run_demo_experiment.py` - Run demo-conditioned experiment
 - `configs/qwen3vl_synthetic_som.yaml` - SoM training config
 
 ## Code Patterns

@@ -19,7 +19,7 @@ User wants to see model predictions during training to:
 ## Cloud Platform: Azure
 
 We use **Azure** as the primary cloud platform due to:
-- GoTo uses Azure
+- Wide enterprise adoption
 - MLDSAI signed up for Azure free tier
 - Existing infrastructure in `scripts/setup_azure.py` and `openadapt_ml/benchmarks/azure.py`
 

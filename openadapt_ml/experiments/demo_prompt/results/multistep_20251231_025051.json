@@ -1,0 +1,182 @@
+{
+  "timestamp": "2025-12-31T02:50:07.863598",
+  "provider": "anthropic",
+  "max_steps": 5,
+  "demo": "DEMONSTRATION:\nGoal: Turn off Night Shift in macOS System Settings\n\nStep 1:\n  Screen: Desktop\n  Action: CLICK(0.01, 0.01)\n  Result: Apple menu opened\n\nStep 2:\n  Screen: Apple menu visible\n  Action: CLICK(0.05, 0.15)\n  Result: System Settings opened\n\nStep 3:\n  Screen: System Settings with sidebar\n  Action: CLICK(0.12, 0.45)\n  Result: Displays panel shown\n\nStep 4:\n  Screen: Displays panel\n  Action: CLICK(0.75, 0.65)\n  Result: Night Shift popup appeared\n\nStep 5:\n  Screen: Night Shift popup\n  Action: CLICK(0.50, 0.35)\n  Result: Schedule set to Off\n\n---",
+  "conditions": {
+    "zero_shot": {
+      "steps": [
+        {
+          "step": 1,
+          "task": "Turn off Night Shift in macOS System Settings. You are at the desktop.",
+          "screenshot": "/Users/abrichr/oa/src/openadapt-capture/turn-off-nightshift/screenshots/capture_31807990_step_0.png",
+          "action_parsed": "CLICK(20, 8)",
+          "response": "I need to open System Settings to turn off Night Shift. I'll click on the Apple menu in the menu bar to access it.\n\nACTION: CLICK(20, 8)",
+          "error": null,
+          "evaluation": {
+            "step": 1,
+            "action": "CLICK(20, 8)",
+            "expected_target": "Apple menu",
+            "expected_region": "top-left",
+            "correct": true,
+            "reason": "Coordinates (0.010, 0.007) in expected region"
+          }
+        },
+        {
+          "step": 2,
+          "task": "Turn off Night Shift. The Apple menu is now open. Select System Settings.",
+          "screenshot": "/Users/abrichr/oa/src/openadapt-capture/turn-off-nightshift/screenshots/capture_31807990_step_2.png",
+          "action_parsed": "CLICK(1193, 8)",
+          "response": "The screenshot shows a Terminal window with command output. Looking at the current state, I can see that the Apple menu is mentioned in the goal, but I don't see it clearly in the screenshot. Based on the goal \"Turn off Night Shift\" and the instruction to \"Select System Settings,\" I need to access System Settings.\n\nOn macOS, System Settings (or System Preferences) is typically accessed through the Apple menu in the top-left corner. Since the goal states \"The Apple menu is now open,\" I need to click on \"System Settings\" or \"System Preferences\" from that menu.\n\nLooking at the screen, I would need to click on the System Settings option, which would typically be located in the Apple menu dropdown. However, I don't see the Apple menu clearly open in the screenshot provided. The Terminal window is taking up most of the screen.\n\nLet me click on what would be the System Settings option in the Apple menu, which is typically in the top-left area of the screen.\n\nACTION: CLICK(1193, 8)",
+          "error": null,
+          "evaluation": {
+            "step": 2,
+            "action": "CLICK(1193, 8)",
+            "expected_target": "System Settings",
+            "expected_region": "menu",
+            "correct": false,
+            "reason": "Coordinates (0.621, 0.007) outside expected region (0-0.15, 0.1-0.3)"
+          }
+        },
+        {
+          "step": 3,
+          "task": "Turn off Night Shift. System Settings is open. Navigate to the Displays section.",
+          "screenshot": "/Users/abrichr/oa/src/openadapt-capture/turn-off-nightshift/screenshots/capture_31807990_step_5.png",
+          "action_parsed": "CLICK(1033, 100)",
+          "response": "I need to navigate to the Displays section in System Settings to turn off Night Shift. I'll click on the search bar or close button first to dismiss the spotlight search overlay.\n\nACTION: CLICK(1033, 100)",
+          "error": null,
+          "evaluation": {
+            "step": 3,
+            "action": "CLICK(1033, 100)",
+            "expected_target": "Displays",
+            "expected_region": "sidebar",
+            "correct": false,
+            "reason": "Coordinates (0.538, 0.083) outside expected region (0.05-0.25, 0.3-0.6)"
+          }
+        },
+        {
+          "step": 4,
+          "task": "Turn off Night Shift. You are in the Displays panel. Open the Night Shift settings.",
+          "screenshot": "/Users/abrichr/oa/src/openadapt-capture/turn-off-nightshift/screenshots/capture_31807990_step_10.png",
+          "action_parsed": "CLICK(1310, 565)",
+          "response": "I need to turn off Night Shift. Since I'm in the Displays panel, I should look for the Night Shift button. I can see there's a \"Night Shift...\" button at the bottom right of the window.\n\nACTION: CLICK(1310, 565)",
+          "error": null,
+          "evaluation": {
+            "step": 4,
+            "action": "CLICK(1310, 565)",
+            "expected_target": "Night Shift button",
+            "expected_region": "main-panel",
+            "correct": false,
+            "reason": "Coordinates (0.682, 0.471) outside expected region (0.5-0.9, 0.5-0.8)"
+          }
+        },
+        {
+          "step": 5,
+          "task": "Turn off Night Shift. The Night Shift popup is open. Set the Schedule to Off.",
+          "screenshot": "/Users/abrichr/oa/src/openadapt-capture/turn-off-nightshift/screenshots/capture_31807990_step_15.png",
+          "action_parsed": "CLICK(1248, 315)",
+          "response": "I need to turn off Night Shift by setting the Schedule to Off. The Night Shift popup is open and I can see a Schedule dropdown menu that currently shows \"Off\" next to it. I'll click on that dropdown to change the setting.\n\nACTION: CLICK(1248, 315)",
+          "error": null,
+          "evaluation": {
+            "step": 5,
+            "action": "CLICK(1248, 315)",
+            "expected_target": "Schedule dropdown",
+            "expected_region": "popup",
+            "correct": true,
+            "reason": "Coordinates (0.650, 0.263) in expected region"
+          }
+        }
+      ],
+      "total_correct": 2,
+      "total_attempted": 5,
+      "accuracy": 0.4
+    },
+    "with_demo": {
+      "steps": [
+        {
+          "step": 1,
+          "task": "Turn off Night Shift in macOS System Settings. You are at the desktop.",
+          "screenshot": "/Users/abrichr/oa/src/openadapt-capture/turn-off-nightshift/screenshots/capture_31807990_step_0.png",
+          "action_parsed": "CLICK(20, 8)",
+          "response": "I need to turn off Night Shift in macOS System Settings. The first step is to access the Apple menu to get to System Settings.\n\nACTION: CLICK(20, 8)",
+          "error": null,
+          "evaluation": {
+            "step": 1,
+            "action": "CLICK(20, 8)",
+            "expected_target": "Apple menu",
+            "expected_region": "top-left",
+            "correct": true,
+            "reason": "Coordinates (0.010, 0.007) in expected region"
+          }
+        },
+        {
+          "step": 2,
+          "task": "Turn off Night Shift. The Apple menu is now open. Select System Settings.",
+          "screenshot": "/Users/abrichr/oa/src/openadapt-capture/turn-off-nightshift/screenshots/capture_31807990_step_2.png",
+          "action_parsed": "CLICK(20, 8)",
+          "response": "I need to analyze the current screen and determine the next action to turn off Night Shift.\n\nLooking at the screen, I can see this is a Terminal window, not the Apple menu. The task says \"The Apple menu is now open\" but that's not what I see. However, according to the demonstration steps, after the Apple menu is opened, I need to click on System Settings.\n\nBut since I don't see the Apple menu open in the current screenshot, I need to first open the Apple menu by clicking on the Apple logo in the top-left corner.\n\nACTION: CLICK(20, 8)",
+          "error": null,
+          "evaluation": {
+            "step": 2,
+            "action": "CLICK(20, 8)",
+            "expected_target": "System Settings",
+            "expected_region": "menu",
+            "correct": false,
+            "reason": "Coordinates (0.010, 0.007) outside expected region (0-0.15, 0.1-0.3)"
+          }
+        },
+        {
+          "step": 3,
+          "task": "Turn off Night Shift. System Settings is open. Navigate to the Displays section.",
+          "screenshot": "/Users/abrichr/oa/src/openadapt-capture/turn-off-nightshift/screenshots/capture_31807990_step_5.png",
+          "action_parsed": "CLICK(760, 100)",
+          "response": "I need to navigate to the Displays section in System Settings. Since System Settings is already open and I can see a Spotlight search field with \"settin\" typed (showing System Settings.app), I should click on it to open System Settings and then find the Displays section.\n\nACTION: CLICK(760, 100)",
+          "error": null,
+          "evaluation": {
+            "step": 3,
+            "action": "CLICK(760, 100)",
+            "expected_target": "Displays",
+            "expected_region": "sidebar",
+            "correct": false,
+            "reason": "Coordinates (0.396, 0.083) outside expected region (0.05-0.25, 0.3-0.6)"
+          }
+        },
+        {
+          "step": 4,
+          "task": "Turn off Night Shift. You are in the Displays panel. Open the Night Shift settings.",
+          "screenshot": "/Users/abrichr/oa/src/openadapt-capture/turn-off-nightshift/screenshots/capture_31807990_step_10.png",
+          "action_parsed": "CLICK(1256, 343)",
+          "response": "I need to open the Night Shift settings. Looking at the current screen, I can see the Night Shift dialog is already open with various settings visible. Since the goal is to turn off Night Shift and I'm being asked to open the Night Shift settings first, I need to identify what action to take. However, the Night Shift settings panel is already open on the screen. The next step according to the demonstration would be to turn off Night Shift by interacting with the schedule setting.\n\nACTION: CLICK(1256, 343)",
+          "error": null,
+          "evaluation": {
+            "step": 4,
+            "action": "CLICK(1256, 343)",
+            "expected_target": "Night Shift button",
+            "expected_region": "main-panel",
+            "correct": false,
+            "reason": "Coordinates (0.654, 0.286) outside expected region (0.5-0.9, 0.5-0.8)"
+          }
+        },
+        {
+          "step": 5,
+          "task": "Turn off Night Shift. The Night Shift popup is open. Set the Schedule to Off.",
+          "screenshot": "/Users/abrichr/oa/src/openadapt-capture/turn-off-nightshift/screenshots/capture_31807990_step_15.png",
+          "action_parsed": "CLICK(1249, 315)",
+          "response": "I need to analyze the current screen state and determine the next action to turn off Night Shift.\n\nLooking at the screenshot, I can see the Night Shift popup is already open. The Schedule dropdown is visible showing \"Off\" option. The \"Turn on until tomorrow\" checkbox is currently unchecked based on the interface state.\n\nSince the goal is to set the Schedule to \"Off\" and the interface shows a Schedule dropdown, I should click on the Schedule dropdown to ensure it's set to \"Off\".\n\nACTION: CLICK(1249, 315)",
+          "error": null,
+          "evaluation": {
+            "step": 5,
+            "action": "CLICK(1249, 315)",
+            "expected_target": "Schedule dropdown",
+            "expected_region": "popup",
+            "correct": true,
+            "reason": "Coordinates (0.651, 0.263) in expected region"
+          }
+        }
+      ],
+      "total_correct": 2,
+      "total_attempted": 5,
+      "accuracy": 0.4
+    }
+  }
+}
