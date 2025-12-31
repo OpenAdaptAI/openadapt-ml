@@ -1,0 +1,1100 @@
+{
+  "timestamp": "2025-12-31T16:59:58.848298",
+  "provider": "anthropic",
+  "screenshot": "/Users/abrichr/oa/src/openadapt-capture/turn-off-nightshift/screenshots/capture_31807990_step_0.png",
+  "demo": "DEMONSTRATION:\nGoal: Turn off Night Shift in macOS System Settings\n\nStep 1:\n  Screen: Desktop with application window visible\n  Action: CLICK(0.01, 0.01)\n  Result: Apple menu opened\n\nStep 2:\n  Screen: Apple menu visible with options\n  Action: CLICK on \"System Settings...\" menu item\n  Result: System Settings application opened\n\nStep 3:\n  Screen: System Settings window with sidebar\n  Action: CLICK on \"Displays\" in the sidebar\n  Result: Displays panel shown in main area\n\nStep 4:\n  Screen: Displays panel showing display settings\n  Action: CLICK on \"Night Shift...\" button\n  Result: Night Shift popup/sheet appeared\n\nStep 5:\n  Screen: Night Shift popup with Schedule dropdown\n  Action: CLICK on Schedule dropdown, select \"Off\"\n  Result: Night Shift schedule set to Off, Night Shift disabled\n\n---",
+  "n_test_cases": 45,
+  "summary": {
+    "zero_shot_accuracy": 0.4666666666666667,
+    "with_demo_accuracy": 1.0,
+    "control_accuracy": 0.5777777777777777,
+    "improvement": 0.5333333333333333
+  },
+  "correct_counts": {
+    "zero_shot": 21,
+    "with_demo": 45,
+    "control": 26
+  },
+  "test_cases": [
+    {
+      "test_case": {
+        "name": "displays_night_shift_on",
+        "task": "Turn ON Night Shift in macOS System Settings",
+        "category": "Displays"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "displays_night_shift_off",
+        "task": "Turn OFF Night Shift in macOS System Settings",
+        "category": "Displays"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1243, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(1113, 8)",
+          "correct": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "displays_night_shift_schedule",
+        "task": "Set Night Shift to turn on at sunset in System Settings",
+        "category": "Displays"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "displays_night_shift_temp",
+        "task": "Adjust Night Shift color temperature to warmer setting",
+        "category": "Displays"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1218, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(1244, 8)",
+          "correct": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "displays_true_tone_on",
+        "task": "Enable True Tone display in System Settings",
+        "category": "Displays"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1193, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "displays_resolution",
+        "task": "Change display resolution in System Settings",
+        "category": "Displays"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1362, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "KEY(Cmd+space)",
+          "correct": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "sound_output_device",
+        "task": "Change sound output device in System Settings",
+        "category": "Sound"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1274, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(728, 420)",
+          "correct": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "sound_input_device",
+        "task": "Change microphone input device in System Settings",
+        "category": "Sound"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1083, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(1193, 8)",
+          "correct": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "sound_alert_volume",
+        "task": "Adjust alert sound volume in System Settings",
+        "category": "Sound"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1274, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(1274, 8)",
+          "correct": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "sound_startup_sound",
+        "task": "Disable startup sound in System Settings",
+        "category": "Sound"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(19, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "sound_output_volume",
+        "task": "Set system volume to 50% in System Settings",
+        "category": "Sound"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1335, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "notifications_dnd",
+        "task": "Enable Do Not Disturb in System Settings",
+        "category": "Notifications"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1219, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(1218, 8)",
+          "correct": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "notifications_app",
+        "task": "Disable notifications for Messages app in System Settings",
+        "category": "Notifications"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "notifications_preview",
+        "task": "Hide notification previews when locked in System Settings",
+        "category": "Notifications"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "KEY(Cmd+comma)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "KEY(Cmd+Space)",
+          "correct": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "notifications_sound",
+        "task": "Turn off notification sounds in System Settings",
+        "category": "Notifications"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1168, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(1194, 8)",
+          "correct": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "focus_enable",
+        "task": "Enable Focus mode in System Settings",
+        "category": "Focus"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(1218, 8)",
+          "correct": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "focus_schedule",
+        "task": "Schedule Focus mode for work hours in System Settings",
+        "category": "Focus"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(1218, 8)",
+          "correct": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "focus_share",
+        "task": "Share Focus status across devices in System Settings",
+        "category": "Focus"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1194, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "general_about",
+        "task": "Open About This Mac in System Settings",
+        "category": "General"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(19, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "general_update",
+        "task": "Check for software updates in System Settings",
+        "category": "General"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(19, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "general_storage",
+        "task": "View storage usage in System Settings",
+        "category": "General"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "I need to open System Settings to view storage usage. Let me click on the Apple menu in the top left.",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(1335, 8)",
+          "correct": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "general_login_items",
+        "task": "Manage login items in System Settings",
+        "category": "General"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1194, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(1193, 8)",
+          "correct": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "privacy_location",
+        "task": "Disable location services in System Settings",
+        "category": "Privacy"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1335, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "KEY(Cmd+space)",
+          "correct": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "privacy_camera",
+        "task": "Check which apps have camera access in System Settings",
+        "category": "Privacy"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "privacy_microphone",
+        "task": "Manage microphone permissions in System Settings",
+        "category": "Privacy"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1193, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(1303, 8)",
+          "correct": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "security_filevault",
+        "task": "Check FileVault encryption status in System Settings",
+        "category": "Security"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1194, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(19, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "keyboard_shortcuts",
+        "task": "Customize keyboard shortcuts in System Settings",
+        "category": "Keyboard"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(19, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "KEY(Cmd+Space)",
+          "correct": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "keyboard_input_sources",
+        "task": "Add a new input language in System Settings",
+        "category": "Keyboard"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(19, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "keyboard_dictation",
+        "task": "Enable dictation in System Settings",
+        "category": "Keyboard"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(19, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "trackpad_tap_click",
+        "task": "Enable tap to click on trackpad in System Settings",
+        "category": "Trackpad"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1360, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "KEY(Return)",
+          "correct": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "trackpad_scroll",
+        "task": "Change scroll direction in System Settings",
+        "category": "Trackpad"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "mouse_speed",
+        "task": "Adjust mouse tracking speed in System Settings",
+        "category": "Mouse"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "wifi_connect",
+        "task": "Connect to a WiFi network in System Settings",
+        "category": "Network"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1362, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "wifi_forget",
+        "task": "Forget a saved WiFi network in System Settings",
+        "category": "Network"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1362, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "network_dns",
+        "task": "Change DNS settings in System Settings",
+        "category": "Network"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1193, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "bluetooth_enable",
+        "task": "Turn on Bluetooth in System Settings",
+        "category": "Bluetooth"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "bluetooth_pair",
+        "task": "Pair a new Bluetooth device in System Settings",
+        "category": "Bluetooth"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "accessibility_zoom",
+        "task": "Enable zoom accessibility feature in System Settings",
+        "category": "Accessibility"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1195, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(19, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "accessibility_voiceover",
+        "task": "Turn on VoiceOver in System Settings",
+        "category": "Accessibility"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "accessibility_display",
+        "task": "Increase contrast in System Settings",
+        "category": "Accessibility"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1335, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "battery_percentage",
+        "task": "Show battery percentage in menu bar via System Settings",
+        "category": "Battery"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "battery_low_power",
+        "task": "Enable Low Power Mode in System Settings",
+        "category": "Battery"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(1304, 8)",
+          "correct": false,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "dock_size",
+        "task": "Change Dock size in System Settings",
+        "category": "Desktop & Dock"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(1361, 8)",
+          "correct": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "dock_autohide",
+        "task": "Enable auto-hide for Dock in System Settings",
+        "category": "Desktop & Dock"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        }
+      }
+    },
+    {
+      "test_case": {
+        "name": "desktop_wallpaper",
+        "task": "Change desktop wallpaper in System Settings",
+        "category": "Desktop & Dock"
+      },
+      "results": {
+        "zero_shot": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "with_demo": {
+          "action": "CLICK(20, 8)",
+          "correct": true,
+          "error": null
+        },
+        "control": {
+          "action": "KEY(Cmd+space)",
+          "correct": false,
+          "error": null
+        }
+      }
+    }
+  ]
+}

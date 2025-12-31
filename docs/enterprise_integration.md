@@ -173,7 +173,7 @@ if demos:
     prompt = f"{demo_text}\n\nNow perform: {task}"
 ```
 
-**Validated result**: Demo-conditioning improves first-action accuracy from 33% to 100%.
+**Validated result (n=45)**: Demo-conditioning improves first-action accuracy from 46.7% to 100%.
 
 ## Option 2: Fine-Tuning
 
