@@ -6,6 +6,27 @@ This guide explains how to export workflow recordings from your enterprise autom
 
 ---
 
+## What is openadapt-ml?
+
+openadapt-ml is a collection of composable utilities for working with trajectory-structured GUI interaction data.
+
+**You can use:**
+- Schema + validation only
+- Exporters only (Parquet, WebDataset)
+- Retrieval utilities only
+- Or the full training stack
+
+All tools operate on the same canonical Episode representation, but each is independently useful.
+
+| Tool | Purpose | Example |
+|------|---------|---------|
+| `validate_episodes()` | Check trajectory data for issues | `warnings = validate_episodes(episodes)` |
+| `to_parquet()` | Export for SQL analytics | `to_parquet(episodes, "data.parquet")` |
+| `DemoRetriever` | Find relevant demos for a task | `demos = retriever.retrieve("Submit expense")` |
+| `format_episode_as_demo()` | Format demo for VLM prompt | `demo_text = format_episode_as_demo(ep)` |
+
+---
+
 ## Export Strategy: Staged Approach
 
 Episode JSON is the canonical format. Other formats are **projections** for specific use cases.
@@ -18,7 +39,7 @@ Episode JSON is the canonical format. Other formats are **projections** for spec
 
 All derived formats can be regenerated from Episode JSON. **The reverse is not true.**
 
-Episode JSON is the canonical contract. Exporters for analytics and training projections are documented in `docs/parquet_export_design.md`.
+Episode JSON is treated as the canonical contract within openadapt-ml. Exporters for analytics and training projections are documented in `docs/parquet_export_design.md`.
 
 ---
 
@@ -383,15 +404,32 @@ print(f"Predicted action: {result.action_parsed}")
 
 ---
 
-## Deriving Other Formats (Planned)
+## Deriving Other Formats
 
-Episode JSON is the source of truth. Exporters for derived formats are in development.
+Episode JSON is the source of truth. Use the provided exporters to generate projections.
 
-### Analytics (Parquet) — Design Complete
+### Analytics (Parquet)
 
-For SQL queries, filtering, and enterprise data governance. See `docs/parquet_export_design.md` for schema and API design.
+For SQL queries, filtering, and enterprise data governance:
 
-Query example with DuckDB:
+```python
+from openadapt_ml.ingest import load_episodes
+from openadapt_ml.export import to_parquet
+
+episodes = load_episodes("workflow_exports/")
+to_parquet(episodes, "episodes.parquet", include_summary=True)
+```
+
+Or via CLI:
+
+```bash
+python -m openadapt_ml.export parquet \
+  --input workflow_exports/ \
+  --output episodes.parquet \
+  --include-summary
+```
+
+Query with DuckDB, Polars, or any Parquet-compatible tool:
 
 ```sql
 SELECT goal, COUNT(*) as step_count
@@ -399,6 +437,8 @@ FROM 'episodes.parquet'
 WHERE action_type = 'click'
 GROUP BY goal
 ```
+
+See `docs/parquet_export_design.md` for schema details.
 
 ### Training (WebDataset) — Planned
 
