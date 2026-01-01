@@ -14,11 +14,13 @@ We investigated whether providing a human demonstration in the prompt improves V
 | **Demo-conditioned** | **100.0% (45/45)** | **+53.3 pp** |
 | Length-matched control | 57.8% (26/45) | +11.1 pp |
 
-The benefit is **semantic, not just token-length**. Demonstrations reduce action-search entropy.
+A **length-matched control** rules out prompt verbosity as the driver—the benefit is semantic, not token-length. Demonstrations reduce action-search entropy by providing procedural priors.
 
 **Key finding**: Demo-conditioning improves first-action accuracy by 53.3 percentage points, from 46.7% to 100%.
 
-**Scope**: This experiment evaluates first-action selection only. Multi-step execution is deferred to follow-up experiments.
+> **Interpretation note**: This result demonstrates *trajectory-conditioned disambiguation of UI affordances*, not a claim of general-purpose task-solving. The evaluation intentionally isolates the first branching decision, where zero-shot models exhibit consistent spatial bias (clicking menu bar right instead of left).
+
+**Scope**: This experiment evaluates first-action selection only. All 45 tasks share the same correct first action (click Apple menu) by design—this isolates whether a single demo transfers across task variations. End-to-end episode success is a separate question, deferred to follow-up experiments.
 
 ---
 
@@ -193,6 +195,10 @@ We are **not** blocked by:
 
 The grounding and representation are sufficient for this class of task.
 
+### Positioning Relative to Fine-Tuning
+
+This experiment establishes a *prompt-level upper bound* before any fine-tuning. The magnitude of improvement (+53pp) suggests that representation and conditioning—not data volume—are the dominant bottlenecks at this stage. Fine-tuning without first validating prompt-based conditioning would likely underperform and obscure the source of gains.
+
 ---
 
 ## Next Steps
@@ -251,15 +257,17 @@ The grounding and representation are sufficient for this class of task.
 
 ### Current Limitations
 
-1. **Single model**: Tested with Claude Sonnet 4.5 only. Multi-model comparison (GPT-4V, Gemini, Qwen-VL) needed.
+1. **Single model**: Tested with Claude Sonnet 4.5 only. A proper baseline would compare frontier models (GPT-4V, Gemini) and open models (Qwen-VL 8B/32B) to establish whether demo-conditioning helps smaller models more than larger ones.
 
-2. **Custom benchmark**: macOS Settings tasks are not directly comparable to published benchmarks (OSWorld, WebArena, WAA).
+2. **No standard benchmark**: macOS Settings tasks are not directly comparable to OSWorld, WebArena, or WAA. Results cannot be benchmarked against published numbers. (WAA baseline currently running—see Next Steps.)
 
-3. **Coordinate-based actions**: This experiment used pixel coordinates `CLICK(20, 8)`. Note: OpenAdapt-ML supports Set-of-Marks (SoM) element-indexed actions (`CLICK([1])`) which achieve 100% accuracy on synthetic benchmarks—future demo-conditioning experiments should evaluate with SoM.
+3. **Coordinate-based actions**: This experiment used pixel coordinates `CLICK(20, 8)` rather than element-indexed actions. Set-of-Marks (SoM) with `CLICK([1])` is more robust and aligns with WebVoyager/TTI conventions—future experiments should evaluate demo-conditioning with SoM.
 
-4. **First-action only**: Does not measure end-to-end task success.
+4. **First-action only**: Does not measure episode success rate (all steps correct), which is the metric that matters for deployment. First-action accuracy is necessary but not sufficient.
 
-5. **Shared first action**: All 45 tasks share the same correct first action (click Apple menu). While this is appropriate for measuring demo transfer, a more diverse task set would strengthen generalization claims.
+5. **Shared first action (intentional)**: All 45 tasks share the same correct first action (click Apple menu). This is by design: the experiment isolates whether a demonstration can transfer *procedural entry points* across 45 distinct task variations. The failure mode under zero-shot is not task misunderstanding, but misidentification of the correct UI affordance. A stronger test would use tasks with distinct first actions.
+
+6. **No prompt optimization**: Used a fixed demo format without systematic prompt tuning. Structured prompting approaches (e.g., TTI-style: Observation → Planning → Actions → Decision) may further improve results.
 
 ### Planned Future Work
 
