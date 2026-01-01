@@ -1,8 +1,8 @@
 # Demo-Conditioned Prompting Experiment Results
 
-**Date**: December 31, 2024
+**Date**: December 2024
 **Author**: OpenAdapt Team
-**Status**: Validated (n=45)
+**Status**: Validated (n=45, first-action accuracy)
 
 ## Executive Summary
 
@@ -197,26 +197,22 @@ The grounding and representation are sufficient for this class of task.
 
 ## Next Steps
 
-### Immediate (Week 1)
+### In Progress
 
-1. **Demo Retrieval** - Given a new task, automatically select the most relevant demo from a library
-2. **Index existing captures** - Build searchable index of all available demonstrations
-3. **Re-run experiment with retrieval** - Validate that retrieved demos work as well as hand-selected
+1. **WAA Benchmark Baseline** - Running zero-shot evaluation on Windows Agent Arena (154 tasks) to establish baseline before applying demo-conditioning
+2. **Demo Retrieval** - Given a new task, automatically select the most relevant demo from a library
 
-### Short-term (Week 2)
+### Planned
 
 1. **Multi-step execution** - Run 3-5 steps to test trajectory following beyond first action
-2. **Lightweight verification** - Add checks like "did the expected panel appear?"
-3. **Executive summary** - Package results for stakeholders
+2. **Index existing captures** - Build searchable index of all available demonstrations
+3. **Re-run experiment with retrieval** - Validate that retrieved demos work as well as hand-selected
 
 ### Deferred
 
 - Full multi-step autonomy
-- WAA benchmark re-runs
 - Fine-tuning on trajectories
 - Reward models
-
-These depend on retrieval working first.
 
 ---
 
