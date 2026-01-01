@@ -2,7 +2,53 @@
 
 This guide covers setting up Azure resources to run Windows Agent Arena (WAA) evaluations.
 
-## Quick Start
+## Quick Start: Single VM (Recommended)
+
+The simplest way to run WAA - one command sets up everything:
+
+```bash
+# 1. Setup VM with Docker, WAA repo, and API key (takes ~5 min)
+uv run python -m openadapt_ml.benchmarks.cli vm setup-waa --api-key $OPENAI_API_KEY
+
+# 2. Prepare Windows golden image (takes ~25 min, fully automated)
+uv run python -m openadapt_ml.benchmarks.cli vm prepare-windows
+
+# 3. Run benchmark
+uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 30
+
+# 4. Delete VM when done (IMPORTANT: stops billing!)
+uv run python -m openadapt_ml.benchmarks.cli vm delete
+```
+
+**Cost**: ~$0.50/hour for Standard_D4ds_v5 VM. Delete when done!
+
+**What this does**:
+- Creates Azure VM with nested virtualization support
+- Builds custom `waa-auto` Docker image (fixes OEM folder issues)
+- Installs Windows 11 automatically via QEMU
+- Runs WAA benchmark tasks with your chosen model
+
+### Other VM Commands
+
+```bash
+# Check VM status
+uv run python -m openadapt_ml.benchmarks.cli vm status
+
+# SSH into VM for debugging
+uv run python -m openadapt_ml.benchmarks.cli vm ssh
+
+# Check if WAA server is ready
+uv run python -m openadapt_ml.benchmarks.cli vm probe
+
+# Reset Windows (if stuck)
+uv run python -m openadapt_ml.benchmarks.cli vm reset-windows
+```
+
+---
+
+## Alternative: Azure ML Parallel Workers
+
+For running 40+ tasks in parallel across multiple VMs:
 
 ```bash
 # 1. Run automated setup (creates resources, writes credentials to .env)

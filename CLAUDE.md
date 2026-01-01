@@ -425,61 +425,44 @@ az ml workspace sync-keys -n openadapt-ml -g openadapt-agents
 
 **Problem**: WAA requires running a Windows VM inside Docker (via QEMU). Azure ML managed compute doesn't support nested virtualization.
 
-**Solution**: Use dedicated Azure VMs with nested virtualization + **official WAA repository scripts**.
+**Solution**: Use the CLI commands which build a custom `waa-auto` Docker image that fixes OEM folder and automation issues.
 
-> **CRITICAL**: You MUST clone the WAA repo and use their `run-local.sh` script. Do NOT use the pre-built `windowsarena/winarena:latest` image directly - it won't work because it needs the correct unattend.xml for Enterprise Evaluation ISO which is only built by their script.
-
-**Working Quick Start** (verified Dec 2025):
+**Working Quick Start** (via CLI - fully automated):
 ```bash
-# 1. Create Azure VM with Docker
-uv run python -m openadapt_ml.benchmarks.cli vm setup-waa
+# 1. Setup VM with Docker, WAA repo, and API key (~5 min)
+uv run python -m openadapt_ml.benchmarks.cli vm setup-waa --api-key $OPENAI_API_KEY
 
-# 2. SSH into VM
-ssh azureuser@<vm-ip>
+# 2. Prepare Windows golden image (~25 min, fully automated)
+uv run python -m openadapt_ml.benchmarks.cli vm prepare-windows
 
-# 3. Clone WAA repo and set up ISO
-cd /mnt
-sudo git clone https://github.com/microsoft/WindowsAgentArena.git
-sudo chown -R azureuser:azureuser WindowsAgentArena
-cd WindowsAgentArena
+# 3. Run benchmark
+uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 30
 
-# 4. Download Windows ISO to correct location
-mkdir -p src/win-arena-container/vm/image
-curl -L -o src/win-arena-container/vm/image/setup.iso \
-  "https://go.microsoft.com/fwlink/?linkid=2334167"
-
-# 5. Create config.json with API key
-cat > config.json << EOF
-{"OPENAI_API_KEY": "your-key-here"}
-EOF
-
-# 6. Prepare Windows golden image (~25 min) - MUST use their script
-cd scripts
-./run-local.sh --prepare-image true --start-client false
-# Wait for "Shutdown completed!" message
-
-# 7. Run benchmark
-./run-local.sh --prepare-image false --start-client true --model gpt-4o
-
-# For faster reruns (skip Docker image rebuild):
-# ./run-local.sh --prepare-image false --start-client true --model gpt-4o --skip-build true
-
-# 8. Delete VM when done (IMPORTANT: stops billing)
+# 4. Delete VM when done (IMPORTANT: stops billing!)
 uv run python -m openadapt_ml.benchmarks.cli vm delete
 ```
 
-**Why the official script is required**:
-1. **Builds fresh Docker image** with correct `win11x64-enterprise-eval.xml` unattend file
-2. **Copies OEM folder** correctly into the image
-3. **Sets up network paths** (`\\host.lan\Data` → `C:\oem`)
-4. **Pre-built image won't work** - it's missing the Evaluation ISO unattend.xml
+**Other useful commands**:
+```bash
+# Check VM status
+uv run python -m openadapt_ml.benchmarks.cli vm status
 
-**What the script does**:
-1. Builds `winarena:latest` Docker image with correct unattend.xml
-2. Extracts ISO, adds drivers, OEM folder, and unattend.xml
-3. Boots Windows, waits for WAA Flask server to respond
-4. With `--prepare-image true`: Shuts down to save golden image
-5. With `--start-client true`: Runs benchmark tasks
+# SSH into VM for debugging
+uv run python -m openadapt_ml.benchmarks.cli vm ssh
+
+# Check if WAA server is ready
+uv run python -m openadapt_ml.benchmarks.cli vm probe
+
+# Reset Windows (if stuck)
+uv run python -m openadapt_ml.benchmarks.cli vm reset-windows
+```
+
+**What the CLI does** (via custom `waa-auto` Docker image in `openadapt_ml/benchmarks/waa/Dockerfile`):
+1. Uses modern `dockurr/windows:latest` base (auto-downloads Windows 11)
+2. Copies `/oem` folder from official WAA image (fixes OEM folder issue)
+3. Patches IP addresses (20.20.20.21 → 172.30.0.2)
+4. Adds automation commands (disable firewall, sleep, lock screen)
+5. Installs Python dependencies for benchmark client
 
 **Key requirements**:
 1. **VM Size**: `Standard_D4ds_v5` or larger (nested virtualization required)
