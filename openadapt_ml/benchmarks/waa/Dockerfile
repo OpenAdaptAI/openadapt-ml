@@ -41,6 +41,10 @@ COPY --from=windowsarena/winarena:latest /client /client
 # Copy Windows setup scripts (install.bat, setup.ps1, etc.)
 COPY --from=windowsarena/winarena:latest /oem /oem
 
+# Create startup script to copy OEM files to Samba share at runtime
+# (smb.conf is generated at runtime, so we copy files instead of changing config)
+RUN echo '#!/bin/bash\nmkdir -p /tmp/smb && cp -r /oem/* /tmp/smb/ 2>/dev/null\nexec "$@"' > /copy-oem.sh && chmod +x /copy-oem.sh
+
 # Copy unattend.xml for automated Windows installation
 COPY --from=windowsarena/winarena:latest /run/assets/win11x64-enterprise-eval.xml /run/assets/win11x64.xml
 
@@ -136,8 +140,8 @@ ENV ARGUMENTS="-qmp tcp:0.0.0.0:7200,server,nowait"
 # Expose ports
 EXPOSE 8006 5000 7200 3389
 
-# Default entrypoint (can be overridden)
+# Default entrypoint - copy OEM files then run entry.sh
 # Use: /entry.sh --start-client true --model gpt-4o
 # Or:  /entry.sh --start-client false (just start Windows, no benchmark)
 ENTRYPOINT ["/bin/bash", "-c"]
-CMD ["/entry.sh --start-client false"]
+CMD ["/copy-oem.sh /entry.sh --start-client false"]
