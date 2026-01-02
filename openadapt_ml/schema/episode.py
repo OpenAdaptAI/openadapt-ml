@@ -67,6 +67,10 @@ class ActionType(str, Enum):
     # System actions
     OPEN_APP = "open_app"
     CLOSE_APP = "close_app"
+    SELECT_MONITOR = "select_monitor"  # Multi-monitor: focus a specific display
+    WINDOW_FOCUS = "window_focus"  # Focus a specific window
+    WINDOW_RESIZE = "window_resize"  # Resize window
+    WINDOW_MOVE = "window_move"  # Move window
 
     # Meta actions
     DONE = "done"
@@ -161,6 +165,20 @@ class Action(BaseModel):
     url: Optional[str] = Field(None, description="URL for goto action")
     app_name: Optional[str] = Field(None, description="Application name for open/close")
     duration: Optional[float] = Field(None, description="Duration in seconds (for wait)")
+    monitor_id: Optional[int] = Field(None, description="Monitor ID for select_monitor action")
+    window_title: Optional[str] = Field(None, description="Window title for window_focus action")
+
+    # Normalized coordinates (0.0-1.0) - alternative to pixel coordinates
+    # Useful for resolution-independent recordings
+    normalized_coordinates: Optional[tuple[float, float]] = Field(
+        None, description="Normalized (x, y) coordinates (0.0-1.0 range)"
+    )
+    normalized_start: Optional[tuple[float, float]] = Field(
+        None, description="Normalized start coordinates for drag (0.0-1.0 range)"
+    )
+    normalized_end: Optional[tuple[float, float]] = Field(
+        None, description="Normalized end coordinates for drag (0.0-1.0 range)"
+    )
 
     # Raw/original action data
     raw: Optional[dict[str, Any]] = Field(
