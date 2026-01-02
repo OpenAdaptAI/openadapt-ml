@@ -1,0 +1,805 @@
+{
+  "$defs": {
+    "Action": {
+      "description": "An action taken by the agent.",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/ActionType",
+          "description": "Type of action"
+        },
+        "coordinates": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Coordinates"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Target coordinates for mouse actions"
+        },
+        "start_coordinates": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Coordinates"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Start coordinates for drag actions"
+        },
+        "end_coordinates": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Coordinates"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "End coordinates for drag actions"
+        },
+        "scroll_direction": {
+          "anyOf": [
+            {
+              "enum": [
+                "up",
+                "down",
+                "left",
+                "right"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Scroll direction",
+          "title": "Scroll Direction"
+        },
+        "scroll_amount": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Scroll amount in pixels",
+          "title": "Scroll Amount"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Text to type",
+          "title": "Text"
+        },
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Key to press (e.g., 'enter', 'tab')",
+          "title": "Key"
+        },
+        "modifiers": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Modifier keys (ctrl, alt, shift, meta)",
+          "title": "Modifiers"
+        },
+        "element": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UIElement"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Target element (for element-based actions)"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "URL for goto action",
+          "title": "Url"
+        },
+        "app_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Application name for open/close",
+          "title": "App Name"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Duration in seconds (for wait)",
+          "title": "Duration"
+        },
+        "raw": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Original action data from source format",
+          "title": "Raw"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "Action",
+      "type": "object"
+    },
+    "ActionType": {
+      "description": "Supported action types for GUI automation.",
+      "enum": [
+        "click",
+        "double_click",
+        "right_click",
+        "drag",
+        "scroll",
+        "hover",
+        "type",
+        "key",
+        "hotkey",
+        "click_and_type",
+        "wait",
+        "screenshot",
+        "goto",
+        "back",
+        "forward",
+        "refresh",
+        "open_app",
+        "close_app",
+        "done",
+        "fail"
+      ],
+      "title": "ActionType",
+      "type": "string"
+    },
+    "BenchmarkSource": {
+      "description": "Source benchmark/dataset for the episode.",
+      "enum": [
+        "waa",
+        "webarena",
+        "osworld",
+        "miniwob",
+        "human",
+        "synthetic"
+      ],
+      "title": "BenchmarkSource",
+      "type": "string"
+    },
+    "BoundingBox": {
+      "description": "Bounding box for UI elements.",
+      "properties": {
+        "x": {
+          "description": "Left edge X coordinate",
+          "title": "X",
+          "type": "integer"
+        },
+        "y": {
+          "description": "Top edge Y coordinate",
+          "title": "Y",
+          "type": "integer"
+        },
+        "width": {
+          "description": "Width in pixels",
+          "minimum": 0,
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "description": "Height in pixels",
+          "minimum": 0,
+          "title": "Height",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "title": "BoundingBox",
+      "type": "object"
+    },
+    "Coordinates": {
+      "description": "Screen coordinates for mouse actions.",
+      "properties": {
+        "x": {
+          "description": "X coordinate (pixels from left)",
+          "title": "X",
+          "type": "integer"
+        },
+        "y": {
+          "description": "Y coordinate (pixels from top)",
+          "title": "Y",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "Coordinates",
+      "type": "object"
+    },
+    "Observation": {
+      "description": "An observation of the environment state.",
+      "properties": {
+        "screenshot_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Path to screenshot image file",
+          "title": "Screenshot Path"
+        },
+        "screenshot_base64": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Base64-encoded screenshot (for inline storage)",
+          "title": "Screenshot Base64"
+        },
+        "a11y_tree": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Accessibility tree snapshot",
+          "title": "A11Y Tree"
+        },
+        "dom": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "DOM HTML snapshot (web)",
+          "title": "Dom"
+        },
+        "window_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Active window title",
+          "title": "Window Title"
+        },
+        "screen_size": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Screen dimensions (width, height)",
+          "title": "Screen Size"
+        },
+        "focused_element": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UIElement"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Currently focused UI element"
+        },
+        "timestamp": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Unix timestamp",
+          "title": "Timestamp"
+        },
+        "raw": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Original observation data from source format",
+          "title": "Raw"
+        }
+      },
+      "title": "Observation",
+      "type": "object"
+    },
+    "Step": {
+      "description": "A single step in an episode (observation -> action pair).",
+      "properties": {
+        "step_index": {
+          "description": "Step number (0-indexed)",
+          "minimum": 0,
+          "title": "Step Index",
+          "type": "integer"
+        },
+        "observation": {
+          "$ref": "#/$defs/Observation",
+          "description": "State observation before action"
+        },
+        "action": {
+          "$ref": "#/$defs/Action",
+          "description": "Action taken"
+        },
+        "reasoning": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Agent's reasoning for the action (chain-of-thought)",
+          "title": "Reasoning"
+        },
+        "reward": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Reward signal (if available)",
+          "title": "Reward"
+        },
+        "done": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether episode ended after this step",
+          "title": "Done"
+        },
+        "timestamp": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Unix timestamp of action",
+          "title": "Timestamp"
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Time taken for this step in milliseconds",
+          "title": "Duration Ms"
+        }
+      },
+      "required": [
+        "step_index",
+        "observation",
+        "action"
+      ],
+      "title": "Step",
+      "type": "object"
+    },
+    "UIElement": {
+      "description": "UI element information from accessibility tree or DOM.",
+      "properties": {
+        "role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Element role (button, textbox, etc.)",
+          "title": "Role"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Element accessible name",
+          "title": "Name"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Element value (for inputs)",
+          "title": "Value"
+        },
+        "bounds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BoundingBox"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Element bounding box"
+        },
+        "element_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Unique element identifier",
+          "title": "Element Id"
+        },
+        "xpath": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "XPath selector (web)",
+          "title": "Xpath"
+        },
+        "selector": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "CSS selector (web)",
+          "title": "Selector"
+        },
+        "automation_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Automation ID (Windows)",
+          "title": "Automation Id"
+        }
+      },
+      "title": "UIElement",
+      "type": "object"
+    }
+  },
+  "description": "A complete episode/demonstration for GUI automation.\n\nThis is the canonical format for storing and exchanging GUI trajectory data.\nAll benchmark-specific formats should be converted to/from this format.",
+  "properties": {
+    "schema_version": {
+      "default": "1.0.0",
+      "description": "Schema version for compatibility checking",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "episode_id": {
+      "description": "Unique episode identifier",
+      "title": "Episode Id",
+      "type": "string"
+    },
+    "task_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Task identifier (from benchmark)",
+      "title": "Task Id"
+    },
+    "instruction": {
+      "description": "Natural language task instruction",
+      "title": "Instruction",
+      "type": "string"
+    },
+    "goal": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Detailed goal description (if different from instruction)",
+      "title": "Goal"
+    },
+    "steps": {
+      "description": "Sequence of steps in the episode",
+      "items": {
+        "$ref": "#/$defs/Step"
+      },
+      "title": "Steps",
+      "type": "array"
+    },
+    "success": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Whether task was completed successfully",
+      "title": "Success"
+    },
+    "final_reward": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Final reward/score",
+      "title": "Final Reward"
+    },
+    "source": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BenchmarkSource"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Source benchmark/dataset"
+    },
+    "source_file": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Original source file path",
+      "title": "Source File"
+    },
+    "created_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "When episode was created/recorded",
+      "title": "Created At"
+    },
+    "agent_model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Model that generated this episode (e.g., 'gpt-4o')",
+      "title": "Agent Model"
+    },
+    "environment": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Environment info (OS, browser, etc.)",
+      "title": "Environment"
+    },
+    "tags": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Tags for categorization",
+      "title": "Tags"
+    },
+    "metadata": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Additional metadata from source",
+      "title": "Metadata"
+    }
+  },
+  "required": [
+    "episode_id",
+    "instruction",
+    "steps"
+  ],
+  "title": "Episode",
+  "type": "object"
+}

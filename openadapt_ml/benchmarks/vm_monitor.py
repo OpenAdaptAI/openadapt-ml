@@ -310,6 +310,161 @@ class VMMonitor:
             time.sleep(interval)
 
 
+@dataclass
+class PoolWorker:
+    """A single worker in a VM pool."""
+
+    name: str
+    ip: str
+    status: str = "creating"  # creating, ready, running, completed, failed, deleted
+    docker_container: str = "winarena"
+    waa_ready: bool = False
+    assigned_tasks: list[str] = field(default_factory=list)
+    completed_tasks: list[str] = field(default_factory=list)
+    current_task: str | None = None
+    error: str | None = None
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+@dataclass
+class VMPool:
+    """A pool of worker VMs for parallel WAA evaluation."""
+
+    pool_id: str
+    created_at: str
+    resource_group: str
+    location: str
+    vm_size: str
+    workers: list[PoolWorker]
+    total_tasks: int = 0
+    completed_tasks: int = 0
+    failed_tasks: int = 0
+
+
+class VMPoolRegistry:
+    """Manage VM pools for parallel WAA evaluation."""
+
+    REGISTRY_FILE = "benchmark_results/vm_pool_registry.json"
+
+    def __init__(self, registry_file: str | Path | None = None):
+        """Initialize pool registry.
+
+        Args:
+            registry_file: Path to JSON registry file.
+        """
+        self.registry_file = Path(registry_file or self.REGISTRY_FILE)
+        self._pool: VMPool | None = None
+        self.load()
+
+    def load(self) -> None:
+        """Load pool from registry file."""
+        if self.registry_file.exists():
+            try:
+                with open(self.registry_file) as f:
+                    data = json.load(f)
+                    workers = [PoolWorker(**w) for w in data.get("workers", [])]
+                    self._pool = VMPool(
+                        pool_id=data["pool_id"],
+                        created_at=data["created_at"],
+                        resource_group=data["resource_group"],
+                        location=data["location"],
+                        vm_size=data["vm_size"],
+                        workers=workers,
+                        total_tasks=data.get("total_tasks", 0),
+                        completed_tasks=data.get("completed_tasks", 0),
+                        failed_tasks=data.get("failed_tasks", 0),
+                    )
+            except (json.JSONDecodeError, KeyError) as e:
+                print(f"Warning: Could not load pool registry: {e}")
+                self._pool = None
+
+    def save(self) -> None:
+        """Save pool to registry file."""
+        if self._pool is None:
+            return
+        self.registry_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.registry_file, "w") as f:
+            json.dump(asdict(self._pool), f, indent=2)
+
+    def create_pool(
+        self,
+        workers: list[tuple[str, str]],  # [(name, ip), ...]
+        resource_group: str,
+        location: str,
+        vm_size: str = "Standard_D4ds_v5",
+    ) -> VMPool:
+        """Create a new pool from created VMs.
+
+        Args:
+            workers: List of (name, ip) tuples.
+            resource_group: Azure resource group.
+            location: Azure region.
+            vm_size: VM size used.
+
+        Returns:
+            Created VMPool.
+        """
+        pool_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self._pool = VMPool(
+            pool_id=pool_id,
+            created_at=datetime.now().isoformat(),
+            resource_group=resource_group,
+            location=location,
+            vm_size=vm_size,
+            workers=[PoolWorker(name=name, ip=ip, status="ready") for name, ip in workers],
+        )
+        self.save()
+        return self._pool
+
+    def get_pool(self) -> VMPool | None:
+        """Get current pool."""
+        return self._pool
+
+    def update_worker(self, name: str, **kwargs) -> None:
+        """Update a worker's status.
+
+        Args:
+            name: Worker name.
+            **kwargs: Fields to update.
+        """
+        if self._pool is None:
+            return
+        for worker in self._pool.workers:
+            if worker.name == name:
+                for key, value in kwargs.items():
+                    if hasattr(worker, key):
+                        setattr(worker, key, value)
+                worker.updated_at = datetime.now().isoformat()
+                break
+        self.save()
+
+    def update_pool_progress(self, completed: int = 0, failed: int = 0) -> None:
+        """Update pool-level progress.
+
+        Args:
+            completed: Increment completed count by this amount.
+            failed: Increment failed count by this amount.
+        """
+        if self._pool is None:
+            return
+        self._pool.completed_tasks += completed
+        self._pool.failed_tasks += failed
+        self.save()
+
+    def delete_pool(self) -> bool:
+        """Delete the pool registry (VMs must be deleted separately).
+
+        Returns:
+            True if pool was deleted.
+        """
+        if self.registry_file.exists():
+            self.registry_file.unlink()
+            self._pool = None
+            return True
+        return False
+
+
 class VMRegistry:
     """Manage a registry of VMs and their status."""
 
