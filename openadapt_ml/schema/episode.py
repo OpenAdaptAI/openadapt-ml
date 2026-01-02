@@ -1,25 +1,60 @@
 """
 Episode Schema for GUI Trajectory Data
 
-This module defines the canonical contract for episode/demonstration data used in
-GUI automation training and evaluation. It provides:
+Canonical contract for episode/demonstration data in GUI automation. Designed for
+interoperability across training pipelines, benchmarks, and human demonstrations.
 
-1. Pydantic models with runtime validation
-2. JSON Schema generation for documentation/tooling
-3. Converters for benchmark formats (WAA, WebArena, OSWorld)
-4. Schema versioning for evolution management
+Features:
+- Pydantic models with runtime validation
+- JSON Schema export for language-agnostic tooling
+- Supports pixel coordinates AND normalized (0-1) coordinates
+- Extensible via `raw` and `metadata` fields
+- Converters for common formats (WAA, WebArena, etc.)
+
+Quick Start:
+    from openadapt_ml.schema import Episode, Step, Action, Observation, ActionType
+
+    episode = Episode(
+        episode_id="demo_001",
+        instruction="Open the Settings app and enable Dark Mode",
+        steps=[
+            Step(
+                step_index=0,
+                observation=Observation(screenshot_path="step_0.png"),
+                action=Action(
+                    type=ActionType.CLICK,
+                    coordinates={"x": 512, "y": 384},
+                    # Or use normalized coords for resolution independence:
+                    # normalized_coordinates=(0.5, 0.375),
+                ),
+                reasoning="Click on Settings icon",
+            ),
+        ],
+        success=True,
+    )
+
+    # Validate any dict against the schema
+    from openadapt_ml.schema import validate_episode
+    is_valid, error = validate_episode(data)
+
+    # Export JSON Schema for external tools
+    from openadapt_ml.schema import export_json_schema
+    export_json_schema("episode.schema.json")
 
 Schema Version: 1.0.0
-- Initial release with core Episode/Step/Action/Observation models
+- Core models: Episode, Step, Action, Observation
+- 24 action types covering mouse, keyboard, navigation, and system actions
+- Support for both pixel and normalized coordinates
+- Extension points: raw, metadata fields
 
-Evolution Policy:
-- PATCH (1.0.x): Bug fixes, documentation updates, no schema changes
-- MINOR (1.x.0): Backward-compatible additions (new optional fields)
-- MAJOR (x.0.0): Breaking changes (removed fields, type changes, required field additions)
+Evolution Policy (SemVer):
+- PATCH (1.0.x): Documentation, bug fixes (no schema changes)
+- MINOR (1.x.0): New optional fields with defaults (backward compatible)
+- MAJOR (x.0.0): Breaking changes (field removal, type changes, new required fields)
 
-When bumping version:
-- MINOR: Add new optional fields with defaults, old data still validates
-- MAJOR: Update converters, add migration helpers, document in CHANGELOG
+Migration Guide:
+- MINOR bumps: No action needed, old data validates
+- MAJOR bumps: Use converters or migration scripts (provided in release notes)
 """
 
 from __future__ import annotations
