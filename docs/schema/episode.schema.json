@@ -168,6 +168,101 @@
           "description": "Duration in seconds (for wait)",
           "title": "Duration"
         },
+        "monitor_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Monitor ID for select_monitor action",
+          "title": "Monitor Id"
+        },
+        "window_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Window title for window_focus action",
+          "title": "Window Title"
+        },
+        "normalized_coordinates": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Normalized (x, y) coordinates (0.0-1.0 range)",
+          "title": "Normalized Coordinates"
+        },
+        "normalized_start": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Normalized start coordinates for drag (0.0-1.0 range)",
+          "title": "Normalized Start"
+        },
+        "normalized_end": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Normalized end coordinates for drag (0.0-1.0 range)",
+          "title": "Normalized End"
+        },
         "raw": {
           "anyOf": [
             {
@@ -210,6 +305,10 @@
         "refresh",
         "open_app",
         "close_app",
+        "select_monitor",
+        "window_focus",
+        "window_resize",
+        "window_move",
         "done",
         "fail"
       ],
