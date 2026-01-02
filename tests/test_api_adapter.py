@@ -25,7 +25,7 @@ def dummy_sample(tmp_path) -> Dict[str, Any]:
 
 
 @mock.patch("openadapt_ml.models.api_adapter.settings")
-@mock.patch("openadapt_ml.models.api_adapter.OpenAI")
+@mock.patch("openai.OpenAI")
 @mock.patch("openadapt_ml.models.api_adapter.os.getenv")
 def test_openai_adapter_generate(mock_getenv, mock_openai, mock_settings, dummy_sample) -> None:
     mock_settings.openai_api_key = None
@@ -41,7 +41,7 @@ def test_openai_adapter_generate(mock_getenv, mock_openai, mock_settings, dummy_
 
 
 @mock.patch("openadapt_ml.models.api_adapter.settings")
-@mock.patch("openadapt_ml.models.api_adapter.Anthropic")
+@mock.patch("anthropic.Anthropic")
 @mock.patch("openadapt_ml.models.api_adapter.os.getenv")
 def test_anthropic_adapter_generate(mock_getenv, mock_anthropic, mock_settings, dummy_sample) -> None:
     mock_settings.anthropic_api_key = None

@@ -12,7 +12,7 @@ from openadapt_ml.schema import Action, ActionType, UIElement
 
 
 # Coordinate-based DSL patterns
-_CLICK_RE = re.compile(r"CLICK\(x=([0-9]*\.?[0-9]+),\s*y=([0-9]*\.?[0-9]+)\)")
+_CLICK_RE = re.compile(r"CLICK\(x=(-?[0-9]*\.?[0-9]+),\s*y=(-?[0-9]*\.?[0-9]+)\)")
 _TYPE_RE = re.compile(r'TYPE\(text="([^"\\]*(?:\\.[^"\\]*)*)"\)')
 _WAIT_RE = re.compile(r"\bWAIT\s*\(\s*\)")
 _DONE_RE = re.compile(r"\bDONE\s*\(\s*\)")

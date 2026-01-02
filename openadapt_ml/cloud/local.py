@@ -1021,6 +1021,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
                     "task_id": "azure-vm-waa",
                     "task_type": "vm_provision",
                     "status": "completed",
+                    "phase": "ready",  # Match status to prevent "Starting" + "completed" conflict
                     "title": "Azure VM Host",
                     "description": f"Linux host running at {vm_ip}",
                     "progress_percent": 100.0,
@@ -1065,6 +1066,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
                                 "task_id": "azure-vm-waa",
                                 "task_type": "vm_provision",
                                 "status": "completed",
+                                "phase": "ready",  # Match status to prevent "Starting" + "completed" conflict
                                 "title": "Azure VM Host",
                                 "description": f"Linux host running at {vm_ip}" if vm_ip else "Linux host running",
                                 "progress_percent": 100.0,
