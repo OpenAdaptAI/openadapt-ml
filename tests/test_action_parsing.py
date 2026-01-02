@@ -9,7 +9,7 @@ from openadapt_ml.runtime.policy import (
     _DONE_RE,
     AgentPolicy,
 )
-from openadapt_ml.schemas.sessions import Action
+from openadapt_ml.schema import Action, ActionType
 
 
 class MockAdapter:
@@ -69,43 +69,41 @@ class TestAgentPolicyParsing:
     def test_parse_click(self):
         policy = AgentPolicy(MockAdapter(""))
         action = policy._parse_action("CLICK(x=0.5, y=0.3)")
-        assert action.type == "click"
-        assert action.x == 0.5
-        assert action.y == 0.3
+        assert action.type == ActionType.CLICK
+        assert action.normalized_coordinates == (0.5, 0.3)
 
     def test_parse_click_clamps_coords(self):
         policy = AgentPolicy(MockAdapter(""))
         action = policy._parse_action("CLICK(x=1.5, y=-0.2)")
-        assert action.type == "click"
-        assert action.x == 1.0  # Clamped
-        assert action.y == 0.0  # Clamped
+        assert action.type == ActionType.CLICK
+        assert action.normalized_coordinates == (1.0, 0.0)  # Clamped
 
     def test_parse_type(self):
         policy = AgentPolicy(MockAdapter(""))
         action = policy._parse_action('TYPE(text="hello")')
-        assert action.type == "type"
+        assert action.type == ActionType.TYPE
         assert action.text == "hello"
 
     def test_parse_type_with_escaped_quotes(self):
         policy = AgentPolicy(MockAdapter(""))
         action = policy._parse_action('TYPE(text="say \\"hi\\"")')
-        assert action.type == "type"
+        assert action.type == ActionType.TYPE
         assert action.text == 'say "hi"'
 
     def test_parse_wait(self):
         policy = AgentPolicy(MockAdapter(""))
         action = policy._parse_action("WAIT()")
-        assert action.type == "wait"
+        assert action.type == ActionType.WAIT
 
     def test_parse_done(self):
         policy = AgentPolicy(MockAdapter(""))
         action = policy._parse_action("DONE()")
-        assert action.type == "done"
+        assert action.type == ActionType.DONE
 
     def test_parse_failed_invalid(self):
         policy = AgentPolicy(MockAdapter(""))
         action = policy._parse_action("some random text")
-        assert action.type == "failed"
+        assert action.type == ActionType.FAIL
         assert action.raw == {"text": "some random text"}
 
     def test_parse_with_thought_action_format(self):
@@ -114,9 +112,8 @@ class TestAgentPolicyParsing:
 Action: CLICK(x=0.5, y=0.7)"""
         policy = AgentPolicy(MockAdapter(response))
         action, thought = policy.predict_action_from_sample({})
-        assert action.type == "click"
-        assert action.x == 0.5
-        assert action.y == 0.7
+        assert action.type == ActionType.CLICK
+        assert action.normalized_coordinates == (0.5, 0.7)
         assert thought is not None
         assert "click the login button" in thought
 
@@ -126,7 +123,7 @@ Action: CLICK(x=0.5, y=0.7)"""
 Action: TYPE(text="user123")"""
         policy = AgentPolicy(MockAdapter(response))
         action, thought = policy.predict_action_from_sample({})
-        assert action.type == "type"
+        assert action.type == ActionType.TYPE
         assert action.text == "user123"
 
     def test_parse_wait_in_thought_action_format(self):
@@ -135,4 +132,4 @@ Action: TYPE(text="user123")"""
 Action: WAIT()"""
         policy = AgentPolicy(MockAdapter(response))
         action, thought = policy.predict_action_from_sample({})
-        assert action.type == "wait"
+        assert action.type == ActionType.WAIT

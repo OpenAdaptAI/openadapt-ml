@@ -8,7 +8,7 @@ from typing import List, Optional, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 
-from openadapt_ml.schemas.sessions import Action, Episode, Observation, Session, Step
+from openadapt_ml.schema import Action, ActionType, Episode, Observation, Step
 
 
 IMG_WIDTH = 800
@@ -333,12 +333,12 @@ def _script_login_episode(
     """Create a scripted login episode with a fixed sequence of steps.
 
     Steps (6 total):
-    - Step 0: blank login screen → click username field.
-    - Step 1: username field focused → type username.
-    - Step 2: username typed → click password field.
-    - Step 3: password field focused → type password.
-    - Step 4: password typed → click login button.
-    - Step 5: logged-in screen → DONE.
+    - Step 0: blank login screen -> click username field.
+    - Step 1: username field focused -> type username.
+    - Step 2: username typed -> click password field.
+    - Step 3: password field focused -> type password.
+    - Step 4: password typed -> click login button.
+    - Step 5: logged-in screen -> DONE.
 
     Each step includes bounding boxes for clickable elements to support
     bbox-based click hit evaluation.
@@ -354,100 +354,120 @@ def _script_login_episode(
     password_bbox = _bbox_normalized(layout.password_box)
     login_bbox = _bbox_normalized(layout.login_button)
 
-    # Step 0: blank login screen → click username field
+    # Step 0: blank login screen -> click username field
     cx, cy = _center(layout.username_box)
     img0, _ = _draw_login_screen(layout=layout, jitter=False)
     img0_path = root / f"{episode_id}_step_0.png"
     _save_image(img0, img0_path)
-    obs0 = Observation(image_path=str(img0_path))
+    obs0 = Observation(screenshot_path=str(img0_path))
     steps.append(
         Step(
-            t=0.0,
+            step_index=0,
+            timestamp=0.0,
             observation=obs0,
-            action=Action(type="click", x=cx, y=cy, bbox=username_bbox),
-            thought="Focus the username field.",
+            action=Action(
+                type=ActionType.CLICK,
+                normalized_coordinates=(cx, cy),
+                raw={"bbox": username_bbox},
+            ),
+            reasoning="Focus the username field.",
         )
     )
 
-    # Step 1: username field focused → type username
+    # Step 1: username field focused -> type username
     img1, _ = _draw_login_screen(username="", layout=layout, jitter=False)
     img1_path = root / f"{episode_id}_step_1.png"
     _save_image(img1, img1_path)
-    obs1 = Observation(image_path=str(img1_path))
+    obs1 = Observation(screenshot_path=str(img1_path))
     steps.append(
         Step(
-            t=1.0,
+            step_index=1,
+            timestamp=1.0,
             observation=obs1,
-            action=Action(type="type", text=username),
-            thought="Type the username.",
+            action=Action(type=ActionType.TYPE, text=username),
+            reasoning="Type the username.",
         )
     )
 
-    # Step 2: username typed → click password field
+    # Step 2: username typed -> click password field
     cx_pw, cy_pw = _center(layout.password_box)
     img2, _ = _draw_login_screen(username=username, layout=layout, jitter=False)
     img2_path = root / f"{episode_id}_step_2.png"
     _save_image(img2, img2_path)
-    obs2 = Observation(image_path=str(img2_path))
+    obs2 = Observation(screenshot_path=str(img2_path))
     steps.append(
         Step(
-            t=2.0,
+            step_index=2,
+            timestamp=2.0,
             observation=obs2,
-            action=Action(type="click", x=cx_pw, y=cy_pw, bbox=password_bbox),
-            thought="Focus the password field.",
+            action=Action(
+                type=ActionType.CLICK,
+                normalized_coordinates=(cx_pw, cy_pw),
+                raw={"bbox": password_bbox},
+            ),
+            reasoning="Focus the password field.",
         )
     )
 
-    # Step 3: password field focused → type password
+    # Step 3: password field focused -> type password
     img3, _ = _draw_login_screen(username=username, layout=layout, jitter=False)
     img3_path = root / f"{episode_id}_step_3.png"
     _save_image(img3, img3_path)
-    obs3 = Observation(image_path=str(img3_path))
+    obs3 = Observation(screenshot_path=str(img3_path))
     steps.append(
         Step(
-            t=3.0,
+            step_index=3,
+            timestamp=3.0,
             observation=obs3,
-            action=Action(type="type", text=password),
-            thought="Type the password.",
+            action=Action(type=ActionType.TYPE, text=password),
+            reasoning="Type the password.",
         )
     )
 
-    # Step 4: password typed → click login button
+    # Step 4: password typed -> click login button
     cx_btn, cy_btn = _center(layout.login_button)
     img4, _ = _draw_login_screen(username=username, password=password, layout=layout, jitter=False)
     img4_path = root / f"{episode_id}_step_4.png"
     _save_image(img4, img4_path)
-    obs4 = Observation(image_path=str(img4_path))
+    obs4 = Observation(screenshot_path=str(img4_path))
     steps.append(
         Step(
-            t=4.0,
+            step_index=4,
+            timestamp=4.0,
             observation=obs4,
-            action=Action(type="click", x=cx_btn, y=cy_btn, bbox=login_bbox),
-            thought="Submit the login form.",
+            action=Action(
+                type=ActionType.CLICK,
+                normalized_coordinates=(cx_btn, cy_btn),
+                raw={"bbox": login_bbox},
+            ),
+            reasoning="Submit the login form.",
         )
     )
 
-    # Step 5: logged-in screen → DONE
+    # Step 5: logged-in screen -> DONE
     img5 = _draw_logged_in_screen(username=username)
     img5_path = root / f"{episode_id}_step_5.png"
     _save_image(img5, img5_path)
-    obs5 = Observation(image_path=str(img5_path))
+    obs5 = Observation(screenshot_path=str(img5_path))
     steps.append(
         Step(
-            t=5.0,
+            step_index=5,
+            timestamp=5.0,
             observation=obs5,
-            action=Action(type="done"),
-            thought="Login successful; workflow complete.",
+            action=Action(type=ActionType.DONE),
+            reasoning="Login successful; workflow complete.",
         )
     )
 
     episode = Episode(
-        id=episode_id,
-        goal=f"Log in with username '{username}' and password '{password}'",
+        episode_id=episode_id,
+        instruction=f"Log in with username '{username}' and password '{password}'",
         steps=steps,
-        summary="Successful login via username and password.",
         success=True,
-        workflow_id="login_basic",
+        metadata={
+            "summary": "Successful login via username and password.",
+            "workflow_id": "login_basic",
+        },
     )
 
     return episode
@@ -467,12 +487,12 @@ def _script_login_episode_som(
     for click actions.
 
     Steps (6 total):
-    - Step 0: SoM login screen → click element [1] (username field)
-    - Step 1: username field focused → type username
-    - Step 2: username typed → click element [2] (password field)
-    - Step 3: password field focused → type password
-    - Step 4: password typed → click element [3] (login button)
-    - Step 5: logged-in screen → DONE
+    - Step 0: SoM login screen -> click element [1] (username field)
+    - Step 1: username field focused -> type username
+    - Step 2: username typed -> click element [2] (password field)
+    - Step 3: password field focused -> type password
+    - Step 4: password typed -> click element [3] (login button)
+    - Step 5: logged-in screen -> DONE
     """
 
     steps: List[Step] = []
@@ -492,81 +512,89 @@ def _script_login_episode_som(
         (SOM_LOGIN_BUTTON, layout.login_button),
     ]
 
-    # Step 0: SoM login screen → click username field [1]
+    # Step 0: SoM login screen -> click username field [1]
     cx, cy = _center(layout.username_box)
     img0, _ = _draw_login_screen(layout=layout, jitter=False)
     img0_som = _overlay_som_marks(img0, som_elements)
     img0_path = root / f"{episode_id}_step_0.png"
     _save_image(img0_som, img0_path)
-    obs0 = Observation(image_path=str(img0_path))
+    obs0 = Observation(screenshot_path=str(img0_path))
     steps.append(
         Step(
-            t=0.0,
+            step_index=0,
+            timestamp=0.0,
             observation=obs0,
             action=Action(
-                type="click",
-                x=cx,
-                y=cy,
-                bbox=username_bbox,
-                element_index=SOM_USERNAME_FIELD,
+                type=ActionType.CLICK,
+                normalized_coordinates=(cx, cy),
+                raw={"bbox": username_bbox, "element_index": SOM_USERNAME_FIELD},
             ),
-            thought="Focus the username field by clicking element [1].",
+            reasoning="Focus the username field by clicking element [1].",
         )
     )
 
-    # Step 1: username field focused → type username into element [1]
+    # Step 1: username field focused -> type username into element [1]
     img1, _ = _draw_login_screen(username="", layout=layout, jitter=False)
     img1_som = _overlay_som_marks(img1, som_elements)
     img1_path = root / f"{episode_id}_step_1.png"
     _save_image(img1_som, img1_path)
-    obs1 = Observation(image_path=str(img1_path))
+    obs1 = Observation(screenshot_path=str(img1_path))
     steps.append(
         Step(
-            t=1.0,
+            step_index=1,
+            timestamp=1.0,
             observation=obs1,
-            action=Action(type="type", text=username, element_index=SOM_USERNAME_FIELD),
-            thought="Type the username into element [1].",
+            action=Action(
+                type=ActionType.TYPE,
+                text=username,
+                raw={"element_index": SOM_USERNAME_FIELD},
+            ),
+            reasoning="Type the username into element [1].",
         )
     )
 
-    # Step 2: username typed → click password field [2]
+    # Step 2: username typed -> click password field [2]
     cx_pw, cy_pw = _center(layout.password_box)
     img2, _ = _draw_login_screen(username=username, layout=layout, jitter=False)
     img2_som = _overlay_som_marks(img2, som_elements)
     img2_path = root / f"{episode_id}_step_2.png"
     _save_image(img2_som, img2_path)
-    obs2 = Observation(image_path=str(img2_path))
+    obs2 = Observation(screenshot_path=str(img2_path))
     steps.append(
         Step(
-            t=2.0,
+            step_index=2,
+            timestamp=2.0,
             observation=obs2,
             action=Action(
-                type="click",
-                x=cx_pw,
-                y=cy_pw,
-                bbox=password_bbox,
-                element_index=SOM_PASSWORD_FIELD,
+                type=ActionType.CLICK,
+                normalized_coordinates=(cx_pw, cy_pw),
+                raw={"bbox": password_bbox, "element_index": SOM_PASSWORD_FIELD},
             ),
-            thought="Focus the password field by clicking element [2].",
+            reasoning="Focus the password field by clicking element [2].",
         )
     )
 
-    # Step 3: password field focused → type password into element [2]
+    # Step 3: password field focused -> type password into element [2]
     img3, _ = _draw_login_screen(username=username, layout=layout, jitter=False)
     img3_som = _overlay_som_marks(img3, som_elements)
     img3_path = root / f"{episode_id}_step_3.png"
     _save_image(img3_som, img3_path)
-    obs3 = Observation(image_path=str(img3_path))
+    obs3 = Observation(screenshot_path=str(img3_path))
     steps.append(
         Step(
-            t=3.0,
+            step_index=3,
+            timestamp=3.0,
             observation=obs3,
-            action=Action(type="type", text=password, element_index=SOM_PASSWORD_FIELD),
-            thought="Type the password into element [2].",
+            action=Action(
+                type=ActionType.TYPE,
+                text=password,
+                raw={"element_index": SOM_PASSWORD_FIELD},
+            ),
+            reasoning="Type the password into element [2].",
         )
     )
 
-    # Step 4: password typed → click login button [3]
+    # Step 4: password typed -> click login button [3]
     cx_btn, cy_btn = _center(layout.login_button)
     img4, _ = _draw_login_screen(
         username=username, password=password, layout=layout, jitter=False
@@ -574,43 +602,45 @@ def _script_login_episode_som(
     img4_som = _overlay_som_marks(img4, som_elements)
     img4_path = root / f"{episode_id}_step_4.png"
     _save_image(img4_som, img4_path)
-    obs4 = Observation(image_path=str(img4_path))
+    obs4 = Observation(screenshot_path=str(img4_path))
     steps.append(
         Step(
-            t=4.0,
+            step_index=4,
+            timestamp=4.0,
             observation=obs4,
             action=Action(
-                type="click",
-                x=cx_btn,
-                y=cy_btn,
-                bbox=login_bbox,
-                element_index=SOM_LOGIN_BUTTON,
+                type=ActionType.CLICK,
+                normalized_coordinates=(cx_btn, cy_btn),
+                raw={"bbox": login_bbox, "element_index": SOM_LOGIN_BUTTON},
             ),
-            thought="Submit the login form by clicking element [3].",
+            reasoning="Submit the login form by clicking element [3].",
         )
     )
 
-    # Step 5: logged-in screen → DONE (no SoM needed)
+    # Step 5: logged-in screen -> DONE (no SoM needed)
     img5 = _draw_logged_in_screen(username=username)
     img5_path = root / f"{episode_id}_step_5.png"
     _save_image(img5, img5_path)
-    obs5 = Observation(image_path=str(img5_path))
+    obs5 = Observation(screenshot_path=str(img5_path))
     steps.append(
         Step(
-            t=5.0,
+            step_index=5,
+            timestamp=5.0,
             observation=obs5,
-            action=Action(type="done"),
-            thought="Login successful; workflow complete.",
+            action=Action(type=ActionType.DONE),
+            reasoning="Login successful; workflow complete.",
         )
     )
 
     episode = Episode(
-        id=episode_id,
-        goal=f"Log in with username '{username}' and password '{password}'",
+        episode_id=episode_id,
+        instruction=f"Log in with username '{username}' and password '{password}'",
         steps=steps,
-        summary="Successful login via username and password (SoM mode).",
         success=True,
-        workflow_id="login_basic_som",
+        metadata={
+            "summary": "Successful login via username and password (SoM mode).",
+            "workflow_id": "login_basic_som",
+        },
     )
 
     return episode
@@ -822,10 +852,15 @@ def _script_registration_episode(
         img_path = root / f"{episode_id}_step_{step_idx}.png"
         _save_image(img, img_path)
         steps.append(Step(
-            t=float(step_idx),
-            observation=Observation(image_path=str(img_path)),
-            action=Action(type="click", x=cx, y=cy, bbox=bbox, element_index=elem_idx),
-            thought=f"Focus the {field_name.replace('_', ' ')} field.",
+            step_index=step_idx,
+            timestamp=float(step_idx),
+            observation=Observation(screenshot_path=str(img_path)),
+            action=Action(
+                type=ActionType.CLICK,
+                normalized_coordinates=(cx, cy),
+                raw={"bbox": bbox, "element_index": elem_idx},
+            ),
+            reasoning=f"Focus the {field_name.replace('_', ' ')} field.",
         ))
         step_idx += 1
 
@@ -842,10 +877,15 @@ def _script_registration_episode(
         img2_path = root / f"{episode_id}_step_{step_idx}.png"
         _save_image(img2, img2_path)
         steps.append(Step(
-            t=float(step_idx),
-            observation=Observation(image_path=str(img2_path)),
-            action=Action(type="type", text=value, element_index=elem_idx),
-            thought=f"Type the {field_name.replace('_', ' ')}.",
+            step_index=step_idx,
+            timestamp=float(step_idx),
+            observation=Observation(screenshot_path=str(img2_path)),
+            action=Action(
+                type=ActionType.TYPE,
+                text=value,
+                raw={"element_index": elem_idx},
+            ),
+            reasoning=f"Type the {field_name.replace('_', ' ')}.",
         ))
         current_values[field_name] = value
         step_idx += 1
@@ -865,10 +905,15 @@ def _script_registration_episode(
     img_path = root / f"{episode_id}_step_{step_idx}.png"
     _save_image(img, img_path)
     steps.append(Step(
-        t=float(step_idx),
-        observation=Observation(image_path=str(img_path)),
-        action=Action(type="click", x=cx, y=cy, bbox=bbox, element_index=SOM_REGISTER_BUTTON),
-        thought="Submit the registration form.",
+        step_index=step_idx,
+        timestamp=float(step_idx),
+        observation=Observation(screenshot_path=str(img_path)),
+        action=Action(
+            type=ActionType.CLICK,
+            normalized_coordinates=(cx, cy),
+            raw={"bbox": bbox, "element_index": SOM_REGISTER_BUTTON},
+        ),
+        reasoning="Submit the registration form.",
     ))
     step_idx += 1
 
@@ -877,19 +922,22 @@ def _script_registration_episode(
     img_done_path = root / f"{episode_id}_step_{step_idx}.png"
     _save_image(img_done, img_done_path)
     steps.append(Step(
-        t=float(step_idx),
-        observation=Observation(image_path=str(img_done_path)),
-        action=Action(type="done"),
-        thought="Registration successful; workflow complete.",
+        step_index=step_idx,
+        timestamp=float(step_idx),
+        observation=Observation(screenshot_path=str(img_done_path)),
+        action=Action(type=ActionType.DONE),
+        reasoning="Registration successful; workflow complete.",
     ))
 
     return Episode(
-        id=episode_id,
-        goal=f"Register with first name '{first_name}', last name '{last_name}', email '{email}', and password",
+        episode_id=episode_id,
+        instruction=f"Register with first name '{first_name}', last name '{last_name}', email '{email}', and password",
         steps=steps,
-        summary="Successful registration.",
         success=True,
-        workflow_id="registration",
+        metadata={
+            "summary": "Successful registration.",
+            "workflow_id": "registration",
+        },
     )
 
 
@@ -943,10 +991,15 @@ def _script_registration_episode_som(
         img_path = root / f"{episode_id}_step_{step_idx}.png"
         _save_image(img_som, img_path)
         steps.append(Step(
-            t=float(step_idx),
-            observation=Observation(image_path=str(img_path)),
-            action=Action(type="click", x=cx, y=cy, bbox=bbox, element_index=elem_idx),
-            thought=f"Focus element [{elem_idx}] ({field_name.replace('_', ' ')} field).",
+            step_index=step_idx,
+            timestamp=float(step_idx),
+            observation=Observation(screenshot_path=str(img_path)),
+            action=Action(
+                type=ActionType.CLICK,
+                normalized_coordinates=(cx, cy),
+                raw={"bbox": bbox, "element_index": elem_idx},
+            ),
+            reasoning=f"Focus element [{elem_idx}] ({field_name.replace('_', ' ')} field).",
         ))
         step_idx += 1
 
@@ -964,10 +1017,15 @@ def _script_registration_episode_som(
         img2_path = root / f"{episode_id}_step_{step_idx}.png"
         _save_image(img2_som, img2_path)
         steps.append(Step(
-            t=float(step_idx),
-            observation=Observation(image_path=str(img2_path)),
-            action=Action(type="type", text=value, element_index=elem_idx),
-            thought=f"Type into element [{elem_idx}].",
+            step_index=step_idx,
+            timestamp=float(step_idx),
+            observation=Observation(screenshot_path=str(img2_path)),
+            action=Action(
+                type=ActionType.TYPE,
+                text=value,
+                raw={"element_index": elem_idx},
+            ),
+            reasoning=f"Type into element [{elem_idx}].",
         ))
         current_values[field_name] = value
         step_idx += 1
@@ -988,10 +1046,15 @@ def _script_registration_episode_som(
     img_path = root / f"{episode_id}_step_{step_idx}.png"
     _save_image(img_som, img_path)
     steps.append(Step(
-        t=float(step_idx),
-        observation=Observation(image_path=str(img_path)),
-        action=Action(type="click", x=cx, y=cy, bbox=bbox, element_index=SOM_REGISTER_BUTTON),
-        thought=f"Click element [{SOM_REGISTER_BUTTON}] to submit registration.",
+        step_index=step_idx,
+        timestamp=float(step_idx),
+        observation=Observation(screenshot_path=str(img_path)),
+        action=Action(
+            type=ActionType.CLICK,
+            normalized_coordinates=(cx, cy),
+            raw={"bbox": bbox, "element_index": SOM_REGISTER_BUTTON},
+        ),
+        reasoning=f"Click element [{SOM_REGISTER_BUTTON}] to submit registration.",
     ))
     step_idx += 1
 
@@ -1000,37 +1063,40 @@ def _script_registration_episode_som(
     img_done_path = root / f"{episode_id}_step_{step_idx}.png"
     _save_image(img_done, img_done_path)
     steps.append(Step(
-        t=float(step_idx),
-        observation=Observation(image_path=str(img_done_path)),
-        action=Action(type="done"),
-        thought="Registration successful; workflow complete.",
+        step_index=step_idx,
+        timestamp=float(step_idx),
+        observation=Observation(screenshot_path=str(img_done_path)),
+        action=Action(type=ActionType.DONE),
+        reasoning="Registration successful; workflow complete.",
     ))
 
     return Episode(
-        id=episode_id,
-        goal=f"Register with first name '{first_name}', last name '{last_name}', email '{email}', and password",
+        episode_id=episode_id,
+        instruction=f"Register with first name '{first_name}', last name '{last_name}', email '{email}', and password",
         steps=steps,
-        summary="Successful registration (SoM mode).",
         success=True,
-        workflow_id="registration_som",
+        metadata={
+            "summary": "Successful registration (SoM mode).",
+            "workflow_id": "registration_som",
+        },
     )
 
 
-def generate_synthetic_sessions(
-    num_sessions: int = 10,
+def generate_synthetic_episodes(
+    num_episodes: int = 10,
     seed: int | None = None,
     output_dir: str | os.PathLike[str] | None = None,
     jitter: bool = True,
     use_som: bool = False,
     scenario: str = "login",
-) -> List[Session]:
-    """Generate a list of synthetic Sessions with semantic UI episodes.
+) -> List[Episode]:
+    """Generate a list of synthetic Episodes with semantic UI episodes.
 
-    Each Session contains a single Episode. Images for all steps are written
-    to `output_dir`.
+    Each Episode contains steps for a complete UI workflow. Images for all
+    steps are written to `output_dir`.
 
     Args:
-        num_sessions: Number of sessions to generate.
+        num_episodes: Number of episodes to generate.
         seed: Random seed for reproducibility.
         output_dir: Directory to write images to.
         jitter: Whether to apply slight position jitter to UI elements.
@@ -1040,6 +1106,9 @@ def generate_synthetic_sessions(
         scenario: Type of UI scenario to generate. Options:
                   - "login": Simple login form (6 steps, 3 elements)
                   - "registration": Registration form (12 steps, 6 elements)
+
+    Returns:
+        List of Episode objects.
     """
 
     if seed is not None:
@@ -1051,28 +1120,28 @@ def generate_synthetic_sessions(
     else:
         output_root = Path(output_dir)
 
-    sessions: List[Session] = []
+    episodes: List[Episode] = []
 
-    for i in range(num_sessions):
-        session_id = f"session_{i:04d}"
-        session_dir = output_root / session_id
+    for i in range(num_episodes):
+        episode_id = f"episode_{i:04d}"
+        episode_dir = output_root / episode_id
 
         if scenario == "login":
-            episode_id = f"{session_id}_login"
+            episode_id_full = f"{episode_id}_login"
             username = f"user{i}"
             password = f"pass{i}123"
 
             if use_som:
                 episode = _script_login_episode_som(
-                    session_dir, episode_id, username, password, jitter=jitter
+                    episode_dir, episode_id_full, username, password, jitter=jitter
                 )
             else:
                 episode = _script_login_episode(
-                    session_dir, episode_id, username, password, jitter=jitter
+                    episode_dir, episode_id_full, username, password, jitter=jitter
                 )
 
         elif scenario == "registration":
-            episode_id = f"{session_id}_registration"
+            episode_id_full = f"{episode_id}_registration"
             first_name = f"John{i}"
             last_name = f"Doe{i}"
             email = f"john{i}@example.com"
@@ -1080,23 +1149,16 @@ def generate_synthetic_sessions(
 
             if use_som:
                 episode = _script_registration_episode_som(
-                    session_dir, episode_id, first_name, last_name, email, password, jitter=jitter
+                    episode_dir, episode_id_full, first_name, last_name, email, password, jitter=jitter
                 )
             else:
                 episode = _script_registration_episode(
-                    session_dir, episode_id, first_name, last_name, email, password, jitter=jitter
+                    episode_dir, episode_id_full, first_name, last_name, email, password, jitter=jitter
                 )
 
         else:
             raise ValueError(f"Unknown scenario: {scenario}. Options: login, registration")
 
-        session = Session(
-            id=session_id,
-            episodes=[episode],
-            meta={"scenario": scenario, "use_som": use_som},
-        )
-        sessions.append(session)
+        episodes.append(episode)
 
-    return sessions
-
-
+    return episodes

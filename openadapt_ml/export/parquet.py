@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from openadapt_ml.schemas.sessions import Episode
+    from openadapt_ml.schema import Episode
 
 
 def to_parquet(
@@ -64,18 +64,28 @@ def to_parquet(
         if hasattr(episode, "metadata") and episode.metadata:
             episode_metadata = json.dumps(episode.metadata)
 
-        for step_idx, step in enumerate(episode.steps):
+        for step in episode.steps:
+            # Extract normalized coordinates if available
+            x, y = None, None
+            if step.action and step.action.normalized_coordinates:
+                x, y = step.action.normalized_coordinates
+
+            # Extract action type value (enum -> string)
+            action_type = None
+            if step.action:
+                action_type = step.action.type.value if hasattr(step.action.type, 'value') else step.action.type
+
             row = {
-                "episode_id": episode.id,
-                "goal": episode.goal,
-                "workflow_id": getattr(episode, "workflow_id", None),
-                "step_index": step_idx,
-                "timestamp": step.t,
-                "action_type": step.action.type if step.action else None,
-                "x": step.action.x if step.action else None,
-                "y": step.action.y if step.action else None,
-                "end_x": getattr(step.action, "end_x", None) if step.action else None,
-                "end_y": getattr(step.action, "end_y", None) if step.action else None,
+                "episode_id": episode.episode_id,
+                "instruction": episode.instruction,
+                "task_id": getattr(episode, "task_id", None),
+                "step_index": step.step_index,
+                "timestamp": step.timestamp,
+                "action_type": action_type,
+                "x": x,
+                "y": y,
+                "end_x": step.action.normalized_end[0] if step.action and step.action.normalized_end else None,
+                "end_y": step.action.normalized_end[1] if step.action and step.action.normalized_end else None,
                 "text": getattr(step.action, "text", None) if step.action else None,
                 "key": getattr(step.action, "key", None) if step.action else None,
                 "scroll_direction": (
@@ -83,8 +93,8 @@ def to_parquet(
                     if step.action
                     else None
                 ),
-                "image_path": (
-                    step.observation.image_path if step.observation else None
+                "screenshot_path": (
+                    step.observation.screenshot_path if step.observation else None
                 ),
                 "window_title": (
                     getattr(step.observation, "window_title", None)
@@ -92,22 +102,13 @@ def to_parquet(
                     else None
                 ),
                 "app_name": (
-                    getattr(step.observation, "app_name", None)
-                    if step.observation
-                    else None
+                    None  # Not in new schema at Observation level
                 ),
                 "url": (
-                    getattr(step.observation, "url", None)
-                    if step.observation
-                    else None
+                    None  # Not in new schema at Observation level
                 ),
-                "thought": getattr(step, "thought", None),
+                "reasoning": getattr(step, "reasoning", None),
                 "episode_metadata": episode_metadata,
-                "step_metadata": (
-                    json.dumps(step.metadata)
-                    if hasattr(step, "metadata") and step.metadata
-                    else None
-                ),
             }
             rows.append(row)
 
@@ -128,27 +129,29 @@ def _write_summary(episodes: list[Episode], output_path: str) -> None:
 
     summary_rows = []
     for episode in episodes:
-        first_t = episode.steps[0].t if episode.steps else None
-        last_t = episode.steps[-1].t if episode.steps else None
+        first_t = episode.steps[0].timestamp if episode.steps else None
+        last_t = episode.steps[-1].timestamp if episode.steps else None
         duration = (last_t - first_t) if first_t is not None and last_t is not None else None
 
+        # Extract action type values (enum -> string)
+        first_action_type = None
+        last_action_type = None
+        if episode.steps and episode.steps[0].action:
+            t = episode.steps[0].action.type
+            first_action_type = t.value if hasattr(t, 'value') else t
+        if episode.steps and episode.steps[-1].action:
+            t = episode.steps[-1].action.type
+            last_action_type = t.value if hasattr(t, 'value') else t
+
         summary_rows.append({
-            "episode_id": episode.id,
-            "goal": episode.goal,
-            "workflow_id": getattr(episode, "workflow_id", None),
+            "episode_id": episode.episode_id,
+            "instruction": episode.instruction,
+            "task_id": getattr(episode, "task_id", None),
             "step_count": len(episode.steps),
             "duration": duration,
             "success": getattr(episode, "success", None),
-            "first_action_type": (
-                episode.steps[0].action.type
-                if episode.steps and episode.steps[0].action
-                else None
-            ),
-            "last_action_type": (
-                episode.steps[-1].action.type
-                if episode.steps and episode.steps[-1].action
-                else None
-            ),
+            "first_action_type": first_action_type,
+            "last_action_type": last_action_type,
             "metadata": (
                 json.dumps(episode.metadata)
                 if hasattr(episode, "metadata") and episode.metadata
@@ -189,7 +192,7 @@ def from_parquet(parquet_path: str) -> list[Episode]:
             "Install with: pip install openadapt-ml[parquet]"
         )
 
-    from openadapt_ml.schemas.sessions import Action, Episode, Observation, Step
+    from openadapt_ml.schema import Action, ActionType, Episode, Observation, Step
 
     table = pq.read_table(parquet_path)
     df = table.to_pandas()
@@ -201,30 +204,44 @@ def from_parquet(parquet_path: str) -> list[Episode]:
         steps = []
         for _, row in group.iterrows():
             observation = Observation(
-                image_path=row.get("image_path"),
+                screenshot_path=row.get("screenshot_path") or row.get("image_path"),
                 window_title=row.get("window_title"),
-                app_name=row.get("app_name"),
-                url=row.get("url"),
             )
 
             action = None
             if row.get("action_type"):
+                # Convert string action type to ActionType enum
+                action_type_str = row["action_type"]
+                try:
+                    action_type = ActionType(action_type_str)
+                except ValueError:
+                    action_type = ActionType.CLICK  # Default fallback
+
+                # Build normalized coordinates tuple if x and y are present
+                normalized_coords = None
+                if row.get("x") is not None and row.get("y") is not None:
+                    normalized_coords = (float(row["x"]), float(row["y"]))
+
+                # Build normalized end coordinates for drag
+                normalized_end = None
+                if row.get("end_x") is not None and row.get("end_y") is not None:
+                    normalized_end = (float(row["end_x"]), float(row["end_y"]))
+
                 action = Action(
-                    type=row["action_type"],
-                    x=row.get("x"),
-                    y=row.get("y"),
-                    end_x=row.get("end_x"),
-                    end_y=row.get("end_y"),
+                    type=action_type,
+                    normalized_coordinates=normalized_coords,
+                    normalized_end=normalized_end,
                     text=row.get("text"),
                     key=row.get("key"),
                     scroll_direction=row.get("scroll_direction"),
                 )
 
             step = Step(
-                t=row.get("timestamp", 0.0),
+                step_index=int(row.get("step_index", 0)),
                 observation=observation,
                 action=action,
-                thought=row.get("thought"),
+                reasoning=row.get("reasoning") or row.get("thought"),
+                timestamp=row.get("timestamp"),
             )
             steps.append(step)
 
@@ -237,10 +254,10 @@ def from_parquet(parquet_path: str) -> list[Episode]:
                 pass
 
         episode = Episode(
-            id=str(episode_id),
-            goal=group.iloc[0].get("goal", ""),
+            episode_id=str(episode_id),
+            instruction=group.iloc[0].get("instruction") or group.iloc[0].get("goal", ""),
             steps=steps,
-            workflow_id=group.iloc[0].get("workflow_id"),
+            task_id=group.iloc[0].get("task_id"),
             metadata=metadata,
         )
         episodes.append(episode)

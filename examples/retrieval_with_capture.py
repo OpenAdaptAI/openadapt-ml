@@ -22,7 +22,7 @@ def main() -> None:
         print("Usage: python retrieval_with_capture.py <capture_path> [task]")
         print("\nExample:")
         print("  python retrieval_with_capture.py /path/to/capture 'Turn off Night Shift'")
-        print("\nIf task is not provided, will use the episode's goal.")
+        print("\nIf task is not provided, will use the episode's instruction.")
         sys.exit(1)
 
     capture_path = sys.argv[1]
@@ -42,7 +42,7 @@ def main() -> None:
     # In real usage, you would have multiple different captures
     episodes = [episode]
 
-    print(f"Loaded episode: {episode.goal}")
+    print(f"Loaded episode: {episode.instruction}")
     print(f"  Steps: {len(episode.steps)}")
 
     # Build index
@@ -62,9 +62,9 @@ def main() -> None:
     if len(sys.argv) >= 3:
         task = " ".join(sys.argv[2:])
     else:
-        # Use episode goal with slight modification for demo
-        task = episode.goal.replace("Turn off", "Disable").replace("Open", "Launch")
-        print(f"\nNo task provided, using modified goal for demo: '{task}'")
+        # Use episode instruction with slight modification for demo
+        task = episode.instruction.replace("Turn off", "Disable").replace("Open", "Launch")
+        print(f"\nNo task provided, using modified instruction for demo: '{task}'")
 
     # Retrieve similar demos
     print("\n" + "=" * 80)
@@ -91,7 +91,7 @@ def main() -> None:
         print(f"\n{i}. Score: {result.score:.3f}")
         print(f"   Text similarity: {result.text_score:.3f}")
         print(f"   Domain bonus: {result.domain_bonus:.3f}")
-        print(f"   Goal: {result.demo.episode.goal}")
+        print(f"   Instruction: {result.demo.episode.instruction}")
         print(f"   Steps: {len(result.demo.episode.steps)}")
         if result.demo.app_name:
             print(f"   App: {result.demo.app_name}")

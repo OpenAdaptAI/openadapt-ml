@@ -259,6 +259,8 @@ class Observation(BaseModel):
 
     # Window/screen info
     window_title: Optional[str] = Field(None, description="Active window title")
+    app_name: Optional[str] = Field(None, description="Application name (e.g., 'Chrome', 'System Settings')")
+    url: Optional[str] = Field(None, description="Current URL (for web apps)")
     screen_size: Optional[tuple[int, int]] = Field(
         None, description="Screen dimensions (width, height)"
     )

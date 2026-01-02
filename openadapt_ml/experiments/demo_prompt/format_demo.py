@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from openadapt_ml.schemas.sessions import Action, Episode, Step
+    from openadapt_ml.schema import Action, ActionType, Episode, Step
 
 
 def format_action(action: "Action") -> str:
@@ -18,16 +18,19 @@ def format_action(action: "Action") -> str:
     Returns:
         String representation like "CLICK(0.5, 0.3)" or "TYPE('hello')".
     """
-    action_type = action.type
+    # Get action type value (handle both enum and string)
+    action_type = action.type.value if hasattr(action.type, 'value') else action.type
 
     if action_type == "click":
-        if action.x is not None and action.y is not None:
-            return f"CLICK({action.x:.3f}, {action.y:.3f})"
+        if action.normalized_coordinates is not None:
+            x, y = action.normalized_coordinates
+            return f"CLICK({x:.3f}, {y:.3f})"
         return "CLICK()"
 
     elif action_type == "double_click":
-        if action.x is not None and action.y is not None:
-            return f"DOUBLE_CLICK({action.x:.3f}, {action.y:.3f})"
+        if action.normalized_coordinates is not None:
+            x, y = action.normalized_coordinates
+            return f"DOUBLE_CLICK({x:.3f}, {y:.3f})"
         return "DOUBLE_CLICK()"
 
     elif action_type == "type":
@@ -38,7 +41,7 @@ def format_action(action: "Action") -> str:
             text = text[:47] + "..."
         return f'TYPE("{text}")'
 
-    elif action_type == "key_press":
+    elif action_type == "key":
         key = action.key or "unknown"
         if action.modifiers:
             mods = "+".join(action.modifiers)
@@ -50,13 +53,10 @@ def format_action(action: "Action") -> str:
         return f"SCROLL({direction})"
 
     elif action_type == "drag":
-        if (
-            action.x is not None
-            and action.y is not None
-            and action.end_x is not None
-            and action.end_y is not None
-        ):
-            return f"DRAG({action.x:.3f}, {action.y:.3f}, {action.end_x:.3f}, {action.end_y:.3f})"
+        if action.normalized_coordinates is not None and action.normalized_end is not None:
+            x, y = action.normalized_coordinates
+            end_x, end_y = action.normalized_end
+            return f"DRAG({x:.3f}, {y:.3f}, {end_x:.3f}, {end_y:.3f})"
         return "DRAG()"
 
     else:
@@ -104,7 +104,7 @@ def format_episode_as_demo(
     """
     lines = [
         "DEMONSTRATION:",
-        f"Task: {episode.goal}",
+        f"Task: {episode.instruction}",
         "",
     ]
 
@@ -142,7 +142,7 @@ def format_episode_verbose(
     """
     lines = [
         "DEMONSTRATION:",
-        f"Goal: {episode.goal}",
+        f"Goal: {episode.instruction}",
         "",
         "The following shows the step-by-step procedure:",
         "",

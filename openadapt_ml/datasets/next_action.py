@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 import torch
 from torch.utils.data import Dataset
 
-from openadapt_ml.schemas.sessions import Action, Episode, Step
+from openadapt_ml.schema import Action, ActionType, Episode, Step, UIElement
 
 
 # Coordinate-based DSL system prompt (original)
@@ -97,6 +97,13 @@ SYSTEM_PROMPT_SOM_REGISTRATION = (
 )
 
 
+def _get_element_id(action: Action) -> str | None:
+    """Extract element ID from action's element field."""
+    if action.element is not None and action.element.element_id is not None:
+        return action.element.element_id
+    return None
+
+
 def format_action(action: Action, use_som: bool = False) -> str:
     """Serialize an Action into a simple textual command.
 
@@ -110,53 +117,55 @@ def format_action(action: Action, use_som: bool = False) -> str:
     Args:
         action: The action to format.
         use_som: If True, use Set-of-Marks (SoM) index-based format instead of
-                 coordinate-based format. Requires element_index to be set.
+                 coordinate-based format. Requires element with element_id to be set.
     """
 
     t = action.type
+    element_id = _get_element_id(action)
     if use_som:
         # SoM mode: use element indices instead of coordinates
-        if t == "click" and action.element_index is not None:
-            return f"CLICK([{action.element_index}])"
-        if t == "type" and action.text is not None:
+        if t == ActionType.CLICK and element_id is not None:
+            return f"CLICK([{element_id}])"
+        if t == ActionType.TYPE and action.text is not None:
             escaped = action.text.replace("\\", "\\\\").replace("\"", "\\\"")
-            if action.element_index is not None:
-                return f"TYPE([{action.element_index}], \"{escaped}\")"
+            if element_id is not None:
+                return f"TYPE([{element_id}], \"{escaped}\")"
             else:
                 # Fallback: TYPE without element reference (for focused field)
                 return f"TYPE(\"{escaped}\")"
-        if t == "wait":
+        if t == ActionType.WAIT:
             return "WAIT()"
-        if t == "done":
+        if t == ActionType.DONE:
             return "DONE()"
         # Fallback
-        return f"ACTION(type={t})"
+        return f"ACTION(type={t.value if isinstance(t, ActionType) else t})"
     else:
         # Coordinate mode (original)
-        if t == "click" and action.x is not None and action.y is not None:
-            return f"CLICK(x={action.x:.2f}, y={action.y:.2f})"
-        if t == "type" and action.text is not None:
+        if t == ActionType.CLICK and action.normalized_coordinates is not None:
+            x, y = action.normalized_coordinates
+            return f"CLICK(x={x:.2f}, y={y:.2f})"
+        if t == ActionType.TYPE and action.text is not None:
             escaped = action.text.replace("\\", "\\\\").replace("\"", "\\\"")
             return f"TYPE(text=\"{escaped}\")"
-        if t == "wait":
+        if t == ActionType.WAIT:
             return "WAIT()"
-        if t == "done":
+        if t == ActionType.DONE:
             return "DONE()"
         # Fallback
-        return f"ACTION(type={t})"
+        return f"ACTION(type={t.value if isinstance(t, ActionType) else t})"
 
 
 def parse_action_som(text: str) -> Action:
     """Parse a SoM-style action string into an Action object.
 
     Supported formats:
-    - CLICK([N])          → click element N
-    - TYPE([N], "text")   → type text into element N
-    - TYPE("text")        → type text into focused field
-    - WAIT()              → wait
-    - DONE()              → done
+    - CLICK([N])          -> click element N
+    - TYPE([N], "text")   -> type text into element N
+    - TYPE("text")        -> type text into focused field
+    - WAIT()              -> wait
+    - DONE()              -> done
 
-    Returns Action with element_index set for click/type actions.
+    Returns Action with element set for click/type actions.
     """
     import re
 
@@ -165,32 +174,32 @@ def parse_action_som(text: str) -> Action:
     # CLICK([N])
     match = re.match(r"CLICK\(\[(\d+)\]\)", text)
     if match:
-        idx = int(match.group(1))
-        return Action(type="click", element_index=idx)
+        idx = match.group(1)
+        return Action(type=ActionType.CLICK, element=UIElement(element_id=idx))
 
     # TYPE([N], "text") or TYPE([N], 'text')
     match = re.match(r'TYPE\(\[(\d+)\],\s*["\'](.*)["\']\)', text, re.DOTALL)
     if match:
-        idx = int(match.group(1))
+        idx = match.group(1)
         content = match.group(2).replace("\\\"", "\"").replace("\\\\", "\\")
-        return Action(type="type", text=content, element_index=idx)
+        return Action(type=ActionType.TYPE, text=content, element=UIElement(element_id=idx))
 
     # TYPE("text") - no element index
     match = re.match(r'TYPE\(["\'](.*)["\']\)', text, re.DOTALL)
     if match:
         content = match.group(1).replace("\\\"", "\"").replace("\\\\", "\\")
-        return Action(type="type", text=content)
+        return Action(type=ActionType.TYPE, text=content)
 
     # WAIT()
     if text.upper().startswith("WAIT"):
-        return Action(type="wait")
+        return Action(type=ActionType.WAIT)
 
     # DONE()
     if text.upper().startswith("DONE"):
-        return Action(type="done")
+        return Action(type=ActionType.DONE)
 
     # Failed to parse
-    return Action(type="failed", raw={"text": text})
+    return Action(type=ActionType.FAIL, raw={"text": text})
 
 
 def _generate_generic_thought(step_index: int, step: Step, goal: str, total_steps: int) -> str:
@@ -205,10 +214,10 @@ def _generate_generic_thought(step_index: int, step: Step, goal: str, total_step
     # Progress context
     progress = f"Step {step_index + 1} of {total_steps}."
 
-    if t == "click":
-        if action.x is not None and action.y is not None:
+    if t == ActionType.CLICK:
+        if action.normalized_coordinates is not None:
             # Describe the click location relative to screen regions
-            x, y = action.x, action.y
+            x, y = action.normalized_coordinates
             h_pos = "left" if x < 0.33 else ("center" if x < 0.66 else "right")
             v_pos = "top" if y < 0.33 else ("middle" if y < 0.66 else "bottom")
             return (
@@ -217,28 +226,28 @@ def _generate_generic_thought(step_index: int, step: Step, goal: str, total_step
             )
         return f"{progress} I need to click on the relevant UI element to continue toward '{goal}'."
 
-    if t == "double_click":
+    if t == ActionType.DOUBLE_CLICK:
         return f"{progress} I need to double-click to select or activate this element for '{goal}'."
 
-    if t == "type":
+    if t == ActionType.TYPE:
         if action.text:
             # Don't reveal the actual text, just indicate typing is needed
             return f"{progress} I need to type text into the focused input field to continue toward '{goal}'."
         return f"{progress} I need to enter text in the current field."
 
-    if t == "scroll":
+    if t == ActionType.SCROLL:
         return f"{progress} I need to scroll to reveal more content or reach the target element for '{goal}'."
 
-    if t == "drag":
+    if t == ActionType.DRAG:
         return f"{progress} I need to drag an element to complete this part of '{goal}'."
 
-    if t == "key_press":
+    if t == ActionType.KEY:
         return f"{progress} I need to press a key to continue the workflow."
 
-    if t == "wait":
+    if t == ActionType.WAIT:
         return f"{progress} I should wait for the UI to update before the next action."
 
-    if t == "done":
+    if t == ActionType.DONE:
         return f"The goal '{goal}' has been achieved. The workflow is complete."
 
     # Fallback
@@ -279,42 +288,42 @@ def _generate_login_thought(step_index: int, step: Step, goal: str, total_steps:
     t = action.type
 
     # Step 0: click username field
-    if step_index == 0 and t == "click":
+    if step_index == 0 and t == ActionType.CLICK:
         return (
             "I see a login screen with empty username and password fields and a Login button. "
             f"To start logging in, I need to click on the username field to focus it ({goal})."
         )
 
     # Step 1: type username
-    if step_index == 1 and t == "type":
+    if step_index == 1 and t == ActionType.TYPE:
         return (
             "The username field is focused. To move toward the login goal, I should type the "
             "username into this field."
         )
 
     # Step 2: click password field
-    if step_index == 2 and t == "click":
+    if step_index == 2 and t == ActionType.CLICK:
         return (
             "The username has been entered. Next, I need to focus the password field so that I can "
             "enter the password for this login. I will click on the password input box."
         )
 
     # Step 3: type password
-    if step_index == 3 and t == "type":
+    if step_index == 3 and t == ActionType.TYPE:
         return (
             "The password field is focused. To continue the login process, I should type the "
             "password (which will appear as masked characters on the screen)."
         )
 
     # Step 4: click Login button
-    if step_index == 4 and t == "click":
+    if step_index == 4 and t == ActionType.CLICK:
         return (
             "Both the username and password have been entered. To submit the form and attempt the "
             "login, I should click the Login button."
         )
 
     # Step 5: DONE on logged-in screen
-    if step_index == 5 and t == "done":
+    if step_index == 5 and t == ActionType.DONE:
         return (
             "I now see a logged-in confirmation screen indicating the goal has been satisfied. "
             "The task is complete, so I should emit DONE()."
@@ -334,41 +343,41 @@ def _generate_registration_thought(step_index: int, step: Step, goal: str, total
 
     # Registration step mapping (pairs of click + type for 5 fields, then submit + done)
     thoughts = {
-        (0, "click"): (
+        (0, ActionType.CLICK): (
             "I see a registration form with empty fields for name, email, and password. "
             f"To start registration, I need to click on the First Name field ({goal})."
         ),
-        (1, "type"): (
+        (1, ActionType.TYPE): (
             "The First Name field is focused. I should type the first name."
         ),
-        (2, "click"): (
+        (2, ActionType.CLICK): (
             "First name entered. Now I need to focus the Last Name field to enter it."
         ),
-        (3, "type"): (
+        (3, ActionType.TYPE): (
             "The Last Name field is focused. I should type the last name."
         ),
-        (4, "click"): (
+        (4, ActionType.CLICK): (
             "Last name entered. Now I need to focus the Email field to enter the email address."
         ),
-        (5, "type"): (
+        (5, ActionType.TYPE): (
             "The Email field is focused. I should type the email address."
         ),
-        (6, "click"): (
+        (6, ActionType.CLICK): (
             "Email entered. Now I need to focus the Password field to create a password."
         ),
-        (7, "type"): (
+        (7, ActionType.TYPE): (
             "The Password field is focused. I should type the password."
         ),
-        (8, "click"): (
+        (8, ActionType.CLICK): (
             "Password entered. Now I need to focus the Confirm Password field to verify the password."
         ),
-        (9, "type"): (
+        (9, ActionType.TYPE): (
             "The Confirm Password field is focused. I should type the same password again."
         ),
-        (10, "click"): (
+        (10, ActionType.CLICK): (
             "All form fields are filled. I should click the Register button to submit the form."
         ),
-        (11, "done"): (
+        (11, ActionType.DONE): (
             "Registration is complete - I see a success screen. The task is finished."
         ),
     }
@@ -385,10 +394,16 @@ def _generate_registration_thought(step_index: int, step: Step, goal: str, total
 
 
 def _detect_scenario(episode: Episode) -> str:
-    """Detect scenario from episode workflow_id."""
-    workflow_id = episode.workflow_id or ""
-    if "registration" in workflow_id.lower():
+    """Detect scenario from episode task_id or metadata."""
+    # Check task_id first
+    task_id = episode.task_id or ""
+    if "registration" in task_id.lower():
         return "registration"
+    # Check metadata for workflow_id (backward compatibility)
+    if episode.metadata and "workflow_id" in episode.metadata:
+        workflow_id = episode.metadata.get("workflow_id", "")
+        if "registration" in str(workflow_id).lower():
+            return "registration"
     return "login"
 
 
@@ -417,7 +432,8 @@ def build_next_action_sft_samples(
     samples: List[Dict[str, Any]] = []
 
     for episode in episodes:
-        goal = episode.goal
+        # Use instruction as the goal (new schema field name)
+        goal = episode.instruction
         total_steps = len(episode.steps)
         scenario = _detect_scenario(episode)
 
@@ -430,18 +446,21 @@ def build_next_action_sft_samples(
         else:
             system_prompt = SYSTEM_PROMPT
 
-        for step_index, step in enumerate(episode.steps):
-            image_path = step.observation.image_path
+        for step in episode.steps:
+            # Use step_index from the Step model
+            step_index = step.step_index
+            # Use screenshot_path instead of image_path
+            image_path = step.observation.screenshot_path
             if not image_path:
                 # Skip steps without an associated image
                 continue
 
             # Build action history from previous steps
             action_history = []
-            for prev_idx in range(step_index):
-                prev_step = episode.steps[prev_idx]
-                prev_action_text = format_action(prev_step.action, use_som=use_som)
-                action_history.append(prev_action_text)
+            for prev_step in episode.steps:
+                if prev_step.step_index < step_index:
+                    prev_action_text = format_action(prev_step.action, use_som=use_som)
+                    action_history.append(prev_action_text)
 
             # Build history section for both modes - use actual step count
             if action_history:
