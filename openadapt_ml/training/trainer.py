@@ -12,7 +12,7 @@ from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader, Dataset
 
 from openadapt_ml.models.base_adapter import BaseVLMAdapter
-from openadapt_ml.schemas.sessions import Episode
+from openadapt_ml.schema import Episode, Step, Action, ActionType
 from openadapt_ml.training.shared_ui import (
     get_shared_header_css as _get_shared_header_css,
     generate_shared_header_html as _generate_shared_header_html,
@@ -447,14 +447,18 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
                 # Generate comparison data with null predictions (shows "— No prediction")
                 comparison_data = []
                 for i, step in enumerate(episode.steps):
+                    # Extract normalized coordinates if available
+                    action_x, action_y = None, None
+                    if step.action.normalized_coordinates:
+                        action_x, action_y = step.action.normalized_coordinates
                     step_data = {
                         "index": i,
-                        "time": step.t,
-                        "image_path": step.observation.image_path,
+                        "time": step.step_index,
+                        "image_path": step.observation.screenshot_path,
                         "human_action": {
-                            "type": step.action.type,
-                            "x": step.action.x,
-                            "y": step.action.y,
+                            "type": step.action.type.value if isinstance(step.action.type, ActionType) else step.action.type,
+                            "x": action_x,
+                            "y": action_y,
                             "text": step.action.text,
                         },
                         "predicted_action": None,  # Shows "— No prediction" in viewer
@@ -2245,14 +2249,19 @@ def run_epoch_evaluation(
     total_steps = len(episode.steps)
 
     for i, step in enumerate(episode.steps):
+        # Extract normalized coordinates if available
+        action_x, action_y = None, None
+        if step.action.normalized_coordinates:
+            action_x, action_y = step.action.normalized_coordinates
+        action_type_str = step.action.type.value if isinstance(step.action.type, ActionType) else step.action.type
         step_data = {
             "index": i,
-            "time": step.t,
-            "image_path": step.observation.image_path,
+            "time": step.step_index,
+            "image_path": step.observation.screenshot_path,
             "human_action": {
-                "type": step.action.type,
-                "x": step.action.x,
-                "y": step.action.y,
+                "type": action_type_str,
+                "x": action_x,
+                "y": action_y,
                 "text": step.action.text,
             },
             "predicted_action": None,
@@ -2260,12 +2269,12 @@ def run_epoch_evaluation(
         }
 
         # Only run inference on selected samples (for speed)
-        if i in sample_indices and step.observation.image_path:
+        if i in sample_indices and step.observation.screenshot_path:
             try:
                 predicted = predict_action(
                     adapter,
-                    step.observation.image_path,
-                    episode.goal,
+                    step.observation.screenshot_path,
+                    episode.instruction,
                     step_index=i,
                     total_steps=total_steps,
                     action_history=action_history.copy(),
@@ -2273,12 +2282,12 @@ def run_epoch_evaluation(
                 step_data["predicted_action"] = predicted
 
                 # Check match and calculate distance
-                if predicted and predicted.get("type") == step.action.type:
+                if predicted and predicted.get("type") == action_type_str:
                     step_data["match"] = True
 
                     # Calculate distance for click actions
-                    if step.action.type == "click":
-                        hx, hy = step.action.x or 0, step.action.y or 0
+                    if action_type_str == "click":
+                        hx, hy = action_x or 0, action_y or 0
                         px, py = predicted.get("x", 0), predicted.get("y", 0)
                         distance = ((hx - px) ** 2 + (hy - py) ** 2) ** 0.5
 
@@ -2286,14 +2295,14 @@ def run_epoch_evaluation(
                         logger.state.log_evaluation(
                             epoch=epoch,
                             sample_idx=i,
-                            image_path=step.observation.image_path,
+                            image_path=step.observation.screenshot_path,
                             human_action=step_data["human_action"],
                             predicted_action=predicted,
                         )
                 else:
                     step_data["match"] = False
 
-                print(f"    Step {i}: {step.action.type} -> {predicted.get('type') if predicted else 'none'}")
+                print(f"    Step {i}: {action_type_str} -> {predicted.get('type') if predicted else 'none'}")
 
             except Exception as e:
                 print(f"    Step {i}: inference failed - {e}")
@@ -2542,7 +2551,7 @@ def train_supervised(
     if not logger.state.termination_status:
         logger.state.termination_status = "auto_complete"
         logger.state.termination_message = f"Training completed all {config.num_train_epochs} epochs"
-        logger.save()
+        logger._save_log()
 
     logger.on_train_end()
     return True

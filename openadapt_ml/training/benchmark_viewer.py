@@ -502,6 +502,9 @@ def _get_background_tasks_panel_html() -> str:
         function renderBackgroundTasks(tasks) {
             const container = document.getElementById('tasks-list');
 
+            // Debug: Log incoming tasks data
+            console.log('[SSE Debug] renderBackgroundTasks called with:', JSON.stringify(tasks, null, 2));
+
             if (!tasks || tasks.length === 0) {
                 container.innerHTML = '<div class="no-tasks">No active background tasks</div>';
                 return;
@@ -522,8 +525,18 @@ def _get_background_tasks_panel_html() -> str:
                 const statusClass = task.status || 'pending';
                 const progressPercent = task.progress_percent || 0;
                 const progressClass = task.status === 'completed' ? 'completed' : '';
-                const phase = task.phase || task.metadata?.phase || 'unknown';
+
+                // Determine phase: use task.phase, fall back to metadata.phase,
+                // then if status is 'completed' use 'ready', otherwise 'unknown'
+                let phase = task.phase || task.metadata?.phase;
+                if (!phase) {
+                    // If no phase specified, infer from status to prevent "Starting" + "completed" conflict
+                    phase = (task.status === 'completed') ? 'ready' : 'unknown';
+                }
                 const phaseLabel = phaseLabels[phase] || phase;
+
+                // Debug: Log per-task phase/status mapping
+                console.log(`[SSE Debug] Task ${task.task_id}: status=${task.status}, phase=${task.phase}, resolvedPhase=${phase}, phaseLabel=${phaseLabel}`);
 
                 // Build link if VNC URL available
                 let linkHtml = '';
@@ -564,9 +577,13 @@ def _get_background_tasks_panel_html() -> str:
                 }
 
                 // Progress label clarifies what % means
-                const progressLabel = task.status === 'completed'
-                    ? 'Complete'
-                    : `Setup phase progress: ${progressPercent.toFixed(0)}%`;
+                // Use a single unified status display to avoid showing conflicting states
+                let progressLabel;
+                if (task.status === 'completed' || phase === 'ready') {
+                    progressLabel = 'Complete';
+                } else {
+                    progressLabel = `Setup phase progress: ${progressPercent.toFixed(0)}%`;
+                }
 
                 return `
                     <div class="task-card">
@@ -581,7 +598,6 @@ def _get_background_tasks_panel_html() -> str:
                         </div>
                         <div class="task-meta">
                             <span>${progressLabel}</span>
-                            <span>${task.status}</span>
                         </div>
                         ${credentialsHtml}
                         ${linkHtml}
@@ -898,14 +914,18 @@ def _get_live_evaluation_panel_html() -> str:
             }
 
             handleStatusEvent(data) {
+                console.log('[SSE Debug] handleStatusEvent:', JSON.stringify(data));
+                // Clear previous vmStatus to prevent stale state accumulation
                 this.state.vmStatus = data;
                 if (data.waa_ready) {
                     this.state.status = 'ready';
                 }
+                console.log('[SSE Debug] Updated state after status event:', JSON.stringify(this.state));
                 this.render();
             }
 
             handleProgressEvent(data) {
+                console.log('[SSE Debug] handleProgressEvent:', JSON.stringify(data));
                 this.state.status = 'running';
                 this.state.tasks_completed = data.tasks_completed;
                 this.state.total_tasks = data.total_tasks;
@@ -914,6 +934,7 @@ def _get_live_evaluation_panel_html() -> str:
                     instruction: `Task ${data.current_task}`,
                     domain: 'waa'
                 };
+                console.log('[SSE Debug] Updated state after progress event:', JSON.stringify(this.state));
                 this.render();
             }
 
@@ -1006,6 +1027,7 @@ def _get_live_evaluation_panel_html() -> str:
                 const response = await fetch('/api/benchmark-live?' + Date.now());
                 if (response.ok) {
                     const state = await response.json();
+                    console.log('[SSE Debug] Polling received state:', JSON.stringify(state));
                     renderLiveEvaluation(state);
                     document.getElementById('live-eval-refresh-time').textContent =
                         'Updated ' + new Date().toLocaleTimeString();

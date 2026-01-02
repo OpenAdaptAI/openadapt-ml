@@ -111,7 +111,7 @@ class TestAgentPolicyParsing:
         response = """Thought: I need to click the login button.
 Action: CLICK(x=0.5, y=0.7)"""
         policy = AgentPolicy(MockAdapter(response))
-        action, thought = policy.predict_action_from_sample({})
+        action, thought, state, raw_text = policy.predict_action_from_sample({})
         assert action.type == ActionType.CLICK
         assert action.normalized_coordinates == (0.5, 0.7)
         assert thought is not None
@@ -122,7 +122,7 @@ Action: CLICK(x=0.5, y=0.7)"""
         response = """Thought: I need to enter the username.
 Action: TYPE(text="user123")"""
         policy = AgentPolicy(MockAdapter(response))
-        action, thought = policy.predict_action_from_sample({})
+        action, thought, state, raw_text = policy.predict_action_from_sample({})
         assert action.type == ActionType.TYPE
         assert action.text == "user123"
 
@@ -131,5 +131,5 @@ Action: TYPE(text="user123")"""
         response = """Thought: The page is loading.
 Action: WAIT()"""
         policy = AgentPolicy(MockAdapter(response))
-        action, thought = policy.predict_action_from_sample({})
+        action, thought, state, raw_text = policy.predict_action_from_sample({})
         assert action.type == ActionType.WAIT
