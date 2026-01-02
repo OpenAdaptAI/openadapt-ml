@@ -117,12 +117,11 @@ if not is_valid:
 
 ## Format Conversion
 
-Convert from other formats:
+### From Windows Agent Arena (WAA)
 
 ```python
 from openadapt_ml.schema.converters import from_waa_trajectory, to_waa_trajectory
 
-# From Windows Agent Arena format
 trajectory = [
     {"screenshot_path": "step_0.png", "action": "pyautogui.click(100, 200)"},
     {"screenshot_path": "step_1.png", "action": "pyautogui.write('hello')"},
@@ -134,6 +133,33 @@ episode = from_waa_trajectory(trajectory, task_info)
 # Back to WAA format
 trajectory, task_info = to_waa_trajectory(episode)
 ```
+
+### From Internal Training Format (openadapt_ml.schemas.sessions)
+
+If you're using the internal dataclass-based format from the training pipeline:
+
+```python
+from openadapt_ml.schema.converters import from_internal_episode, to_internal_episode
+from openadapt_ml.schemas.sessions import Episode as InternalEpisode
+
+# Convert internal Episode to new format
+internal_ep = InternalEpisode(id="x", goal="Do something", steps=[...])
+episode = from_internal_episode(internal_ep)
+
+# Convert back to internal format (as dict)
+internal_dict = to_internal_episode(episode)
+```
+
+**Field mapping:**
+
+| Internal (`schemas.sessions`) | New (`schema.episode`) |
+|------------------------------|------------------------|
+| `id` | `episode_id` |
+| `goal` | `instruction` |
+| `t` (float) | `step_index` (int) + `timestamp` |
+| `image_path` | `screenshot_path` |
+| `x`, `y` (normalized 0-1) | `normalized_coordinates` |
+| `thought` | `reasoning` |
 
 ## JSON Schema
 

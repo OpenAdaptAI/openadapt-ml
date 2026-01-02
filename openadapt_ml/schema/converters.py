@@ -338,6 +338,157 @@ def _action_to_pyautogui(action: Action) -> str:
     return f"# Unknown action: {action.type}"
 
 
+# ============================================================================
+# Internal Format Converter (openadapt_ml.schemas.sessions)
+# ============================================================================
+
+def from_internal_episode(
+    internal_episode: Any,
+    episode_id: Optional[str] = None,
+) -> Episode:
+    """Convert from internal training format (openadapt_ml.schemas.sessions.Episode).
+
+    This converts from the dataclass-based format used by the training pipeline
+    to the Pydantic-based Episode format used for external interoperability.
+
+    Args:
+        internal_episode: An openadapt_ml.schemas.sessions.Episode instance
+        episode_id: Override episode ID (defaults to internal_episode.id)
+
+    Returns:
+        Episode instance in the new format
+    """
+    steps = []
+    for i, step in enumerate(internal_episode.steps):
+        # Convert observation
+        obs = Observation(
+            screenshot_path=step.observation.image_path,
+            a11y_tree=step.observation.accessibility_tree,
+            dom=step.observation.dom_html,
+            window_title=step.observation.window_title,
+            raw=step.observation.meta,
+        )
+
+        # Convert action - note: internal format uses normalized coords in x/y
+        action_type_map = {
+            "click": ActionType.CLICK,
+            "double_click": ActionType.DOUBLE_CLICK,
+            "right_click": ActionType.RIGHT_CLICK,
+            "drag": ActionType.DRAG,
+            "scroll": ActionType.SCROLL,
+            "type": ActionType.TYPE,
+            "key": ActionType.KEY,
+            "wait": ActionType.WAIT,
+            "done": ActionType.DONE,
+            "failed": ActionType.FAIL,
+            "answer": ActionType.DONE,  # Map answer to done
+        }
+        action_type = action_type_map.get(step.action.type, ActionType.CLICK)
+
+        action = Action(
+            type=action_type,
+            # Store normalized coords from internal format
+            normalized_coordinates=(step.action.x, step.action.y)
+            if step.action.x is not None and step.action.y is not None
+            else None,
+            text=step.action.text,
+            key=step.action.key,
+            modifiers=step.action.modifiers,
+            scroll_direction=step.action.scroll_direction,
+            scroll_amount=int(step.action.scroll_amount) if step.action.scroll_amount else None,
+            normalized_end=(step.action.end_x, step.action.end_y)
+            if step.action.end_x is not None and step.action.end_y is not None
+            else None,
+            element=UIElement(
+                element_id=step.action.target_node_id,
+                role=step.action.target_role,
+                name=step.action.target_name,
+            ) if step.action.target_node_id else None,
+            raw=step.action.raw,
+        )
+
+        steps.append(Step(
+            step_index=i,
+            observation=obs,
+            action=action,
+            reasoning=step.thought,
+            timestamp=step.t,
+        ))
+
+    return Episode(
+        episode_id=episode_id or internal_episode.id,
+        instruction=internal_episode.goal,
+        steps=steps,
+        success=internal_episode.success,
+        metadata={
+            "workflow_id": internal_episode.workflow_id,
+            "summary": internal_episode.summary,
+        } if internal_episode.workflow_id or internal_episode.summary else None,
+    )
+
+
+def to_internal_episode(episode: Episode) -> dict:
+    """Convert Episode to internal training format (as dict).
+
+    Returns a dict matching openadapt_ml.schemas.sessions.Episode structure.
+    The caller can construct the dataclass from this dict.
+
+    Args:
+        episode: Episode in new format
+
+    Returns:
+        Dict matching internal Episode structure
+    """
+    steps = []
+    for step in episode.steps:
+        # Get normalized coordinates
+        norm_x, norm_y = None, None
+        if step.action.normalized_coordinates:
+            norm_x, norm_y = step.action.normalized_coordinates
+        elif step.action.coordinates:
+            # Can't convert pixel to normalized without screen size
+            # Store in raw for reference
+            pass
+
+        step_dict = {
+            "t": step.timestamp or float(step.step_index),
+            "observation": {
+                "image_path": step.observation.screenshot_path,
+                "accessibility_tree": step.observation.a11y_tree,
+                "dom_html": step.observation.dom,
+                "window_title": step.observation.window_title,
+                "meta": step.observation.raw,
+            },
+            "action": {
+                "type": step.action.type.value,
+                "x": norm_x,
+                "y": norm_y,
+                "text": step.action.text,
+                "key": step.action.key,
+                "modifiers": step.action.modifiers,
+                "scroll_direction": step.action.scroll_direction,
+                "scroll_amount": step.action.scroll_amount,
+                "end_x": step.action.normalized_end[0] if step.action.normalized_end else None,
+                "end_y": step.action.normalized_end[1] if step.action.normalized_end else None,
+                "target_node_id": step.action.element.element_id if step.action.element else None,
+                "target_role": step.action.element.role if step.action.element else None,
+                "target_name": step.action.element.name if step.action.element else None,
+                "raw": step.action.raw,
+            },
+            "thought": step.reasoning,
+        }
+        steps.append(step_dict)
+
+    return {
+        "id": episode.episode_id,
+        "goal": episode.instruction,
+        "steps": steps,
+        "success": episode.success,
+        "workflow_id": episode.metadata.get("workflow_id") if episode.metadata else None,
+        "summary": episode.metadata.get("summary") if episode.metadata else None,
+    }
+
+
 def load_waa_result(result_dir: Union[str, Path]) -> Episode:
     """Load episode from WAA result directory.
 
