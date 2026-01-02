@@ -11,8 +11,11 @@ Usage:
     # Prepare Windows 11 image (one-time, ~20 min)
     python -m openadapt_ml.benchmarks.cli vm prepare-windows
 
-    # Run WAA benchmark
+    # Run WAA benchmark (auto-opens viewer by default)
     python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5
+
+    # Run without auto-opening viewer
+    python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5 --no-open
 
     # Check VM status
     python -m openadapt_ml.benchmarks.cli vm status
@@ -22,6 +25,16 @@ Usage:
 
     # Clean up when done
     python -m openadapt_ml.benchmarks.cli vm delete
+
+    # ============================================
+    # Benchmark Viewer (for monitoring running benchmarks)
+    # ============================================
+
+    # Launch viewer for an already-running VM
+    python -m openadapt_ml.benchmarks.cli viewer --vm-ip 172.171.112.41
+
+    # Launch on specific port without auto-opening browser
+    python -m openadapt_ml.benchmarks.cli viewer --vm-ip 172.171.112.41 --port 9000 --no-open
 
     # ============================================
     # Analyze Results
@@ -608,6 +621,7 @@ def cmd_run_azure(args: argparse.Namespace) -> None:
     print(f"\n=== Azure WAA Evaluation ===")
     print(f"  Workers:          {args.workers}")
     print(f"  Tasks:            {num_tasks}")
+    print(f"  Job timeout:      {args.timeout} hours")
     print(f"  Estimated cost:   ${estimate['estimated_cost_usd']:.2f}")
     print(f"  Estimated time:   {estimate['estimated_duration_minutes']:.1f} minutes")
     print()
@@ -666,6 +680,7 @@ def cmd_run_azure(args: argparse.Namespace) -> None:
             task_ids=task_ids,
             max_steps_per_task=args.max_steps,
             cleanup_on_complete=not args.no_cleanup,
+            timeout_hours=args.timeout,
         )
 
         # Print results
@@ -777,6 +792,43 @@ def cmd_test_mock(args: argparse.Namespace) -> None:
         print("=== By Domain ===")
         for domain, dm in domain_metrics.items():
             print(f"  {domain}: {dm['success_rate']:.1%} ({dm['success_count']}/{dm['num_tasks']})")
+    print()
+
+
+def cmd_test_smart(args: argparse.Namespace) -> None:
+    """Test with SmartMockAgent (expected 100% success)."""
+    from openadapt_ml.benchmarks import (
+        SmartMockAgent,
+        WAAMockAdapter,
+        evaluate_agent_on_benchmark,
+    )
+
+    print(f"\n=== Testing with SmartMockAgent ===")
+    print(f"  Tasks:     {args.tasks}")
+    print(f"  Max steps: {args.max_steps}")
+    print()
+
+    # Create mock adapter and smart agent
+    adapter = WAAMockAdapter(num_tasks=args.tasks)
+    agent = SmartMockAgent()
+
+    # Run evaluation
+    results = evaluate_agent_on_benchmark(
+        agent=agent,
+        adapter=adapter,
+        max_steps=args.max_steps,
+    )
+
+    # Print results
+    success_count = sum(1 for r in results if r.success)
+    print("=== Results ===")
+    print(f"Success rate: {success_count}/{len(results)} ({100*success_count/len(results):.0f}%)")
+
+    if success_count != len(results):
+        print("\nWARNING: Expected 100% success with SmartMockAgent")
+        for r in results:
+            if not r.success:
+                print(f"  FAIL {r.task_id}: {r.reason}")
     print()
 
 
@@ -1683,6 +1735,80 @@ print(json.dumps(result))
         print(f"\nSummary saved to: {output_path}")
 
 
+def launch_benchmark_viewer(
+    vm_ip: str,
+    port: int = 8765,
+    open_browser: bool = True,
+    internal_ip: str = "172.30.0.2"
+) -> None:
+    """Launch the benchmark viewer for monitoring a running WAA benchmark.
+
+    This starts the local dashboard server with VM IP configuration and
+    optionally opens the browser to the benchmark viewer page.
+
+    Args:
+        vm_ip: IP address of the Azure VM running WAA
+        port: Port for local dashboard server (default: 8765)
+        open_browser: Whether to open browser automatically
+        internal_ip: Internal IP of Windows VM inside Docker
+    """
+    import subprocess
+    import os
+    import sys
+
+    print(f"\n=== Launching Benchmark Viewer ===\n")
+    print(f"  VM IP: {vm_ip}")
+    print(f"  Internal IP: {internal_ip}")
+    print(f"  Local port: {port}")
+    print(f"  Dashboard: http://localhost:{port}/benchmark.html")
+    print(f"  VNC available via button in viewer when VM is ready")
+    print()
+
+    # Set environment variables for the server to use
+    os.environ["WAA_VM_IP"] = vm_ip
+    os.environ["WAA_INTERNAL_IP"] = internal_ip
+
+    # Build the serve command - use --start-page to open benchmark.html
+    serve_cmd = [
+        sys.executable, "-m", "openadapt_ml.cloud.local", "serve",
+        "--port", str(port),
+        "--quiet",
+        "--start-page", "benchmark.html",
+    ]
+    if open_browser:
+        serve_cmd.append("--open")
+
+    print(f"  Press Ctrl+C to stop\n")
+
+    try:
+        # Run the server
+        subprocess.run(serve_cmd)
+    except KeyboardInterrupt:
+        print("\nViewer stopped")
+
+
+def cmd_viewer(args: argparse.Namespace) -> None:
+    """Launch benchmark viewer for monitoring a running VM.
+
+    Usage:
+        uv run python -m openadapt_ml.benchmarks.cli viewer --vm-ip 172.171.112.41
+
+    This starts the local server configured to poll the specified VM
+    for benchmark status and opens the browser.
+    """
+    vm_ip = args.vm_ip
+    port = getattr(args, 'port', 8765)
+    no_open = getattr(args, 'no_open', False)
+    internal_ip = getattr(args, 'internal_ip', '172.30.0.2')
+
+    launch_benchmark_viewer(
+        vm_ip=vm_ip,
+        port=port,
+        open_browser=not no_open,
+        internal_ip=internal_ip
+    )
+
+
 def cmd_vm(args: argparse.Namespace) -> None:
     """Manage dedicated WAA eval VM with nested virtualization support.
 
@@ -1934,53 +2060,137 @@ def cmd_vm(args: argparse.Namespace) -> None:
         print(f"  Run WAA with: uv run python -m openadapt_ml.benchmarks.cli vm ssh")
 
     elif args.action == "setup-waa":
-        # Comprehensive one-command WAA setup
+        from openadapt_ml.benchmarks.vm_monitor import VMPoolRegistry
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        # Comprehensive one-command WAA setup with multi-worker support
+        num_workers = getattr(args, 'workers', 1)
+
         print(f"\n{'='*60}")
         print("  WAA Benchmark Setup - Full Automation")
         print(f"{'='*60}\n")
         print("This will set up everything needed to run WAA benchmarks:")
-        print("  1. Create Azure VM with nested virtualization")
+        print("  1. Create Azure VM(s) with nested virtualization")
         print("  2. Install Docker with proper disk configuration")
         print("  3. Pull WAA Docker image from ACR")
         print("  4. Clone WindowsAgentArena repository")
         print("  5. Prepare Windows 11 VM image (~20 min download)")
+        if num_workers > 1:
+            print(f"\n  [Multi-worker mode: creating {num_workers} VMs in parallel]")
         print()
 
-        # Get VM IP or create VM
-        result = subprocess.run(
-            ["az", "vm", "show", "-d", "-g", resource_group, "-n", vm_name,
-             "--query", "publicIps", "-o", "tsv"],
-            capture_output=True, text=True
-        )
-
-        if result.returncode == 0 and result.stdout.strip():
-            ip = result.stdout.strip()
-            print(f"[✓] VM already exists: {ip}")
-        else:
-            print("[1/6] Creating Azure VM with nested virtualization...")
-            # Try multiple locations if needed
-            locations_to_try = [location, "westus2", "centralus", "eastus2"]
-            vm_created = False
+        def create_single_vm(worker_name: str, worker_location: str) -> tuple[str, str | None]:
+            """Create a single VM. Returns (name, ip) or (name, None) on failure."""
+            locations_to_try = [worker_location, "westus2", "centralus", "eastus2"]
             for loc in locations_to_try:
                 result = subprocess.run(
                     ["az", "vm", "create",
                      "--resource-group", resource_group,
-                     "--name", vm_name,
+                     "--name", worker_name,
                      "--location", loc,
                      "--image", "Ubuntu2204",
-                     "--size", "Standard_D4ds_v5",  # v5 series supports nested virt
+                     "--size", "Standard_D4ds_v5",
                      "--admin-username", "azureuser",
                      "--generate-ssh-keys",
-                     "--public-ip-sku", "Standard"],
+                     "--public-ip-sku", "Standard",
+                     "--no-wait" if num_workers > 1 else ""],
                     capture_output=True, text=True
                 )
                 if result.returncode == 0:
-                    import json as json_mod
-                    vm_info = json_mod.loads(result.stdout)
-                    ip = vm_info.get("publicIpAddress", "")
-                    print(f"  ✓ VM created in {loc}: {ip}")
-                    vm_created = True
-                    break
+                    if num_workers == 1:
+                        import json as json_mod
+                        vm_info = json_mod.loads(result.stdout)
+                        return (worker_name, vm_info.get("publicIpAddress", ""))
+                    else:
+                        return (worker_name, loc)  # Return location for async creation
+            return (worker_name, None)
+
+        def setup_single_vm(worker_name: str, ip: str, api_key: str) -> bool:
+            """Set up Docker and WAA on a single VM. Returns True on success."""
+            docker_cmds = [
+                "sudo apt-get update -qq",
+                "sudo apt-get install -y -qq docker.io",
+                "sudo systemctl start docker",
+                "sudo systemctl enable docker",
+                "sudo usermod -aG docker $USER",
+                "sudo systemctl stop docker",
+                "sudo mkdir -p /mnt/docker",
+                "echo '{\"data-root\": \"/mnt/docker\"}' | sudo tee /etc/docker/daemon.json",
+                "sudo systemctl start docker",
+            ]
+            result = subprocess.run(
+                ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=30",
+                 f"azureuser@{ip}", " && ".join(docker_cmds)],
+                capture_output=True, text=True
+            )
+            if result.returncode != 0:
+                return False
+
+            # Pull Windows image
+            subprocess.run(
+                ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
+                 "sudo docker pull dockurr/windows:latest 2>&1 | tail -5"],
+                capture_output=True, text=True, timeout=300
+            )
+
+            # Clone WAA repo
+            subprocess.run(
+                ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
+                 "cd ~ && git clone --depth 1 https://github.com/microsoft/WindowsAgentArena.git 2>/dev/null || echo 'Already cloned'"],
+                capture_output=True, text=True
+            )
+
+            # Create config
+            config_cmd = f'''cat > ~/WindowsAgentArena/config.json << 'EOF'
+{{
+    "OPENAI_API_KEY": "{api_key}",
+    "AZURE_API_KEY": "",
+    "AZURE_ENDPOINT": ""
+}}
+EOF'''
+            subprocess.run(
+                ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}", config_cmd],
+                capture_output=True, text=True
+            )
+            return True
+
+        # Handle single worker (backward compatible)
+        if num_workers == 1:
+            # Get VM IP or create VM
+            result = subprocess.run(
+                ["az", "vm", "show", "-d", "-g", resource_group, "-n", vm_name,
+                 "--query", "publicIps", "-o", "tsv"],
+                capture_output=True, text=True
+            )
+
+            if result.returncode == 0 and result.stdout.strip():
+                ip = result.stdout.strip()
+                print(f"[✓] VM already exists: {ip}")
+            else:
+                print("[1/6] Creating Azure VM with nested virtualization...")
+                # Try multiple locations if needed
+                locations_to_try = [location, "westus2", "centralus", "eastus2"]
+                vm_created = False
+                for loc in locations_to_try:
+                    result = subprocess.run(
+                        ["az", "vm", "create",
+                         "--resource-group", resource_group,
+                         "--name", vm_name,
+                         "--location", loc,
+                         "--image", "Ubuntu2204",
+                         "--size", "Standard_D4ds_v5",  # v5 series supports nested virt
+                         "--admin-username", "azureuser",
+                         "--generate-ssh-keys",
+                         "--public-ip-sku", "Standard"],
+                        capture_output=True, text=True
+                    )
+                    if result.returncode == 0:
+                        import json as json_mod
+                        vm_info = json_mod.loads(result.stdout)
+                        ip = vm_info.get("publicIpAddress", "")
+                        print(f"  ✓ VM created in {loc}: {ip}")
+                        vm_created = True
+                        break
                 else:
                     print(f"  • {loc}: unavailable, trying next...")
 
@@ -1988,88 +2198,180 @@ def cmd_vm(args: argparse.Namespace) -> None:
                 print("✗ Could not create VM in any region")
                 sys.exit(1)
 
-        print(f"\n[2/6] Installing Docker with /mnt storage (147GB)...")
-        docker_cmds = [
-            "sudo apt-get update -qq",
-            "sudo apt-get install -y -qq docker.io",
-            "sudo systemctl start docker",
-            "sudo systemctl enable docker",
-            "sudo usermod -aG docker $USER",
-            # Configure Docker to use larger /mnt disk
-            "sudo systemctl stop docker",
-            "sudo mkdir -p /mnt/docker",
-            "echo '{\"data-root\": \"/mnt/docker\"}' | sudo tee /etc/docker/daemon.json",
-            "sudo systemctl start docker",
-        ]
-        result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=30",
-             f"azureuser@{ip}", " && ".join(docker_cmds)],
-            capture_output=True, text=True
-        )
-        if result.returncode != 0:
-            print(f"  ⚠ Docker setup warning: {result.stderr[:200] if result.stderr else 'unknown'}")
-        else:
-            print("  ✓ Docker installed with /mnt storage")
+            print(f"\n[2/6] Installing Docker with /mnt storage (147GB)...")
+            docker_cmds = [
+                "sudo apt-get update -qq",
+                "sudo apt-get install -y -qq docker.io",
+                "sudo systemctl start docker",
+                "sudo systemctl enable docker",
+                "sudo usermod -aG docker $USER",
+                # Configure Docker to use larger /mnt disk
+                "sudo systemctl stop docker",
+                "sudo mkdir -p /mnt/docker",
+                "echo '{\"data-root\": \"/mnt/docker\"}' | sudo tee /etc/docker/daemon.json",
+                "sudo systemctl start docker",
+            ]
+            result = subprocess.run(
+                ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=30",
+                 f"azureuser@{ip}", " && ".join(docker_cmds)],
+                capture_output=True, text=True
+            )
+            if result.returncode != 0:
+                print(f"  ⚠ Docker setup warning: {result.stderr[:200] if result.stderr else 'unknown'}")
+            else:
+                print("  ✓ Docker installed with /mnt storage")
 
-        print(f"\n[3/6] Verifying nested virtualization...")
-        result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
-             "egrep -c '(vmx|svm)' /proc/cpuinfo"],
-            capture_output=True, text=True
-        )
-        cpu_count = result.stdout.strip()
-        if cpu_count and int(cpu_count) > 0:
-            print(f"  ✓ Nested virt supported ({cpu_count} CPUs with vmx/svm)")
-        else:
-            print("  ✗ Nested virtualization not supported - WAA won't work")
-            sys.exit(1)
+            print(f"\n[3/6] Verifying nested virtualization...")
+            result = subprocess.run(
+                ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
+                 "egrep -c '(vmx|svm)' /proc/cpuinfo"],
+                capture_output=True, text=True
+            )
+            cpu_count = result.stdout.strip()
+            if cpu_count and int(cpu_count) > 0:
+                print(f"  ✓ Nested virt supported ({cpu_count} CPUs with vmx/svm)")
+            else:
+                print("  ✗ Nested virtualization not supported - WAA won't work")
+                sys.exit(1)
 
-        print(f"\n[4/6] Pulling dockurr/windows image (for Windows VM)...")
-        # Use dockurr/windows directly - the ACR winarena image has broken dockur
-        result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
-             "sudo docker pull dockurr/windows:latest 2>&1 | tail -5"],
-            capture_output=True, text=True, timeout=300
-        )
-        if result.returncode != 0:
-            print(f"  ⚠ Image pull warning: {result.stderr[:100] if result.stderr else ''}")
-        print("  ✓ Windows image pulled")
+            print(f"\n[4/6] Pulling dockurr/windows image (for Windows VM)...")
+            # Use dockurr/windows directly - the ACR winarena image has broken dockur
+            result = subprocess.run(
+                ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
+                 "sudo docker pull dockurr/windows:latest 2>&1 | tail -5"],
+                capture_output=True, text=True, timeout=300
+            )
+            if result.returncode != 0:
+                print(f"  ⚠ Image pull warning: {result.stderr[:100] if result.stderr else ''}")
+            print("  ✓ Windows image pulled")
 
-        print(f"\n[5/6] Cloning WindowsAgentArena repository...")
-        result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
-             "cd ~ && git clone --depth 1 https://github.com/microsoft/WindowsAgentArena.git 2>/dev/null || echo 'Already cloned'"],
-            capture_output=True, text=True
-        )
-        print("  ✓ WAA repo cloned")
+            print(f"\n[5/6] Cloning WindowsAgentArena repository...")
+            result = subprocess.run(
+                ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
+                 "cd ~ && git clone --depth 1 https://github.com/microsoft/WindowsAgentArena.git 2>/dev/null || echo 'Already cloned'"],
+                capture_output=True, text=True
+            )
+            print("  ✓ WAA repo cloned")
 
-        print(f"\n[6/6] Creating WAA config file...")
-        api_key = args.api_key or settings.openai_api_key or ""
-        if not api_key:
-            print("  ⚠ No API key provided. Set with --api-key, OPENAI_API_KEY env var, or in .env file")
-            api_key = "placeholder-set-your-key"
+            print(f"\n[6/6] Creating WAA config file...")
+            api_key = args.api_key or settings.openai_api_key or ""
+            if not api_key:
+                print("  ⚠ No API key provided. Set with --api-key, OPENAI_API_KEY env var, or in .env file")
+                api_key = "placeholder-set-your-key"
 
-        config_cmd = f'''cat > ~/WindowsAgentArena/config.json << 'EOF'
+            config_cmd = f'''cat > ~/WindowsAgentArena/config.json << 'EOF'
 {{
     "OPENAI_API_KEY": "{api_key}",
     "AZURE_API_KEY": "",
     "AZURE_ENDPOINT": ""
 }}
 EOF'''
-        subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}", config_cmd],
-            capture_output=True, text=True
-        )
-        print("  ✓ Config created")
+            subprocess.run(
+                ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}", config_cmd],
+                capture_output=True, text=True
+            )
+            print("  ✓ Config created")
 
-        print(f"\n{'='*60}")
-        print("  WAA Setup Complete!")
-        print(f"{'='*60}")
-        print(f"\n  VM IP: {ip}")
-        print(f"\n  Next step: Prepare Windows image (one-time, ~20 min):")
-        print(f"    uv run python -m openadapt_ml.benchmarks.cli vm prepare-windows")
-        print(f"\n  Or run WAA directly (will auto-prepare on first run):")
-        print(f"    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5")
+            print(f"\n{'='*60}")
+            print("  WAA Setup Complete!")
+            print(f"{'='*60}")
+            print(f"\n  VM IP: {ip}")
+            print(f"\n  Next step: Prepare Windows image (one-time, ~20 min):")
+            print(f"    uv run python -m openadapt_ml.benchmarks.cli vm prepare-windows")
+            print(f"\n  Or run WAA directly (will auto-prepare on first run):")
+            print(f"    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5")
+
+        else:
+            # Multi-worker mode: create multiple VMs in parallel
+            print(f"[1/4] Creating {num_workers} Azure VMs in parallel...")
+            worker_names = [f"waa-worker-{i:02d}" for i in range(num_workers)]
+
+            created_vms = []
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = {executor.submit(create_single_vm, name, location): name
+                           for name in worker_names}
+                for future in as_completed(futures):
+                    name, result_loc = future.result()
+                    if result_loc:
+                        print(f"  ✓ {name}: creation started in {result_loc}")
+                        created_vms.append(name)
+                    else:
+                        print(f"  ✗ {name}: FAILED")
+
+            if not created_vms:
+                print("✗ Could not create any VMs")
+                sys.exit(1)
+
+            # Wait for VMs to be ready and get IPs
+            print(f"\n[2/4] Waiting for VMs to get public IPs...")
+            import time as time_mod
+            workers_with_ips = []
+            for _ in range(30):  # Wait up to 5 minutes
+                all_ready = True
+                for name in created_vms:
+                    if any(n == name for n, _ in workers_with_ips):
+                        continue  # Already got IP
+                    result = subprocess.run(
+                        ["az", "vm", "show", "-d", "-g", resource_group, "-n", name,
+                         "--query", "publicIps", "-o", "tsv"],
+                        capture_output=True, text=True
+                    )
+                    if result.stdout.strip():
+                        workers_with_ips.append((name, result.stdout.strip()))
+                        print(f"  ✓ {name}: {result.stdout.strip()}")
+                    else:
+                        all_ready = False
+
+                if len(workers_with_ips) == len(created_vms):
+                    break
+                time_mod.sleep(10)
+
+            if not workers_with_ips:
+                print("✗ No VMs got public IPs")
+                sys.exit(1)
+
+            # Set up Docker and WAA on each VM in parallel
+            api_key = args.api_key or settings.openai_api_key or ""
+            if not api_key:
+                print("  ⚠ No API key provided. Set with --api-key, OPENAI_API_KEY env var, or in .env file")
+                api_key = "placeholder-set-your-key"
+
+            print(f"\n[3/4] Setting up Docker and WAA on {len(workers_with_ips)} VMs...")
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = {executor.submit(setup_single_vm, name, ip, api_key): name
+                           for name, ip in workers_with_ips}
+                for future in as_completed(futures):
+                    name = futures[future]
+                    success = future.result()
+                    if success:
+                        print(f"  ✓ {name}: Docker + WAA configured")
+                    else:
+                        print(f"  ✗ {name}: Setup failed")
+
+            # Create pool registry
+            print(f"\n[4/4] Registering VM pool...")
+            registry = VMPoolRegistry()
+            pool = registry.create_pool(
+                workers=workers_with_ips,
+                resource_group=resource_group,
+                location=location,
+                vm_size="Standard_D4ds_v5"
+            )
+            print(f"  ✓ Pool {pool.pool_id} registered with {len(pool.workers)} workers")
+
+            print(f"\n{'='*60}")
+            print("  Multi-Worker WAA Setup Complete!")
+            print(f"{'='*60}")
+            print(f"\n  Workers: {len(workers_with_ips)}")
+            for name, ip in workers_with_ips:
+                print(f"    - {name}: {ip}")
+            print(f"\n  Next steps:")
+            print(f"    1. Check pool status:")
+            print(f"       uv run python -m openadapt_ml.benchmarks.cli vm pool-status")
+            print(f"    2. Prepare Windows on all workers (in parallel):")
+            print(f"       # TODO: implement prepare-windows --pool")
+            print(f"    3. Run parallel benchmark:")
+            print(f"       uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 30")
 
     elif args.action == "prepare-windows":
         print(f"\n=== Preparing Windows 11 VM for WAA (Fully Automated) ===\n")
@@ -2247,6 +2549,10 @@ cd ~/build-waa && docker build -t waa-auto:latest . 2>&1 | tail -10
             print("  Note: First-time Windows setup can take 15-20 minutes.")
 
     elif args.action == "run-waa":
+        import threading
+        import os
+        import webbrowser
+
         print(f"\n=== Running WAA Benchmark ===\n")
 
         # Get VM IP
@@ -2263,19 +2569,63 @@ cd ~/build-waa && docker build -t waa-auto:latest . 2>&1 | tail -10
         num_tasks = args.num_tasks
         model = getattr(args, 'model', 'gpt-4o')
         agent = getattr(args, 'agent', 'navi')
+        open_viewer = getattr(args, 'open', True)
+        port = getattr(args, 'port', 8765)
+        internal_ip = getattr(args, 'internal_ip', '172.30.0.2')
 
         print(f"  VM IP: {ip}")
         print(f"  Model: {model}")
         print(f"  Agent: {agent}")
         print(f"  Tasks: {num_tasks}")
         print(f"\n  Monitor Windows at: http://{ip}:8006")
-        print()
 
         # Get API key from args, settings, or environment (in priority order)
         api_key = args.api_key if hasattr(args, 'api_key') and args.api_key else (settings.openai_api_key or "")
         if not api_key:
             print("✗ No API key provided. Set with --api-key, OPENAI_API_KEY env var, or in .env file")
             sys.exit(1)
+
+        # Set environment variables for the server to use (for SSE endpoint)
+        os.environ["WAA_VM_IP"] = ip
+        os.environ["WAA_INTERNAL_IP"] = internal_ip
+
+        # Launch benchmark viewer in background if --open is set
+        server_process = None
+        if open_viewer:
+            print(f"\n  Launching benchmark viewer at http://localhost:{port}/benchmark.html")
+
+            def start_server():
+                import http.server
+                import socketserver
+
+                # Change to training_output directory
+                from openadapt_ml.cloud.local import get_current_output_dir, _regenerate_benchmark_viewer_if_available
+                serve_dir = get_current_output_dir()
+                if not serve_dir.exists():
+                    serve_dir.mkdir(parents=True)
+                # Regenerate benchmark viewer
+                _regenerate_benchmark_viewer_if_available(serve_dir)
+                os.chdir(serve_dir)
+
+                # Start server quietly
+                class QuietHandler(http.server.SimpleHTTPRequestHandler):
+                    def log_message(self, format, *log_args):
+                        pass  # Suppress logging
+
+                with socketserver.TCPServer(("", port), QuietHandler) as httpd:
+                    httpd.serve_forever()
+
+            server_thread = threading.Thread(target=start_server, daemon=True)
+            server_thread.start()
+
+            # Give server time to start
+            import time
+            time.sleep(1)
+
+            # Open browser
+            webbrowser.open(f"http://localhost:{port}/benchmark.html")
+
+        print()
 
         # Stop any existing container
         print("[1/2] Stopping any existing WAA container...")
@@ -2288,6 +2638,8 @@ cd ~/build-waa && docker build -t waa-auto:latest . 2>&1 | tail -10
         # Start WAA container with full benchmark run
         print("[2/2] Starting WAA benchmark (this will take a while)...")
         print(f"      Agent will run {num_tasks} tasks using {model}")
+        if open_viewer:
+            print(f"      Viewer running at: http://localhost:{port}/benchmark.html")
         print()
 
         # Use official WAA container with start-client true
@@ -2317,6 +2669,22 @@ cd ~/build-waa && docker build -t waa-auto:latest . 2>&1 | tail -10
             print(f"  To download: scp azureuser@{ip}:~/waa-results/* ./benchmark_results/")
         else:
             print(f"\n⚠ WAA run finished with issues (exit code: {result.returncode})")
+
+        # Auto-shutdown VM if --auto-shutdown flag is set
+        auto_shutdown = getattr(args, 'auto_shutdown', False)
+        if auto_shutdown:
+            print(f"\n=== Auto-shutdown: Deallocating VM to save costs ===\n")
+            deallocate_result = subprocess.run(
+                ["az", "vm", "deallocate", "-g", resource_group, "-n", vm_name, "--no-wait"],
+                capture_output=True, text=True
+            )
+            if deallocate_result.returncode == 0:
+                print(f"✓ VM '{vm_name}' deallocation initiated")
+                print(f"\n  Cost savings: Deallocated VMs do not incur compute charges.")
+                print(f"  Note: Storage costs still apply. Delete VM with 'vm delete' to stop all charges.")
+                print(f"  To restart: az vm start -g {resource_group} -n {vm_name}")
+            else:
+                print(f"✗ Failed to deallocate VM: {deallocate_result.stderr}")
 
     elif args.action == "fix-storage":
         print(f"\n=== Fix WAA Storage (Move to /mnt for More Space) ===\n")
@@ -2587,6 +2955,307 @@ ls -lh /mnt/waa-storage/
                 print(f"\n  To poll until ready, use: vm probe --wait")
                 print(f"  Check Windows at: http://{ip}:8006 (VNC)")
 
+    elif args.action == "pool-status":
+        from openadapt_ml.benchmarks.vm_monitor import VMPoolRegistry, VMMonitor, VMConfig
+
+        print(f"\n=== VM Pool Status ===\n")
+
+        registry = VMPoolRegistry()
+        pool = registry.get_pool()
+
+        if pool is None:
+            print("No active VM pool. Create one with: vm setup-waa --workers N")
+            sys.exit(0)
+
+        print(f"  Pool ID: {pool.pool_id}")
+        print(f"  Created: {pool.created_at}")
+        print(f"  Workers: {len(pool.workers)}")
+        print(f"  Tasks: {pool.completed_tasks}/{pool.total_tasks}")
+        print()
+
+        # Table header
+        print(f"{'Name':<15} {'IP':<16} {'Status':<12} {'WAA':<6} {'Tasks':<10}")
+        print("-" * 60)
+
+        for w in pool.workers:
+            waa_status = "Ready" if w.waa_ready else "---"
+            task_progress = f"{len(w.completed_tasks)}/{len(w.assigned_tasks)}"
+            print(f"{w.name:<15} {w.ip:<16} {w.status:<12} {waa_status:<6} {task_progress:<10}")
+
+        # Optionally probe each VM for live status
+        if getattr(args, 'wait', False):  # Reuse --wait flag for probing
+            print("\nProbing VMs for WAA readiness...")
+            for w in pool.workers:
+                monitor = VMMonitor(VMConfig(name=w.name, ssh_host=w.ip))
+                status = monitor.check_status()
+                ready = "READY" if status.waa_ready else "Not ready"
+                print(f"  {w.name}: {ready}")
+
+    elif args.action == "delete-pool":
+        from openadapt_ml.benchmarks.vm_monitor import VMPoolRegistry
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        registry = VMPoolRegistry()
+        pool = registry.get_pool()
+
+        if pool is None:
+            print("No active VM pool.")
+            sys.exit(0)
+
+        print(f"\n=== Deleting VM Pool: {pool.pool_id} ===\n")
+        print(f"This will delete {len(pool.workers)} VMs:")
+        for w in pool.workers:
+            print(f"  - {w.name} ({w.ip})")
+
+        if not getattr(args, 'yes', False):
+            confirm = input("\nType 'yes' to confirm: ")
+            if confirm.lower() != 'yes':
+                print("Aborted.")
+                sys.exit(0)
+
+        # Delete VMs in parallel
+        def delete_vm(name: str) -> tuple[str, bool, str]:
+            result = subprocess.run(
+                ["az", "vm", "delete", "-g", pool.resource_group, "-n", name, "--yes"],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                return (name, True, "deleted")
+            else:
+                return (name, False, result.stderr[:100])
+
+        print("\nDeleting VMs...")
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {executor.submit(delete_vm, w.name): w.name for w in pool.workers}
+            for future in as_completed(futures):
+                name, success, msg = future.result()
+                status = "✓ deleted" if success else f"✗ FAILED: {msg}"
+                print(f"  {name}: {status}")
+
+        # Delete registry
+        registry.delete_pool()
+        print("\n✓ Pool deleted.")
+
+    elif args.action == "cleanup-stale":
+        from datetime import datetime, timezone
+        import json
+
+        print(f"\n=== Cleanup Stale Azure Resources ===\n")
+        print(f"  Resource Group: {resource_group}")
+        print(f"  Workspace: openadapt-ml")
+        print(f"  Job threshold: {args.max_hours} hours")
+        print(f"  VM threshold: {args.vm_max_hours} hours")
+        print()
+
+        stale_jobs = []
+        stale_vms = []
+
+        # --- Find stale Azure ML jobs ---
+        print("Checking Azure ML jobs...")
+        result = subprocess.run(
+            [
+                "az", "ml", "job", "list",
+                "--resource-group", resource_group,
+                "--workspace-name", "openadapt-ml",
+                "-o", "json",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode == 0:
+            try:
+                jobs = json.loads(result.stdout)
+                now = datetime.now(timezone.utc)
+
+                for job in jobs:
+                    status = job.get("status", "").lower()
+                    # Only consider running/queued jobs
+                    if status not in ["running", "queued", "preparing", "starting"]:
+                        continue
+
+                    # Parse creation time
+                    creation_time_str = job.get("creation_context", {}).get("created_at")
+                    if not creation_time_str:
+                        continue
+
+                    # Parse ISO 8601 timestamp
+                    try:
+                        # Handle various datetime formats
+                        creation_time_str = creation_time_str.replace("Z", "+00:00")
+                        creation_time = datetime.fromisoformat(creation_time_str)
+                        if creation_time.tzinfo is None:
+                            creation_time = creation_time.replace(tzinfo=timezone.utc)
+
+                        duration_hours = (now - creation_time).total_seconds() / 3600
+
+                        if duration_hours > args.max_hours:
+                            stale_jobs.append({
+                                "name": job.get("name", "unknown"),
+                                "display_name": job.get("display_name", ""),
+                                "status": status,
+                                "duration_hours": duration_hours,
+                                "created_at": creation_time_str,
+                            })
+                    except (ValueError, TypeError):
+                        continue
+
+            except json.JSONDecodeError:
+                print(f"  Warning: Could not parse job list")
+        else:
+            print(f"  Warning: Could not list jobs: {result.stderr[:100]}")
+
+        # --- Find stale VMs ---
+        print("Checking Azure VMs...")
+        result = subprocess.run(
+            [
+                "az", "vm", "list", "-d",
+                "--resource-group", resource_group,
+                "-o", "json",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode == 0:
+            try:
+                vms = json.loads(result.stdout)
+                now = datetime.now(timezone.utc)
+
+                for vm in vms:
+                    power_state = vm.get("powerState", "").lower()
+                    # Only check running VMs
+                    if "running" not in power_state:
+                        continue
+
+                    vm_name = vm.get("name", "unknown")
+
+                    # Get VM instance view for start time
+                    instance_result = subprocess.run(
+                        [
+                            "az", "vm", "get-instance-view",
+                            "--resource-group", resource_group,
+                            "--name", vm_name,
+                            "-o", "json",
+                        ],
+                        capture_output=True,
+                        text=True,
+                    )
+
+                    if instance_result.returncode == 0:
+                        try:
+                            instance_view = json.loads(instance_result.stdout)
+                            # Look for VM start time in statuses
+                            statuses = instance_view.get("instanceView", {}).get("statuses", [])
+                            for status in statuses:
+                                if status.get("code", "").startswith("PowerState/running"):
+                                    start_time_str = status.get("time")
+                                    if start_time_str:
+                                        try:
+                                            start_time_str = start_time_str.replace("Z", "+00:00")
+                                            start_time = datetime.fromisoformat(start_time_str)
+                                            if start_time.tzinfo is None:
+                                                start_time = start_time.replace(tzinfo=timezone.utc)
+
+                                            duration_hours = (now - start_time).total_seconds() / 3600
+
+                                            if duration_hours > args.vm_max_hours:
+                                                stale_vms.append({
+                                                    "name": vm_name,
+                                                    "size": vm.get("hardwareProfile", {}).get("vmSize", "unknown"),
+                                                    "duration_hours": duration_hours,
+                                                    "public_ip": vm.get("publicIps", ""),
+                                                })
+                                        except (ValueError, TypeError):
+                                            pass
+                                    break
+                        except json.JSONDecodeError:
+                            pass
+
+            except json.JSONDecodeError:
+                print(f"  Warning: Could not parse VM list")
+        else:
+            print(f"  Warning: Could not list VMs: {result.stderr[:100]}")
+
+        # --- Display findings ---
+        print()
+
+        if not stale_jobs and not stale_vms:
+            print("No stale resources found.")
+            return
+
+        if stale_jobs:
+            print(f"=== Stale Azure ML Jobs ({len(stale_jobs)}) ===")
+            print(f"{'Name':<40} {'Status':<12} {'Duration':<12}")
+            print("-" * 64)
+            for job in stale_jobs:
+                duration_str = f"{job['duration_hours']:.1f}h"
+                name = job['name'][:38] + ".." if len(job['name']) > 40 else job['name']
+                print(f"{name:<40} {job['status']:<12} {duration_str:<12}")
+            print()
+
+        if stale_vms:
+            print(f"=== Stale VMs ({len(stale_vms)}) ===")
+            print(f"{'Name':<25} {'Size':<20} {'Duration':<12} {'IP':<16}")
+            print("-" * 75)
+            for vm in stale_vms:
+                duration_str = f"{vm['duration_hours']:.1f}h"
+                print(f"{vm['name']:<25} {vm['size']:<20} {duration_str:<12} {vm['public_ip']:<16}")
+            print()
+
+        # --- Confirmation ---
+        if not getattr(args, 'yes', False):
+            actions = []
+            if stale_jobs:
+                actions.append(f"cancel {len(stale_jobs)} job(s)")
+            if stale_vms:
+                actions.append(f"deallocate {len(stale_vms)} VM(s)")
+
+            confirm = input(f"This will {' and '.join(actions)}. Continue? (y/N): ")
+            if confirm.lower() != 'y':
+                print("Cancelled.")
+                return
+
+        # --- Cancel stale jobs ---
+        if stale_jobs:
+            print("\nCancelling stale jobs...")
+            for job in stale_jobs:
+                result = subprocess.run(
+                    [
+                        "az", "ml", "job", "cancel",
+                        "--name", job["name"],
+                        "--resource-group", resource_group,
+                        "--workspace-name", "openadapt-ml",
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode == 0:
+                    print(f"  Cancelled: {job['name']}")
+                else:
+                    print(f"  Failed to cancel {job['name']}: {result.stderr[:50]}")
+
+        # --- Deallocate stale VMs ---
+        if stale_vms:
+            print("\nDeallocating stale VMs...")
+            for vm in stale_vms:
+                result = subprocess.run(
+                    [
+                        "az", "vm", "deallocate",
+                        "--resource-group", resource_group,
+                        "--name", vm["name"],
+                        "--no-wait",
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode == 0:
+                    print(f"  Deallocating: {vm['name']} (running in background)")
+                else:
+                    print(f"  Failed to deallocate {vm['name']}: {result.stderr[:50]}")
+
+        print("\nCleanup complete.")
+
 
 def cmd_setup(args: argparse.Namespace) -> None:
     """Run full setup (Azure + WAA submodule)."""
@@ -2712,6 +3381,8 @@ Quick Start:
     p_azure.add_argument("--output", help="Output JSON path")
     p_azure.add_argument("--yes", "-y", action="store_true", help="Skip confirmation")
     p_azure.add_argument("--no-cleanup", action="store_true", help="Don't delete VMs after")
+    p_azure.add_argument("--timeout", type=float, default=4.0,
+                         help="Job timeout in hours (default: 4). Jobs are auto-canceled after this duration.")
     p_azure.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
 
     # Test mock
@@ -2719,6 +3390,11 @@ Quick Start:
     p_mock.add_argument("--tasks", type=int, default=20, help="Number of mock tasks")
     p_mock.add_argument("--max-steps", type=int, default=10, help="Max steps per task")
     p_mock.add_argument("--seed", type=int, default=42, help="Random seed")
+
+    # Test smart (SmartMockAgent - expected 100% success)
+    p_smart = subparsers.add_parser("test-smart", help="Test mock adapter with SmartMockAgent (expected 100%% success)")
+    p_smart.add_argument("--tasks", type=int, default=5, help="Number of mock tasks")
+    p_smart.add_argument("--max-steps", type=int, default=10, help="Max steps per task")
 
     # Test collection
     p_collection = subparsers.add_parser("test-collection", help="Test benchmark data collection")
@@ -2779,7 +3455,7 @@ Quick Start:
 
     # WAA eval VM management
     p_vm = subparsers.add_parser("vm", help="Manage dedicated WAA eval VM (with nested virtualization)")
-    p_vm.add_argument("action", choices=["create", "status", "ssh", "delete", "list-sizes", "setup", "pull-image", "setup-waa", "run-waa", "prepare-windows", "fix-storage", "reset-windows", "screenshot", "probe"], help="Action to perform")
+    p_vm.add_argument("action", choices=["create", "status", "ssh", "delete", "list-sizes", "setup", "pull-image", "setup-waa", "run-waa", "prepare-windows", "fix-storage", "reset-windows", "screenshot", "probe", "pool-status", "delete-pool", "cleanup-stale"], help="Action to perform")
     p_vm.add_argument("--resource-group", default="openadapt-agents", help="Azure resource group")
     p_vm.add_argument("--name", default="waa-eval-vm", help="VM name")
     p_vm.add_argument("--size", default="Standard_D4s_v3", help="VM size (must support nested virt)")
@@ -2790,11 +3466,30 @@ Quick Start:
     p_vm.add_argument("--num-tasks", type=int, default=5, help="Number of tasks to run (for run-waa)")
     p_vm.add_argument("--model", default="gpt-4o", help="Model to use (gpt-4o, gpt-5.2, etc.)")
     p_vm.add_argument("--agent", default="navi", help="Agent type (navi is the default WAA agent)")
+    # Multi-worker options
+    p_vm.add_argument("--workers", type=int, default=1, help="Number of worker VMs to create (for setup-waa)")
     # Probe options
     p_vm.add_argument("--wait", action="store_true", help="For probe: Poll until server is ready")
     p_vm.add_argument("--interval", type=int, default=20, help="For probe: Seconds between poll attempts")
     p_vm.add_argument("--max-attempts", type=int, default=30, help="For probe: Max poll attempts (default 30 = 10min)")
     p_vm.add_argument("--internal-ip", default="172.30.0.2", help="Internal IP of Windows VM (172.30.0.2 for waa-auto, 20.20.20.21 for official)")
+    p_vm.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompts")
+    # Viewer auto-launch options (for run-waa)
+    p_vm.add_argument("--open", action="store_true", default=True, help="Auto-open benchmark viewer (default: True)")
+    p_vm.add_argument("--no-open", action="store_false", dest="open", help="Disable auto-open of benchmark viewer")
+    p_vm.add_argument("--port", type=int, default=8765, help="Port for local dashboard server (default: 8765)")
+    # Auto-shutdown option (for run-waa)
+    p_vm.add_argument("--auto-shutdown", action="store_true", default=False, help="Deallocate VM after benchmark completes to save costs (for run-waa)")
+    # Cleanup-stale options
+    p_vm.add_argument("--max-hours", type=float, default=2.0, help="For cleanup-stale: cancel jobs running longer than this (default: 2 hours)")
+    p_vm.add_argument("--vm-max-hours", type=float, default=24.0, help="For cleanup-stale: deallocate VMs running longer than this (default: 24 hours)")
+
+    # Benchmark viewer subcommand - for monitoring already-running benchmarks
+    p_viewer = subparsers.add_parser("viewer", help="Launch benchmark viewer for monitoring a running VM")
+    p_viewer.add_argument("--vm-ip", required=True, help="IP address of the Azure VM to monitor")
+    p_viewer.add_argument("--port", type=int, default=8765, help="Port for local dashboard server (default: 8765)")
+    p_viewer.add_argument("--no-open", action="store_true", help="Don't auto-open browser")
+    p_viewer.add_argument("--internal-ip", default="172.30.0.2", help="Internal IP of Windows VM (default: 172.30.0.2)")
 
     args = parser.parse_args()
 
@@ -2816,6 +3511,8 @@ Quick Start:
         cmd_run_azure(args)
     elif args.command == "test-mock":
         cmd_test_mock(args)
+    elif args.command == "test-smart":
+        cmd_test_smart(args)
     elif args.command == "test-collection":
         cmd_test_collection(args)
     elif args.command == "run-api":
@@ -2832,6 +3529,8 @@ Quick Start:
         cmd_vm(args)
     elif args.command == "analyze":
         cmd_analyze(args)
+    elif args.command == "viewer":
+        cmd_viewer(args)
     else:
         parser.print_help()
 

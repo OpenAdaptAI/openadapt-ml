@@ -391,6 +391,56 @@ class RandomAgent(BenchmarkAgent):
         pass
 
 
+class SmartMockAgent(BenchmarkAgent):
+    """Agent designed to pass WAAMockAdapter evaluation.
+
+    Performs a fixed sequence of actions that satisfy the mock adapter's
+    success criteria. Use for validating the benchmark pipeline locally.
+
+    The mock adapter evaluates success based on:
+    - Clicking Submit (ID 4) - primary success path
+    - Typing something AND clicking OK (ID 1) - form submission path
+    - Calling DONE after at least 2 actions - reasonable completion
+
+    This agent clicks Submit (ID 4) which is the simplest success path.
+    """
+
+    def __init__(self):
+        """Initialize the agent."""
+        self._step = 0
+        # Simple action sequence: click Submit button (ID 4), then done
+        self._actions = [
+            BenchmarkAction(type="click", target_node_id="4"),  # Click Submit
+            BenchmarkAction(type="done"),
+        ]
+
+    def act(
+        self,
+        observation: BenchmarkObservation,
+        task: BenchmarkTask,
+        history: list[tuple[BenchmarkObservation, BenchmarkAction]] | None = None,
+    ) -> BenchmarkAction:
+        """Return the next scripted action.
+
+        Args:
+            observation: Ignored.
+            task: Ignored.
+            history: Ignored.
+
+        Returns:
+            Next action from script, or DONE if script exhausted.
+        """
+        if self._step < len(self._actions):
+            action = self._actions[self._step]
+            self._step += 1
+            return action
+        return BenchmarkAction(type="done")
+
+    def reset(self) -> None:
+        """Reset step counter."""
+        self._step = 0
+
+
 class APIBenchmarkAgent(BenchmarkAgent):
     """Agent that uses hosted VLM APIs (Claude, GPT-5.1) for benchmark evaluation.
 

@@ -54,6 +54,7 @@ from openadapt_ml.benchmarks.agent import (
     PolicyAgent,
     RandomAgent,
     ScriptedAgent,
+    SmartMockAgent,
 )
 from openadapt_ml.benchmarks.base import (
     BenchmarkAction,
@@ -97,6 +98,7 @@ __all__ = [
     "APIBenchmarkAgent",
     "ScriptedAgent",
     "RandomAgent",
+    "SmartMockAgent",
     # Evaluation
     "EvaluationConfig",
     "evaluate_agent_on_benchmark",

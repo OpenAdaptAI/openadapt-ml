@@ -355,6 +355,7 @@ class AzureMLClient:
         command: str,
         environment_variables: dict[str, str] | None = None,
         display_name: str | None = None,
+        timeout_hours: float = 4.0,
     ) -> str:
         """Submit a job to a compute instance.
 
@@ -363,6 +364,8 @@ class AzureMLClient:
             command: Command to run.
             environment_variables: Environment variables.
             display_name: Job display name.
+            timeout_hours: Maximum job duration in hours (default: 4). The job
+                will be automatically canceled after this duration.
 
         Returns:
             Job name/ID.
@@ -381,6 +384,10 @@ class AzureMLClient:
         timestamp = int(time.time())
         unique_id = str(uuid.uuid4())[:8]
         job_name = f"waa-{compute_name}-{timestamp}-{unique_id}"
+
+        # Convert hours to seconds for Azure ML timeout
+        timeout_seconds = int(timeout_hours * 3600)
+
         job = ml_command(
             command=command,
             environment=env,
@@ -388,10 +395,11 @@ class AzureMLClient:
             name=job_name,  # Unique job name for Azure ML
             display_name=display_name or f"waa-job-{compute_name}",
             environment_variables=environment_variables or {},
+            limits={"timeout": timeout_seconds},
         )
 
         submitted = self.client.jobs.create_or_update(job)
-        logger.info(f"Job submitted: {submitted.name}")
+        logger.info(f"Job submitted: {submitted.name} (timeout: {timeout_hours}h)")
         return submitted.name
 
     def wait_for_job(self, job_name: str, timeout_seconds: int = 3600) -> dict:
@@ -464,6 +472,7 @@ class AzureWAAOrchestrator:
         max_steps_per_task: int = 15,
         on_worker_complete: Callable[[WorkerState], None] | None = None,
         cleanup_on_complete: bool = True,
+        timeout_hours: float = 4.0,
     ) -> list[BenchmarkResult]:
         """Run evaluation across multiple Azure VMs.
 
@@ -474,6 +483,8 @@ class AzureWAAOrchestrator:
             max_steps_per_task: Maximum steps per task.
             on_worker_complete: Callback when a worker finishes.
             cleanup_on_complete: Whether to delete VMs after completion.
+            timeout_hours: Maximum job duration in hours (default: 4). Jobs are
+                auto-canceled after this duration to prevent runaway costs.
 
         Returns:
             List of BenchmarkResult for all tasks.
@@ -525,7 +536,7 @@ class AzureWAAOrchestrator:
 
             # Submit jobs to workers
             print(f"[3/4] Submitting evaluation jobs...")
-            self._submit_worker_jobs(workers, task_batches, agent, max_steps_per_task)
+            self._submit_worker_jobs(workers, task_batches, agent, max_steps_per_task, timeout_hours)
             print(f"      Jobs submitted")
 
             # Wait for completion and collect results
@@ -583,8 +594,17 @@ class AzureWAAOrchestrator:
         task_batches: list[list[BenchmarkTask]],
         agent: BenchmarkAgent,
         max_steps: int,
+        timeout_hours: float = 4.0,
     ) -> None:
-        """Submit evaluation jobs to workers."""
+        """Submit evaluation jobs to workers.
+
+        Args:
+            workers: List of worker states.
+            task_batches: Task batches for each worker.
+            agent: Agent to run.
+            max_steps: Maximum steps per task.
+            timeout_hours: Maximum job duration in hours.
+        """
         for worker, tasks in zip(workers, task_batches):
             if worker.status == "failed":
                 continue
@@ -597,7 +617,7 @@ class AzureWAAOrchestrator:
                 # Build command
                 command = self._build_worker_command(task_ids_json, max_steps, agent)
 
-                # Submit job
+                # Submit job with timeout
                 self.ml_client.submit_job(
                     compute_name=worker.compute_name,
                     command=command,
@@ -606,6 +626,7 @@ class AzureWAAOrchestrator:
                         "WAA_MAX_STEPS": str(max_steps),
                     },
                     display_name=f"waa-worker-{worker.worker_id}",
+                    timeout_hours=timeout_hours,
                 )
                 worker.status = "running"
                 worker.start_time = time.time()

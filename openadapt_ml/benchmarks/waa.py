@@ -565,6 +565,8 @@ class WAAMockAdapter(BenchmarkAdapter):
         self._current_task: BenchmarkTask | None = None
         self._step_count = 0
         self._temp_dir: Path | None = None
+        self._actions: list[BenchmarkAction] = []  # Track actions for evaluation
+        self._text_entered: str | None = None  # Track typed text
         self._generate_mock_tasks()
 
     @property
@@ -608,24 +610,79 @@ class WAAMockAdapter(BenchmarkAdapter):
     def reset(self, task: BenchmarkTask) -> BenchmarkObservation:
         self._current_task = task
         self._step_count = 0
+        self._actions = []  # Clear action history
+        self._text_entered = None
         return self._mock_observation()
 
     def step(
         self, action: BenchmarkAction
     ) -> tuple[BenchmarkObservation, bool, dict[str, Any]]:
         self._step_count += 1
+        self._actions.append(action)  # Track action for evaluation
+
+        # Track typed text
+        if action.type == "type" and action.text:
+            self._text_entered = action.text
+
         done = action.type == "done" or self._step_count >= 15
         return self._mock_observation(), done, {"step": self._step_count}
 
     def evaluate(self, task: BenchmarkTask) -> BenchmarkResult:
-        # Random success for testing
-        import random
-        success = random.random() < 0.2  # ~20% success rate like WAA SOTA
+        """Evaluate task based on actions taken.
+
+        Success criteria for mock tasks:
+        - Agent clicked the Submit button (ID 4) OR
+        - Agent typed text AND clicked OK (ID 1) OR
+        - Agent completed with DONE action after meaningful interaction
+
+        This provides deterministic evaluation based on actual agent behavior,
+        not random chance. The mock UI has:
+        - ID 1: OK button
+        - ID 2: Text input field
+        - ID 3: Cancel button
+        - ID 4: Submit button
+        """
+        # Check what actions were taken
+        clicked_ids = set()
+        typed_text = False
+        called_done = False
+
+        for action in self._actions:
+            if action.type == "click":
+                # Extract target node ID from action
+                target_id = getattr(action, "target_node_id", None)
+                if target_id:
+                    clicked_ids.add(str(target_id))
+            elif action.type == "type" and action.text:
+                typed_text = True
+            elif action.type == "done":
+                called_done = True
+
+        # Success criteria:
+        # 1. Clicked Submit (ID 4) - primary success path
+        # 2. Typed something AND clicked OK (ID 1) - form submission path
+        # 3. Called DONE after at least 2 actions - reasonable completion
+        clicked_submit = "4" in clicked_ids
+        clicked_ok = "1" in clicked_ids
+        form_submitted = typed_text and clicked_ok
+        reasonable_completion = called_done and len(self._actions) >= 2
+
+        success = clicked_submit or form_submitted or reasonable_completion
+
+        # Calculate partial credit score
+        score = 0.0
+        if success:
+            score = 1.0
+        elif typed_text or clicked_ids:
+            # Partial credit for taking meaningful actions
+            score = 0.3 + (0.1 * min(len(clicked_ids), 3)) + (0.2 if typed_text else 0.0)
+
         return BenchmarkResult(
             task_id=task.task_id,
             success=success,
-            score=1.0 if success else 0.0,
+            score=score,
             num_steps=self._step_count,
+            reason=f"clicked={list(clicked_ids)}, typed={typed_text}, done={called_done}",
         )
 
     def _mock_observation(self) -> BenchmarkObservation:

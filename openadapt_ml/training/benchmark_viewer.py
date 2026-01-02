@@ -290,7 +290,7 @@ def _get_background_tasks_panel_css() -> str:
 
 
 def _get_background_tasks_panel_html() -> str:
-    """Return HTML for background tasks panel with JS polling."""
+    """Return HTML for background tasks panel with JS polling and improved styling."""
     return '''
     <div class="tasks-panel" id="tasks-panel">
         <div class="tasks-header">
@@ -300,27 +300,119 @@ def _get_background_tasks_panel_html() -> str:
                 </svg>
                 Background Tasks
             </div>
-            <span class="tasks-refresh" id="tasks-refresh-time">Checking...</span>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <span class="tasks-refresh" id="tasks-refresh-time">Checking...</span>
+                <button class="refresh-btn" onclick="refreshBackgroundTasks()" title="Refresh tasks" id="tasks-refresh-btn" style="background: rgba(99, 102, 241, 0.2); border-color: rgba(99, 102, 241, 0.4);">
+                    <span class="refresh-icon">&#8635;</span>
+                    <span class="spinner" style="border-top-color: #6366f1;"></span>
+                    Refresh
+                </button>
+            </div>
         </div>
+
+        <!-- API Error Banner -->
+        <div class="api-error-banner" id="tasks-api-error" style="display: none;">
+            <span class="error-icon">!</span>
+            <span class="error-message" id="tasks-error-msg">Failed to fetch tasks</span>
+            <button class="retry-btn" onclick="refreshBackgroundTasks()">Retry</button>
+        </div>
+
+        <!-- Loading state -->
+        <div id="tasks-loading" style="display: none; text-align: center; padding: 30px;">
+            <div style="display: inline-block; width: 24px; height: 24px; border: 3px solid rgba(99,102,241,0.3); border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <div style="margin-top: 12px; color: var(--text-muted); font-size: 0.85rem;">Loading tasks...</div>
+        </div>
+
         <div id="tasks-list">
-            <div class="no-tasks">Checking for active tasks...</div>
+            <div class="no-tasks">
+                <div style="font-size: 2rem; margin-bottom: 12px; opacity: 0.5;">&#128203;</div>
+                Checking for active tasks...
+            </div>
         </div>
     </div>
 
     <script>
+        let isTasksRefreshing = false;
+        let tasksErrorCount = 0;
+
+        function setTasksLoadingState(loading) {
+            const loadingEl = document.getElementById('tasks-loading');
+            const listEl = document.getElementById('tasks-list');
+            const btn = document.getElementById('tasks-refresh-btn');
+
+            if (loading) {
+                loadingEl.style.display = 'block';
+                listEl.style.display = 'none';
+                if (btn) btn.classList.add('loading');
+            } else {
+                loadingEl.style.display = 'none';
+                listEl.style.display = 'block';
+                if (btn) btn.classList.remove('loading');
+            }
+        }
+
+        function showTasksError(msg) {
+            const errorEl = document.getElementById('tasks-api-error');
+            const errorMsgEl = document.getElementById('tasks-error-msg');
+            if (errorEl && errorMsgEl) {
+                errorMsgEl.textContent = msg;
+                errorEl.style.display = 'flex';
+            }
+        }
+
+        function hideTasksError() {
+            const errorEl = document.getElementById('tasks-api-error');
+            if (errorEl) errorEl.style.display = 'none';
+        }
+
+        async function refreshBackgroundTasks() {
+            if (isTasksRefreshing) return;
+            isTasksRefreshing = true;
+            setTasksLoadingState(true);
+            hideTasksError();
+
+            try {
+                const response = await fetch('/api/tasks?' + Date.now());
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                const tasks = await response.json();
+                if (tasks.error) throw new Error(tasks.error);
+
+                renderBackgroundTasks(tasks);
+                tasksErrorCount = 0;
+                document.getElementById('tasks-refresh-time').textContent =
+                    'Updated ' + new Date().toLocaleTimeString();
+            } catch (e) {
+                console.error('Tasks refresh failed:', e);
+                tasksErrorCount++;
+                showTasksError(e.message || 'Connection failed');
+            } finally {
+                isTasksRefreshing = false;
+                setTasksLoadingState(false);
+            }
+        }
+
         async function fetchBackgroundTasks() {
+            if (isTasksRefreshing) return;
+            if (tasksErrorCount >= 3) {
+                document.getElementById('tasks-refresh-time').textContent = 'Polling paused';
+                return;
+            }
+
             try {
                 const response = await fetch('/api/tasks?' + Date.now());
                 if (response.ok) {
                     const tasks = await response.json();
-                    renderBackgroundTasks(tasks);
-                    document.getElementById('tasks-refresh-time').textContent =
-                        'Updated ' + new Date().toLocaleTimeString();
+                    if (!tasks.error) {
+                        renderBackgroundTasks(tasks);
+                        hideTasksError();
+                        tasksErrorCount = 0;
+                        document.getElementById('tasks-refresh-time').textContent =
+                            'Updated ' + new Date().toLocaleTimeString();
+                    }
                 }
             } catch (e) {
                 console.log('Tasks API unavailable:', e);
-                document.getElementById('tasks-list').innerHTML =
-                    '<div class="no-tasks">Tasks API not available</div>';
+                tasksErrorCount++;
             }
         }
 
@@ -624,11 +716,51 @@ def _get_live_evaluation_panel_css() -> str:
             max-height: 400px;
             overflow-y: auto;
         }
+        /* SSE Connection Status Indicator */
+        .sse-connection-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            margin-left: 12px;
+        }
+        .sse-connection-status.connected {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+        }
+        .sse-connection-status.connecting {
+            background: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+        }
+        .sse-connection-status.disconnected {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+        .sse-connection-status.fallback {
+            background: rgba(156, 163, 175, 0.2);
+            color: #9ca3af;
+        }
+        .sse-connection-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+        .sse-connection-status.connecting .sse-connection-dot {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
     '''
 
 
 def _get_live_evaluation_panel_html() -> str:
-    """Return HTML for live evaluation panel with JS polling."""
+    """Return HTML for live evaluation panel with SSE and polling fallback."""
     return '''
     <div class="live-eval-panel" id="live-eval-panel">
         <div class="live-eval-header">
@@ -637,16 +769,239 @@ def _get_live_evaluation_panel_html() -> str:
                     <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
                 </svg>
                 Live Evaluation
+                <span class="sse-connection-status connecting" id="sse-status">
+                    <span class="sse-connection-dot"></span>
+                    <span id="sse-status-text">Connecting</span>
+                </span>
             </div>
-            <span class="live-eval-refresh" id="live-eval-refresh-time">Checking...</span>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <span class="live-eval-refresh" id="live-eval-refresh-time">Checking...</span>
+                <button class="refresh-btn" onclick="if(window.sseManager) { window.sseManager.disconnect(); window.sseManager.connect(); }" title="Reconnect to live updates" style="background: rgba(245, 158, 11, 0.2); border-color: rgba(245, 158, 11, 0.4);">
+                    <span class="refresh-icon">&#8635;</span>
+                    <span class="spinner" style="border-top-color: #f59e0b;"></span>
+                    Reconnect
+                </button>
+            </div>
         </div>
         <div id="live-eval-content">
-            <div class="live-eval-idle">No evaluation running</div>
+            <div class="live-eval-idle">
+                <div style="font-size: 2rem; margin-bottom: 12px; opacity: 0.5;">&#9889;</div>
+                No evaluation running
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 8px;">
+                    Start an evaluation to see real-time progress
+                </div>
+            </div>
         </div>
     </div>
 
     <script>
-        async function fetchLiveEvaluation() {
+        // SSE Manager for real-time benchmark updates
+        class BenchmarkSSEManager {
+            constructor() {
+                this.eventSource = null;
+                this.pollingInterval = null;
+                this.staleCheckInterval = null;  // Track stale connection check interval
+                this.usePolling = false;
+                this.reconnectAttempts = 0;
+                this.maxReconnectAttempts = 5;
+                this.reconnectDelay = 2000;
+                this.lastHeartbeat = Date.now();
+                this.state = {
+                    status: 'idle',
+                    tasks_completed: 0,
+                    total_tasks: 0,
+                    current_task: null,
+                    results: []
+                };
+            }
+
+            // Clear all intervals to prevent memory leaks
+            clearAllIntervals() {
+                if (this.pollingInterval) {
+                    clearInterval(this.pollingInterval);
+                    this.pollingInterval = null;
+                }
+                if (this.staleCheckInterval) {
+                    clearInterval(this.staleCheckInterval);
+                    this.staleCheckInterval = null;
+                }
+            }
+
+            connect() {
+                // Check if EventSource is supported
+                if (!window.EventSource) {
+                    console.log('SSE not supported, falling back to polling');
+                    this.startPolling();
+                    return;
+                }
+
+                // Clear any existing intervals before reconnecting
+                this.clearAllIntervals();
+
+                this.updateConnectionStatus('connecting');
+
+                try {
+                    this.eventSource = new EventSource('/api/benchmark-sse?interval=2');
+
+                    this.eventSource.addEventListener('connected', (e) => {
+                        console.log('SSE connected:', e.data);
+                        this.reconnectAttempts = 0;
+                        this.updateConnectionStatus('connected');
+                    });
+
+                    this.eventSource.addEventListener('status', (e) => {
+                        const data = JSON.parse(e.data);
+                        this.handleStatusEvent(data);
+                        this.updateTimestamp();
+                    });
+
+                    this.eventSource.addEventListener('progress', (e) => {
+                        const data = JSON.parse(e.data);
+                        this.handleProgressEvent(data);
+                        this.updateTimestamp();
+                    });
+
+                    this.eventSource.addEventListener('task_complete', (e) => {
+                        const data = JSON.parse(e.data);
+                        this.handleTaskCompleteEvent(data);
+                        this.updateTimestamp();
+                    });
+
+                    this.eventSource.addEventListener('heartbeat', (e) => {
+                        this.lastHeartbeat = Date.now();
+                        // Heartbeats keep connection alive, no UI update needed
+                    });
+
+                    this.eventSource.addEventListener('error', (e) => {
+                        const data = JSON.parse(e.data);
+                        console.error('SSE error event:', data);
+                    });
+
+                    this.eventSource.onerror = (e) => {
+                        console.error('SSE connection error:', e);
+                        this.handleConnectionError();
+                    };
+
+                    // Check for stale connection (no heartbeat in 60 seconds)
+                    // Store interval ID to clear on reconnect
+                    this.staleCheckInterval = setInterval(() => {
+                        if (this.eventSource && (Date.now() - this.lastHeartbeat > 60000)) {
+                            console.log('SSE connection stale, reconnecting...');
+                            this.reconnect();
+                        }
+                    }, 30000);
+
+                } catch (e) {
+                    console.error('SSE connection failed:', e);
+                    this.startPolling();
+                }
+            }
+
+            handleStatusEvent(data) {
+                this.state.vmStatus = data;
+                if (data.waa_ready) {
+                    this.state.status = 'ready';
+                }
+                this.render();
+            }
+
+            handleProgressEvent(data) {
+                this.state.status = 'running';
+                this.state.tasks_completed = data.tasks_completed;
+                this.state.total_tasks = data.total_tasks;
+                this.state.current_task = {
+                    task_id: data.current_task,
+                    instruction: `Task ${data.current_task}`,
+                    domain: 'waa'
+                };
+                this.render();
+            }
+
+            handleTaskCompleteEvent(data) {
+                this.state.results.push({
+                    task_id: data.task_id,
+                    success: data.success,
+                    score: data.score
+                });
+                this.render();
+            }
+
+            handleConnectionError() {
+                this.updateConnectionStatus('disconnected');
+
+                if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                    this.reconnectAttempts++;
+                    console.log(`SSE reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
+                    setTimeout(() => this.reconnect(), this.reconnectDelay * this.reconnectAttempts);
+                } else {
+                    console.log('Max SSE reconnect attempts reached, falling back to polling');
+                    this.startPolling();
+                }
+            }
+
+            reconnect() {
+                if (this.eventSource) {
+                    this.eventSource.close();
+                    this.eventSource = null;
+                }
+                this.connect();
+            }
+
+            startPolling() {
+                this.usePolling = true;
+                this.updateConnectionStatus('fallback');
+
+                if (this.eventSource) {
+                    this.eventSource.close();
+                    this.eventSource = null;
+                }
+
+                // Clear any existing intervals before starting new polling
+                this.clearAllIntervals();
+
+                // Use existing polling function
+                fetchLiveEvaluationPolling();
+                this.pollingInterval = setInterval(fetchLiveEvaluationPolling, 2000);
+            }
+
+            updateConnectionStatus(status) {
+                const el = document.getElementById('sse-status');
+                const textEl = document.getElementById('sse-status-text');
+                if (!el || !textEl) return;
+
+                el.className = 'sse-connection-status ' + status;
+                const statusText = {
+                    'connected': 'Live',
+                    'connecting': 'Connecting',
+                    'disconnected': 'Disconnected',
+                    'fallback': 'Polling'
+                };
+                textEl.textContent = statusText[status] || status;
+            }
+
+            updateTimestamp() {
+                const el = document.getElementById('live-eval-refresh-time');
+                if (el) {
+                    el.textContent = 'Updated ' + new Date().toLocaleTimeString();
+                }
+            }
+
+            render() {
+                renderLiveEvaluation(this.state);
+            }
+
+            disconnect() {
+                if (this.eventSource) {
+                    this.eventSource.close();
+                    this.eventSource = null;
+                }
+                // Clear all intervals using centralized cleanup
+                this.clearAllIntervals();
+            }
+        }
+
+        // Polling fallback function
+        async function fetchLiveEvaluationPolling() {
             try {
                 const response = await fetch('/api/benchmark-live?' + Date.now());
                 if (response.ok) {
@@ -728,6 +1083,16 @@ def _get_live_evaluation_panel_html() -> str:
                 `;
             }
 
+            // Show recent results summary
+            if (state.results && state.results.length > 0) {
+                const successCount = state.results.filter(r => r.success).length;
+                resultHtml += `
+                    <div class="live-eval-status" style="margin-top: 8px;">
+                        <small>Results: ${successCount}/${state.results.length} passed</small>
+                    </div>
+                `;
+            }
+
             container.innerHTML = statusHtml + stepsHtml + resultHtml;
         }
 
@@ -754,15 +1119,20 @@ def _get_live_evaluation_panel_html() -> str:
             return parts.join(' ');
         }
 
-        // Initial fetch and poll every 2 seconds
-        fetchLiveEvaluation();
-        setInterval(fetchLiveEvaluation, 2000);
+        // Initialize SSE manager and store on window for reconnect button
+        window.sseManager = new BenchmarkSSEManager();
+        window.sseManager.connect();
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (window.sseManager) window.sseManager.disconnect();
+        });
     </script>
     '''
 
 
 def _get_azure_jobs_panel_css() -> str:
-    """Return CSS for the Azure jobs status panel."""
+    """Return CSS for the Azure jobs status panel with color-coded status indicators."""
     return '''
         .azure-jobs-panel {
             background: linear-gradient(135deg, rgba(0, 120, 212, 0.15) 0%, rgba(0, 120, 212, 0.05) 100%);
@@ -789,52 +1159,147 @@ def _get_azure_jobs_panel_css() -> str:
             width: 20px;
             height: 20px;
         }
+        .azure-jobs-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
         .azure-jobs-refresh {
             font-size: 0.75rem;
             color: var(--text-muted);
+            transition: color 0.2s;
         }
+        .azure-jobs-refresh.error {
+            color: #ef4444;
+        }
+        .azure-jobs-refresh.success {
+            color: #10b981;
+        }
+        /* API Error Banner */
+        .api-error-banner {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(239, 68, 68, 0.1) 100%);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            display: none;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.85rem;
+            color: #fca5a5;
+        }
+        .api-error-banner.show {
+            display: flex;
+        }
+        .api-error-banner .error-icon {
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+        .api-error-banner .error-message {
+            flex: 1;
+        }
+        .api-error-banner .retry-btn {
+            padding: 4px 10px;
+            background: rgba(239, 68, 68, 0.3);
+            border: 1px solid rgba(239, 68, 68, 0.5);
+            border-radius: 4px;
+            color: #fca5a5;
+            cursor: pointer;
+            font-size: 0.75rem;
+            transition: background 0.2s;
+        }
+        .api-error-banner .retry-btn:hover {
+            background: rgba(239, 68, 68, 0.4);
+        }
+        /* Job items with color-coded borders */
         .azure-job-item {
             display: flex;
             align-items: center;
             gap: 16px;
-            padding: 12px 16px;
+            padding: 14px 18px;
             background: rgba(0, 0, 0, 0.3);
             border-radius: 8px;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid transparent;
+            transition: all 0.2s ease;
         }
         .azure-job-item:last-child {
             margin-bottom: 0;
+        }
+        .azure-job-item:hover {
+            background: rgba(0, 0, 0, 0.4);
+        }
+        /* Color-coded left border based on status - Running=Yellow, Completed=Green, Failed=Red */
+        .azure-job-item.status-running {
+            border-left-color: #f59e0b;
+            background: linear-gradient(90deg, rgba(245, 158, 11, 0.1) 0%, rgba(0, 0, 0, 0.3) 20%);
+        }
+        .azure-job-item.status-completed {
+            border-left-color: #10b981;
+            background: linear-gradient(90deg, rgba(16, 185, 129, 0.1) 0%, rgba(0, 0, 0, 0.3) 20%);
+        }
+        .azure-job-item.status-failed,
+        .azure-job-item.status-canceled {
+            border-left-color: #ef4444;
+            background: linear-gradient(90deg, rgba(239, 68, 68, 0.1) 0%, rgba(0, 0, 0, 0.3) 20%);
+        }
+        .azure-job-item.status-provisioning,
+        .azure-job-item.status-preparing,
+        .azure-job-item.status-queued,
+        .azure-job-item.status-starting {
+            border-left-color: #3b82f6;
+            background: linear-gradient(90deg, rgba(59, 130, 246, 0.1) 0%, rgba(0, 0, 0, 0.3) 20%);
         }
         .azure-job-status {
             display: flex;
             align-items: center;
             gap: 8px;
-            min-width: 120px;
+            min-width: 130px;
         }
         .status-dot {
             width: 10px;
             height: 10px;
             border-radius: 50%;
-            animation: pulse 2s infinite;
+            flex-shrink: 0;
         }
-        .status-dot.provisioning {
-            background: #f59e0b;
+        .status-dot.provisioning,
+        .status-dot.preparing,
+        .status-dot.queued,
+        .status-dot.starting {
+            background: #3b82f6;
+            animation: pulse-status 2s infinite;
         }
         .status-dot.running {
-            background: #3b82f6;
+            background: #f59e0b;
+            animation: pulse-status 1.5s infinite;
         }
         .status-dot.completed {
             background: #10b981;
             animation: none;
         }
-        .status-dot.failed {
+        .status-dot.failed,
+        .status-dot.canceled {
             background: #ef4444;
             animation: none;
         }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+        .status-dot.unknown {
+            background: #6b7280;
+            animation: none;
         }
+        @keyframes pulse-status {
+            0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 currentColor; }
+            50% { opacity: 0.6; transform: scale(0.9); }
+        }
+        .status-text {
+            font-weight: 600;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .status-text.running { color: #f59e0b; }
+        .status-text.completed { color: #10b981; }
+        .status-text.failed, .status-text.canceled { color: #ef4444; }
+        .status-text.provisioning, .status-text.preparing, .status-text.queued, .status-text.starting { color: #3b82f6; }
         .azure-job-info {
             flex: 1;
             min-width: 0;
@@ -843,17 +1308,26 @@ def _get_azure_jobs_panel_css() -> str:
             font-family: "SF Mono", Monaco, monospace;
             font-size: 0.85rem;
             color: var(--text-primary);
+            font-weight: 500;
         }
         .azure-job-meta {
             font-size: 0.75rem;
             color: var(--text-secondary);
-            margin-top: 2px;
+            margin-top: 4px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .azure-job-meta-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
         }
         .azure-job-link {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            padding: 6px 12px;
+            padding: 8px 14px;
             background: #0078d4;
             color: white;
             border-radius: 6px;
@@ -865,18 +1339,69 @@ def _get_azure_jobs_panel_css() -> str:
         .azure-job-link:hover {
             background: #106ebe;
             transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 120, 212, 0.3);
         }
         .no-jobs {
             text-align: center;
-            padding: 20px;
+            padding: 30px 20px;
             color: var(--text-muted);
             font-size: 0.9rem;
+        }
+        .no-jobs code {
+            display: block;
+            margin-top: 12px;
+            padding: 10px 14px;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 6px;
+            font-family: "SF Mono", Monaco, monospace;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+        /* Refresh button with loading spinner */
+        .refresh-btn {
+            background: rgba(0, 120, 212, 0.2);
+            border: 1px solid rgba(0, 120, 212, 0.4);
+            border-radius: 6px;
+            color: var(--text-primary);
+            cursor: pointer;
+            padding: 6px 12px;
+            font-size: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+        }
+        .refresh-btn:hover:not(:disabled) {
+            background: rgba(0, 120, 212, 0.3);
+            transform: translateY(-1px);
+        }
+        .refresh-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .refresh-btn .spinner {
+            display: none;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: #0078d4;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        .refresh-btn.loading .spinner {
+            display: inline-block;
+        }
+        .refresh-btn.loading .refresh-icon {
+            display: none;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
     '''
 
 
 def _get_azure_jobs_panel_html() -> str:
-    """Return HTML for the Azure jobs status panel with JS polling."""
+    """Return HTML for the Azure jobs status panel with JS polling, error handling, and loading states."""
     return '''
     <div class="azure-jobs-panel" id="azure-jobs-panel">
         <div class="azure-jobs-header">
@@ -884,85 +1409,213 @@ def _get_azure_jobs_panel_html() -> str:
                 <svg viewBox="0 0 24 24" fill="currentColor">
                     <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
                 </svg>
-                Azure Jobs
+                Azure ML Jobs
             </div>
-            <span class="azure-jobs-refresh" id="jobs-refresh-time">Checking...</span>
+            <div class="azure-jobs-controls">
+                <span class="azure-jobs-refresh" id="jobs-refresh-time">Checking...</span>
+                <button id="azure-jobs-refresh-btn" class="refresh-btn" onclick="refreshAzureJobs()" title="Refresh job status from Azure">
+                    <span class="refresh-icon">&#8635;</span>
+                    <span class="spinner"></span>
+                    Refresh
+                </button>
+            </div>
         </div>
+
+        <!-- API Error Banner (hidden by default) -->
+        <div class="api-error-banner" id="azure-jobs-error">
+            <span class="error-icon">!</span>
+            <span class="error-message" id="azure-jobs-error-msg">Failed to fetch Azure jobs</span>
+            <button class="retry-btn" onclick="refreshAzureJobs()">Retry</button>
+        </div>
+
+        <!-- Loading state -->
+        <div id="azure-jobs-loading" style="display: none; text-align: center; padding: 30px;">
+            <div style="display: inline-block; width: 24px; height: 24px; border: 3px solid rgba(0,120,212,0.3); border-top-color: #0078d4; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <div style="margin-top: 12px; color: var(--text-muted); font-size: 0.85rem;">Loading Azure jobs...</div>
+        </div>
+
         <div id="azure-jobs-list">
-            <div class="no-jobs">Loading Azure job status...</div>
+            <div class="no-jobs">
+                <div style="font-size: 2rem; margin-bottom: 12px; opacity: 0.5;">&#9729;</div>
+                Checking Azure ML for jobs...
+            </div>
         </div>
+
         <button id="toggle-logs-btn" onclick="toggleLogs()" style="
             margin-top: 12px;
-            padding: 6px 12px;
+            padding: 8px 14px;
             background: rgba(0, 120, 212, 0.2);
             border: 1px solid rgba(0, 120, 212, 0.4);
-            border-radius: 4px;
+            border-radius: 6px;
             color: var(--text-primary);
             cursor: pointer;
             font-size: 0.8rem;
-        ">Show Logs</button>
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+        ">
+            <span id="logs-icon">&#9660;</span>
+            <span id="logs-btn-text">Show Logs</span>
+        </button>
         <div id="job-logs-panel" style="display: none; margin-top: 12px;">
             <div id="log-job-status" style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 6px;"></div>
             <pre id="job-logs-content" style="
                 background: #1a1a1a;
-                color: #00ff00;
-                padding: 12px;
-                border-radius: 4px;
-                font-size: 0.7rem;
+                color: #10b981;
+                padding: 14px;
+                border-radius: 6px;
+                font-size: 0.75rem;
                 max-height: 300px;
                 overflow-y: auto;
                 white-space: pre-wrap;
                 word-wrap: break-word;
-            ">Click to load logs...</pre>
+                font-family: 'SF Mono', Monaco, monospace;
+                border: 1px solid rgba(255,255,255,0.1);
+            ">Loading logs...</pre>
         </div>
     </div>
 
     <script>
-        // Fetch LIVE Azure job status from API
-        async function fetchAzureJobs() {
+        // Track refresh state
+        let isAzureJobsRefreshing = false;
+        let azureJobsErrorCount = 0;
+
+        // Show/hide loading state and error banner
+        function setAzureJobsState(state, errorMsg = '') {
+            const loadingEl = document.getElementById('azure-jobs-loading');
+            const listEl = document.getElementById('azure-jobs-list');
+            const errorEl = document.getElementById('azure-jobs-error');
+            const errorMsgEl = document.getElementById('azure-jobs-error-msg');
+            const refreshTimeEl = document.getElementById('jobs-refresh-time');
+            const refreshBtn = document.getElementById('azure-jobs-refresh-btn');
+
+            // Reset states
+            loadingEl.style.display = 'none';
+            errorEl.classList.remove('show');
+
+            if (state === 'loading') {
+                loadingEl.style.display = 'block';
+                listEl.style.display = 'none';
+                refreshBtn.classList.add('loading');
+                refreshBtn.disabled = true;
+            } else if (state === 'error') {
+                listEl.style.display = 'block';
+                errorEl.classList.add('show');
+                errorMsgEl.textContent = errorMsg || 'Failed to fetch Azure jobs. Check Azure CLI login.';
+                refreshTimeEl.textContent = 'Error';
+                refreshTimeEl.classList.add('error');
+                refreshTimeEl.classList.remove('success');
+                refreshBtn.classList.remove('loading');
+                refreshBtn.disabled = false;
+            } else if (state === 'success') {
+                listEl.style.display = 'block';
+                refreshTimeEl.classList.remove('error');
+                refreshTimeEl.classList.add('success');
+                refreshBtn.classList.remove('loading');
+                refreshBtn.disabled = false;
+                azureJobsErrorCount = 0;  // Reset error count on success
+            } else {
+                listEl.style.display = 'block';
+                refreshBtn.classList.remove('loading');
+                refreshBtn.disabled = false;
+            }
+        }
+
+        // Force refresh from Azure (bypasses cache)
+        async function refreshAzureJobs() {
+            if (isAzureJobsRefreshing) return;
+            isAzureJobsRefreshing = true;
+            setAzureJobsState('loading');
+            document.getElementById('jobs-refresh-time').textContent = 'Refreshing...';
+
             try {
-                // First try live API endpoint
-                const response = await fetch('/api/azure-jobs?' + Date.now());
-                if (response.ok) {
-                    const jobs = await response.json();
-                    if (!jobs.error) {
-                        renderAzureJobs(jobs, true);  // isLive=true
+                const response = await fetch('/api/azure-jobs?force=true&t=' + Date.now());
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const jobs = await response.json();
+                if (jobs.error) {
+                    throw new Error(jobs.error);
+                }
+                renderAzureJobs(jobs, true);
+                setAzureJobsState('success');
+                document.getElementById('jobs-refresh-time').textContent =
+                    'Live from Azure - ' + new Date().toLocaleTimeString();
+            } catch (e) {
+                console.error('Azure jobs refresh failed:', e);
+                azureJobsErrorCount++;
+                setAzureJobsState('error', e.message || 'Connection failed');
+            } finally {
+                isAzureJobsRefreshing = false;
+            }
+        }
+
+        // Fetch Azure job status from API (normal polling)
+        async function fetchAzureJobs() {
+            if (isAzureJobsRefreshing) return;
+
+            // If we've had multiple errors, slow down polling
+            if (azureJobsErrorCount >= 3) {
+                document.getElementById('jobs-refresh-time').textContent =
+                    'Polling paused (too many errors). Click Refresh.';
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/azure-jobs?t=' + Date.now());
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const jobs = await response.json();
+                if (jobs.error) {
+                    throw new Error(jobs.error);
+                }
+                renderAzureJobs(jobs, true);
+                setAzureJobsState('success');
+                document.getElementById('jobs-refresh-time').textContent =
+                    'Live - ' + new Date().toLocaleTimeString();
+            } catch (e) {
+                console.log('Azure API error:', e);
+                azureJobsErrorCount++;
+
+                // Try cached fallback
+                try {
+                    const fallbackResponse = await fetch('benchmark_results/azure_jobs.json?t=' + Date.now());
+                    if (fallbackResponse.ok) {
+                        const jobs = await fallbackResponse.json();
+                        renderAzureJobs(jobs, false);
                         document.getElementById('jobs-refresh-time').textContent =
-                            'Live from Azure • ' + new Date().toLocaleTimeString();
+                            'Cached - ' + new Date().toLocaleTimeString();
+                        document.getElementById('jobs-refresh-time').classList.remove('error');
                         return;
                     }
+                } catch (fallbackError) {
+                    // Fallback also failed
                 }
-            } catch (e) {
-                console.log('Live Azure API unavailable, falling back to cached:', e);
-            }
 
-            // Fallback to cached file
-            try {
-                const response = await fetch('benchmark_results/azure_jobs.json?' + Date.now());
-                if (response.ok) {
-                    const jobs = await response.json();
-                    renderAzureJobs(jobs, false);  // isLive=false
-                    document.getElementById('jobs-refresh-time').textContent =
-                        'Cached • ' + new Date().toLocaleTimeString();
-                    return;
-                }
-            } catch (e) {
-                console.log('Cached file also unavailable:', e);
+                // Show empty state with guidance
+                document.getElementById('azure-jobs-list').innerHTML =
+                    '<div class="no-jobs">' +
+                    '<div style="font-size: 2rem; margin-bottom: 12px; opacity: 0.5;">&#9729;</div>' +
+                    'No Azure jobs found<code>uv run python -m openadapt_ml.benchmarks.cli run-azure</code>' +
+                    '</div>';
             }
-
-            document.getElementById('azure-jobs-list').innerHTML =
-                '<div class="no-jobs">No Azure jobs found. Run: <code>uv run python -m openadapt_ml.benchmarks.cli run-azure</code></div>';
         }
 
         function renderAzureJobs(jobs, isLive) {
             if (!jobs || jobs.length === 0) {
                 document.getElementById('azure-jobs-list').innerHTML =
-                    '<div class="no-jobs">No Azure jobs found. Run: <code>uv run python -m openadapt_ml.benchmarks.cli run-azure</code></div>';
+                    '<div class="no-jobs">' +
+                    '<div style="font-size: 2rem; margin-bottom: 12px; opacity: 0.5;">&#9729;</div>' +
+                    'No Azure jobs found<code>uv run python -m openadapt_ml.benchmarks.cli run-azure</code>' +
+                    '</div>';
                 return;
             }
 
             const html = jobs.slice(0, 5).map(job => {
-                const statusClass = job.status || 'unknown';
+                const status = (job.status || 'unknown').toLowerCase();
+                const statusClass = status;
                 let statusText = job.status ? job.status.charAt(0).toUpperCase() + job.status.slice(1) : 'Unknown';
 
                 // Show display_name if available (live data), otherwise job_id
@@ -975,49 +1628,51 @@ def _get_azure_jobs_panel_html() -> str:
                 if (job.started_at) {
                     const start = new Date(job.started_at);
                     elapsedMins = (Date.now() - start.getTime()) / 60000;
-                    if (job.status === 'running') {
+                    if (status === 'running') {
                         elapsedText = elapsedMins < 60
                             ? Math.round(elapsedMins) + 'm'
                             : Math.round(elapsedMins / 60) + 'h ' + Math.round(elapsedMins % 60) + 'm';
-                        // Warn if running > 30 mins (WAA tasks typically take 5-10 mins each)
+                        // Warn if running > 30 mins
                         if (elapsedMins > 30) {
                             isStuck = true;
-                            statusText += ' ⚠️';
                         }
                     }
                 }
 
-                // Build metadata
-                const meta = [];
-                if (elapsedText && job.status === 'running') meta.push(elapsedText);
-                if (!isLive && job.num_tasks) meta.push('~' + job.num_tasks + ' tasks');
-                if (!isLive && job.workers) meta.push('~' + job.workers + ' workers');
+                // Build metadata items
+                const metaItems = [];
+                if (elapsedText && status === 'running') {
+                    metaItems.push('<span class="azure-job-meta-item">&#128337; ' + elapsedText + '</span>');
+                }
+                if (!isLive && job.num_tasks) {
+                    metaItems.push('<span class="azure-job-meta-item">~' + job.num_tasks + ' tasks</span>');
+                }
                 if (job.results?.success_rate !== undefined) {
-                    meta.push((job.results.success_rate * 100).toFixed(1) + '% success');
+                    metaItems.push('<span class="azure-job-meta-item">' + (job.results.success_rate * 100).toFixed(1) + '% success</span>');
                 }
-                if (job.started_at && job.status !== 'running') {
+                if (job.started_at && status !== 'running') {
                     const date = new Date(job.started_at);
-                    meta.push(date.toLocaleString());
+                    metaItems.push('<span class="azure-job-meta-item">' + date.toLocaleString() + '</span>');
                 }
-                const metaText = meta.join(' • ');
+                const metaHtml = metaItems.join('');
 
                 // Add warning for stuck jobs
                 const stuckWarning = isStuck
-                    ? '<div style="color: #ff9800; font-size: 0.7rem; margin-top: 4px;">⚠️ Running > 30min. May be stuck. Consider canceling.</div>'
+                    ? '<div style="color: #ff9800; font-size: 0.7rem; margin-top: 6px; display: flex; align-items: center; gap: 4px;"><span>&#9888;</span> Running > 30min. May be stuck. Consider canceling.</div>'
                     : '';
 
-                return '<div class="azure-job-item" style="' + (isStuck ? 'border-color: #ff9800;' : '') + '">' +
+                return '<div class="azure-job-item status-' + statusClass + '">' +
                     '<div class="azure-job-status">' +
                         '<span class="status-dot ' + statusClass + '"></span>' +
-                        '<span>' + statusText + '</span>' +
+                        '<span class="status-text ' + statusClass + '">' + statusText + '</span>' +
                     '</div>' +
                     '<div class="azure-job-info">' +
                         '<div class="azure-job-id">' + displayName + '</div>' +
-                        '<div class="azure-job-meta">' + metaText + '</div>' +
+                        '<div class="azure-job-meta">' + metaHtml + '</div>' +
                         stuckWarning +
                     '</div>' +
-                    '<a href="' + job.azure_dashboard_url + '" target="_blank" class="azure-job-link">' +
-                        'Open in Azure →' +
+                    '<a href="' + (job.azure_dashboard_url || '#') + '" target="_blank" class="azure-job-link">' +
+                        'Open in Azure &#8594;' +
                     '</a>' +
                 '</div>';
             }).join('');
@@ -1032,6 +1687,9 @@ def _get_azure_jobs_panel_html() -> str:
         async function fetchJobLogs() {
             if (!showLogs) return;
 
+            const logEl = document.getElementById('job-logs-content');
+            const statusEl = document.getElementById('log-job-status');
+
             try {
                 const url = currentLogJobId
                     ? '/api/azure-job-logs?job_id=' + currentLogJobId
@@ -1039,46 +1697,56 @@ def _get_azure_jobs_panel_html() -> str:
                 const response = await fetch(url + '&t=' + Date.now());
                 if (response.ok) {
                     const data = await response.json();
-                    const logEl = document.getElementById('job-logs-content');
                     if (logEl) {
                         logEl.textContent = data.logs || 'No logs available';
                         if (data.command) {
                             logEl.textContent = 'Command: ' + data.command + '\\n\\n' + (data.logs || '');
                         }
+                        // Color code based on status
+                        logEl.style.color = data.status === 'running' ? '#f59e0b' :
+                                           data.status === 'completed' ? '#10b981' :
+                                           data.status === 'failed' ? '#ef4444' : '#10b981';
                     }
-                    const statusEl = document.getElementById('log-job-status');
                     if (statusEl && data.job_id) {
-                        statusEl.textContent = data.job_id + ' (' + data.status + ')';
+                        statusEl.textContent = 'Job: ' + data.job_id + ' (' + data.status + ')';
                     }
+                } else {
+                    if (logEl) logEl.textContent = 'Failed to fetch logs (HTTP ' + response.status + ')';
                 }
             } catch (e) {
                 console.log('Error fetching logs:', e);
+                if (logEl) logEl.textContent = 'Error fetching logs: ' + e.message;
             }
         }
 
         function toggleLogs() {
             showLogs = !showLogs;
             const panel = document.getElementById('job-logs-panel');
-            const btn = document.getElementById('toggle-logs-btn');
+            const icon = document.getElementById('logs-icon');
+            const btnText = document.getElementById('logs-btn-text');
+
             if (panel) {
                 panel.style.display = showLogs ? 'block' : 'none';
             }
-            if (btn) {
-                btn.textContent = showLogs ? 'Hide Logs' : 'Show Logs';
+            if (icon) {
+                icon.innerHTML = showLogs ? '&#9650;' : '&#9660;';
+            }
+            if (btnText) {
+                btnText.textContent = showLogs ? 'Hide Logs' : 'Show Logs';
             }
             if (showLogs) fetchJobLogs();
         }
 
-        // Initial fetch and poll every 10 seconds
+        // Initial fetch and poll every 30 seconds (use Refresh button for immediate updates)
         fetchAzureJobs();
-        setInterval(fetchAzureJobs, 10000);
+        setInterval(fetchAzureJobs, 30000);
         setInterval(fetchJobLogs, 5000);  // Poll logs every 5 seconds
     </script>
     '''
 
 
 def _get_vm_discovery_panel_css() -> str:
-    """Return CSS for VM Discovery panel (green/teal themed)."""
+    """Return CSS for VM Discovery panel with prominent VNC button."""
     return '''
         .vm-discovery-panel {
             background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.05) 100%);
@@ -1105,6 +1773,11 @@ def _get_vm_discovery_panel_css() -> str:
             width: 20px;
             height: 20px;
         }
+        .vm-discovery-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
         .vm-discovery-refresh {
             font-size: 0.75rem;
             color: var(--text-muted);
@@ -1112,37 +1785,53 @@ def _get_vm_discovery_panel_css() -> str:
         .vm-item {
             background: rgba(0, 0, 0, 0.3);
             border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 16px;
+            border-radius: 10px;
+            padding: 18px;
             margin-bottom: 12px;
+            transition: all 0.2s;
         }
         .vm-item:last-child {
             margin-bottom: 0;
+        }
+        .vm-item:hover {
+            border-color: rgba(16, 185, 129, 0.5);
         }
         .vm-item-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 8px;
+            margin-bottom: 12px;
         }
         .vm-name {
             font-weight: 600;
-            font-size: 0.95rem;
+            font-size: 1rem;
             color: var(--text-primary);
         }
         .vm-status-indicator {
             display: flex;
             align-items: center;
             gap: 6px;
-            font-size: 0.75rem;
+            font-size: 0.8rem;
+            padding: 4px 10px;
+            border-radius: 12px;
+            background: rgba(0, 0, 0, 0.2);
+        }
+        .vm-status-indicator.online {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+        }
+        .vm-status-indicator.offline {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
         }
         .vm-status-dot {
-            width: 10px;
-            height: 10px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
         }
         .vm-status-dot.online {
             background: #10b981;
+            box-shadow: 0 0 6px #10b981;
         }
         .vm-status-dot.offline {
             background: #ef4444;
@@ -1150,11 +1839,49 @@ def _get_vm_discovery_panel_css() -> str:
         .vm-status-dot.unknown {
             background: #6b7280;
         }
+        /* IP Address display - prominent */
+        .vm-ip-display {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 8px;
+            margin-bottom: 14px;
+        }
+        .vm-ip-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .vm-ip-value {
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #10b981;
+            letter-spacing: 0.5px;
+        }
+        .vm-ip-copy {
+            margin-left: auto;
+            padding: 4px 8px;
+            background: rgba(16, 185, 129, 0.2);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 4px;
+            color: #10b981;
+            cursor: pointer;
+            font-size: 0.7rem;
+            transition: all 0.2s;
+        }
+        .vm-ip-copy:hover {
+            background: rgba(16, 185, 129, 0.3);
+        }
         .vm-info {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 8px;
-            margin-bottom: 12px;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
             font-size: 0.85rem;
             color: var(--text-secondary);
         }
@@ -1171,58 +1898,87 @@ def _get_vm_discovery_panel_css() -> str:
         }
         .vm-actions {
             display: flex;
-            gap: 8px;
+            gap: 10px;
             align-items: center;
+            flex-wrap: wrap;
         }
+        /* VNC Button - Large and Prominent */
         .vm-vnc-link {
             display: inline-flex;
             align-items: center;
-            gap: 6px;
-            padding: 6px 12px;
-            background: rgba(16, 185, 129, 0.2);
-            border: 1px solid rgba(16, 185, 129, 0.4);
-            border-radius: 6px;
-            color: #10b981;
+            gap: 8px;
+            padding: 12px 20px;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            border: none;
+            border-radius: 8px;
+            color: white;
             text-decoration: none;
-            font-size: 0.8rem;
-            font-weight: 500;
+            font-size: 0.9rem;
+            font-weight: 600;
             transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
         }
         .vm-vnc-link:hover {
-            background: rgba(16, 185, 129, 0.3);
-            transform: translateY(-1px);
+            background: linear-gradient(135deg, #059669 0%, #047857 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4);
+        }
+        .vm-vnc-link .vnc-icon {
+            font-size: 1.1rem;
+        }
+        .vm-vnc-link .vnc-ip {
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 0.8rem;
+            opacity: 0.9;
+            margin-left: 4px;
         }
         .vm-waa-status {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            padding: 6px 12px;
+            padding: 8px 14px;
             background: rgba(0, 0, 0, 0.2);
             border-radius: 6px;
-            font-size: 0.8rem;
+            font-size: 0.85rem;
+            font-weight: 500;
         }
         .vm-waa-status.ready {
             color: #10b981;
             border: 1px solid rgba(16, 185, 129, 0.4);
+            background: rgba(16, 185, 129, 0.1);
         }
         .vm-waa-status.not-ready {
             color: #ef4444;
             border: 1px solid rgba(239, 68, 68, 0.4);
+            background: rgba(239, 68, 68, 0.1);
+        }
+        .vm-waa-status.checking {
+            color: #f59e0b;
+            border: 1px solid rgba(245, 158, 11, 0.4);
+            background: rgba(245, 158, 11, 0.1);
         }
         .vm-last-checked {
             font-size: 0.7rem;
             color: var(--text-muted);
-            margin-top: 8px;
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
         .no-vms {
             text-align: center;
-            padding: 20px;
+            padding: 30px 20px;
             color: var(--text-muted);
             font-size: 0.9rem;
         }
+        .no-vms-icon {
+            font-size: 2rem;
+            margin-bottom: 12px;
+            opacity: 0.5;
+        }
         .vm-add-button {
             margin-top: 12px;
-            padding: 8px 16px;
+            padding: 10px 18px;
             background: rgba(16, 185, 129, 0.2);
             border: 1px solid rgba(16, 185, 129, 0.4);
             border-radius: 6px;
@@ -1231,46 +1987,56 @@ def _get_vm_discovery_panel_css() -> str:
             font-size: 0.85rem;
             font-weight: 500;
             transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
         .vm-add-button:hover {
             background: rgba(16, 185, 129, 0.3);
+            transform: translateY(-1px);
         }
         .vm-add-form {
             display: none;
             margin-top: 12px;
-            padding: 16px;
+            padding: 18px;
             background: rgba(0, 0, 0, 0.3);
             border: 1px solid var(--border-color);
-            border-radius: 8px;
+            border-radius: 10px;
         }
         .vm-add-form.show {
             display: block;
         }
         .vm-form-row {
-            margin-bottom: 12px;
+            margin-bottom: 14px;
         }
         .vm-form-row label {
             display: block;
             font-size: 0.8rem;
             color: var(--text-secondary);
-            margin-bottom: 4px;
+            margin-bottom: 6px;
+            font-weight: 500;
         }
         .vm-form-row input {
             width: 100%;
-            padding: 6px 10px;
-            background: rgba(0, 0, 0, 0.3);
+            padding: 8px 12px;
+            background: rgba(0, 0, 0, 0.4);
             border: 1px solid var(--border-color);
-            border-radius: 4px;
+            border-radius: 6px;
             color: var(--text-primary);
             font-size: 0.85rem;
+            transition: border-color 0.2s;
+        }
+        .vm-form-row input:focus {
+            outline: none;
+            border-color: #10b981;
         }
         .vm-form-actions {
             display: flex;
-            gap: 8px;
-            margin-top: 16px;
+            gap: 10px;
+            margin-top: 18px;
         }
         .vm-form-submit {
-            padding: 8px 16px;
+            padding: 10px 18px;
             background: #10b981;
             border: none;
             border-radius: 6px;
@@ -1292,7 +2058,7 @@ def _get_vm_discovery_panel_css() -> str:
 
 
 def _get_vm_discovery_panel_html() -> str:
-    """Return HTML for VM Discovery panel with JS polling."""
+    """Return HTML for VM Discovery panel with prominent VNC button and loading states."""
     return '''
     <div class="vm-discovery-panel" id="vm-discovery-panel">
         <div class="vm-discovery-header">
@@ -1300,15 +2066,39 @@ def _get_vm_discovery_panel_html() -> str:
                 <svg viewBox="0 0 24 24" fill="currentColor">
                     <path d="M3 3h18v4H3V3zm0 6h18v12H3V9zm2 2v8h14v-8H5zm2 2h4v4H7v-4z"/>
                 </svg>
-                VM Discovery
+                Windows VMs
             </div>
-            <span class="vm-discovery-refresh" id="vm-refresh-time">Checking...</span>
+            <div class="vm-discovery-controls">
+                <span class="vm-discovery-refresh" id="vm-refresh-time">Checking...</span>
+                <button class="refresh-btn" onclick="refreshVMs()" title="Refresh VM status" id="vm-refresh-btn">
+                    <span class="refresh-icon">&#8635;</span>
+                    <span class="spinner"></span>
+                    Refresh
+                </button>
+            </div>
         </div>
+
+        <!-- API Error Banner -->
+        <div class="api-error-banner" id="vm-api-error">
+            <span class="error-icon">!</span>
+            <span class="error-message" id="vm-error-msg">Failed to fetch VMs</span>
+            <button class="retry-btn" onclick="refreshVMs()">Retry</button>
+        </div>
+
+        <!-- Loading state -->
+        <div id="vm-loading" style="display: none; text-align: center; padding: 30px;">
+            <div style="display: inline-block; width: 24px; height: 24px; border: 3px solid rgba(16,185,129,0.3); border-top-color: #10b981; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <div style="margin-top: 12px; color: var(--text-muted); font-size: 0.85rem;">Checking VM status...</div>
+        </div>
+
         <div id="vm-list">
-            <div class="no-vms">Checking for registered VMs...</div>
+            <div class="no-vms">
+                <div class="no-vms-icon">&#128187;</div>
+                Checking for registered VMs...
+            </div>
         </div>
         <button id="vm-add-button" class="vm-add-button" onclick="toggleVMAddForm()">
-            + Add VM
+            <span>+</span> Add VM
         </button>
         <div id="vm-add-form" class="vm-add-form">
             <div class="vm-form-row">
@@ -1347,72 +2137,164 @@ def _get_vm_discovery_panel_html() -> str:
     </div>
 
     <script>
+        let isVMRefreshing = false;
+        let vmErrorCount = 0;
+
+        function setVMLoadingState(loading) {
+            const loadingEl = document.getElementById('vm-loading');
+            const listEl = document.getElementById('vm-list');
+            const btn = document.getElementById('vm-refresh-btn');
+
+            if (loading) {
+                loadingEl.style.display = 'block';
+                listEl.style.display = 'none';
+                if (btn) btn.classList.add('loading');
+            } else {
+                loadingEl.style.display = 'none';
+                listEl.style.display = 'block';
+                if (btn) btn.classList.remove('loading');
+            }
+        }
+
+        function showVMError(msg) {
+            const errorEl = document.getElementById('vm-api-error');
+            const errorMsgEl = document.getElementById('vm-error-msg');
+            if (errorEl && errorMsgEl) {
+                errorMsgEl.textContent = msg;
+                errorEl.classList.add('show');
+            }
+        }
+
+        function hideVMError() {
+            const errorEl = document.getElementById('vm-api-error');
+            if (errorEl) errorEl.classList.remove('show');
+        }
+
+        async function refreshVMs() {
+            if (isVMRefreshing) return;
+            isVMRefreshing = true;
+            setVMLoadingState(true);
+            hideVMError();
+
+            try {
+                const response = await fetch('/api/vms?' + Date.now());
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                const vms = await response.json();
+                if (vms.error) throw new Error(vms.error);
+
+                renderVMs(vms);
+                vmErrorCount = 0;
+                document.getElementById('vm-refresh-time').textContent =
+                    'Updated ' + new Date().toLocaleTimeString();
+            } catch (e) {
+                console.error('VM refresh failed:', e);
+                vmErrorCount++;
+                showVMError(e.message || 'Connection failed');
+            } finally {
+                isVMRefreshing = false;
+                setVMLoadingState(false);
+            }
+        }
+
         async function fetchVMs() {
+            if (isVMRefreshing) return;
+            if (vmErrorCount >= 3) {
+                document.getElementById('vm-refresh-time').textContent = 'Polling paused';
+                return;
+            }
+
             try {
                 const response = await fetch('/api/vms?' + Date.now());
                 if (response.ok) {
                     const vms = await response.json();
-                    renderVMs(vms);
-                    document.getElementById('vm-refresh-time').textContent =
-                        'Updated ' + new Date().toLocaleTimeString();
+                    if (!vms.error) {
+                        renderVMs(vms);
+                        hideVMError();
+                        vmErrorCount = 0;
+                        document.getElementById('vm-refresh-time').textContent =
+                            'Updated ' + new Date().toLocaleTimeString();
+                    }
                 }
             } catch (e) {
                 console.log('VM API unavailable:', e);
-                document.getElementById('vm-list').innerHTML =
-                    '<div class="no-vms">VM API not available</div>';
+                vmErrorCount++;
             }
+        }
+
+        function copyToClipboard(text, btn) {
+            navigator.clipboard.writeText(text).then(() => {
+                const originalText = btn.textContent;
+                btn.textContent = 'Copied!';
+                setTimeout(() => { btn.textContent = originalText; }, 1500);
+            });
         }
 
         function renderVMs(vms) {
             const container = document.getElementById('vm-list');
 
             if (!vms || vms.length === 0) {
-                container.innerHTML = '<div class="no-vms">No VMs registered. Click "Add VM" to register one.</div>';
+                container.innerHTML = '<div class="no-vms"><div class="no-vms-icon">&#128187;</div>No VMs registered. Click "Add VM" to register one.</div>';
                 return;
             }
 
             const html = vms.map(vm => {
                 const statusClass = vm.status || 'unknown';
-                const waaStatusClass = vm.waa_probe_status === 'ready' ? 'ready' : 'not-ready';
-                const waaStatusIcon = vm.waa_probe_status === 'ready' ? '✓' : '✗';
-                const waaStatusText = vm.waa_probe_status === 'ready' ? 'WAA Ready' :
+                const statusText = statusClass.charAt(0).toUpperCase() + statusClass.slice(1);
+                const waaStatusClass = vm.waa_probe_status === 'ready' ? 'ready' :
+                                       vm.waa_probe_status === 'checking' ? 'checking' : 'not-ready';
+                const waaStatusIcon = vm.waa_probe_status === 'ready' ? '&#10003;' :
+                                      vm.waa_probe_status === 'checking' ? '&#8987;' : '&#10007;';
+                const waaStatusText = vm.waa_probe_status === 'ready' ? 'WAA Server Ready' :
                                      vm.waa_probe_status === 'not responding' ? 'WAA Not Responding' :
+                                     vm.waa_probe_status === 'checking' ? 'Checking...' :
                                      vm.waa_probe_status === 'ssh failed' ? 'SSH Failed' : 'Unknown';
 
-                const vncUrl = `http://${vm.ssh_host}:${vm.vnc_port}`;
+                const vncUrl = 'http://' + vm.ssh_host + ':' + (vm.vnc_port || 8006);
+                const vmIp = vm.ssh_host;
 
-                return `
-                    <div class="vm-item">
-                        <div class="vm-item-header">
-                            <span class="vm-name">${vm.name}</span>
-                            <div class="vm-status-indicator">
-                                <div class="vm-status-dot ${statusClass}"></div>
-                                <span>${statusClass}</span>
-                            </div>
-                        </div>
-                        <div class="vm-info">
-                            <div class="vm-info-item">
-                                <span class="vm-info-label">SSH:</span>
-                                <span class="vm-info-value">${vm.ssh_user}@${vm.ssh_host}</span>
-                            </div>
-                            <div class="vm-info-item">
-                                <span class="vm-info-label">Container:</span>
-                                <span class="vm-info-value">${vm.docker_container}</span>
-                            </div>
-                        </div>
-                        <div class="vm-actions">
-                            <a href="${vncUrl}" target="_blank" class="vm-vnc-link">
-                                Open VNC →
-                            </a>
-                            <div class="vm-waa-status ${waaStatusClass}">
-                                ${waaStatusIcon} ${waaStatusText}
-                            </div>
-                        </div>
-                        <div class="vm-last-checked">
-                            Last checked: ${vm.last_checked ? new Date(vm.last_checked).toLocaleString() : 'Never'}
-                        </div>
-                    </div>
-                `;
+                return '<div class="vm-item">' +
+                    '<div class="vm-item-header">' +
+                        '<span class="vm-name">' + (vm.name || 'Unnamed VM') + '</span>' +
+                        '<div class="vm-status-indicator ' + statusClass + '">' +
+                            '<div class="vm-status-dot ' + statusClass + '"></div>' +
+                            '<span>' + statusText + '</span>' +
+                        '</div>' +
+                    '</div>' +
+
+                    // Prominent IP display
+                    '<div class="vm-ip-display">' +
+                        '<span class="vm-ip-label">IP Address:</span>' +
+                        '<span class="vm-ip-value">' + vmIp + '</span>' +
+                        '<button class="vm-ip-copy" onclick="copyToClipboard(\\\'' + vmIp + '\\\', this)">Copy</button>' +
+                    '</div>' +
+
+                    '<div class="vm-info">' +
+                        '<div class="vm-info-item">' +
+                            '<span class="vm-info-label">SSH:</span>' +
+                            '<span class="vm-info-value">' + (vm.ssh_user || 'azureuser') + '@' + vmIp + '</span>' +
+                        '</div>' +
+                        '<div class="vm-info-item">' +
+                            '<span class="vm-info-label">Container:</span>' +
+                            '<span class="vm-info-value">' + (vm.docker_container || 'win11-waa') + '</span>' +
+                        '</div>' +
+                    '</div>' +
+
+                    '<div class="vm-actions">' +
+                        // Large prominent VNC button
+                        '<a href="' + vncUrl + '" target="_blank" class="vm-vnc-link">' +
+                            '<span class="vnc-icon">&#128424;</span>' +
+                            'Open VNC' +
+                            '<span class="vnc-ip">:' + (vm.vnc_port || 8006) + '</span>' +
+                        '</a>' +
+                        '<div class="vm-waa-status ' + waaStatusClass + '">' +
+                            waaStatusIcon + ' ' + waaStatusText +
+                        '</div>' +
+                    '</div>' +
+
+                    '<div class="vm-last-checked">' +
+                        '<span>&#128337;</span> Last checked: ' + (vm.last_checked ? new Date(vm.last_checked).toLocaleString() : 'Never') +
+                    '</div>' +
+                '</div>';
             }).join('');
 
             container.innerHTML = html;
@@ -1433,6 +2315,12 @@ def _get_vm_discovery_panel_html() -> str:
                 docker_container: document.getElementById('vm-docker-container').value,
                 internal_ip: document.getElementById('vm-internal-ip').value
             };
+
+            // Basic validation
+            if (!vmData.name || !vmData.ssh_host) {
+                alert('Please fill in VM Name and SSH Host');
+                return;
+            }
 
             try {
                 const response = await fetch('/api/vms/register', {
@@ -1455,7 +2343,7 @@ def _get_vm_discovery_panel_html() -> str:
                         alert('Failed to register VM: ' + (result.message || 'Unknown error'));
                     }
                 } else {
-                    alert('Failed to register VM: Server error');
+                    alert('Failed to register VM: Server error (HTTP ' + response.status + ')');
                 }
             } catch (e) {
                 alert('Failed to register VM: ' + e.message);
