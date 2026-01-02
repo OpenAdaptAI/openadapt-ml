@@ -110,20 +110,53 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-dev \
+    build-essential \
     tesseract-ocr \
     libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python packages for benchmark client
 # Use --break-system-packages for Debian Trixie (Python 3.13 with PEP 668)
+# Install in stages to avoid timeouts and handle compatibility issues
 RUN pip3 install --no-cache-dir --break-system-packages \
     openai \
     requests \
     pillow \
     numpy \
-    easyocr \
-    pyautogui \
-    tenacity
+    tenacity \
+    tqdm \
+    pandas \
+    flask \
+    psutil \
+    gymnasium \
+    fabric \
+    pyyaml \
+    tiktoken \
+    backoff \
+    beautifulsoup4 \
+    lxml \
+    cssselect \
+    xmltodict \
+    anthropic
+
+# Install ML packages (separate layer for caching)
+RUN pip3 install --no-cache-dir --break-system-packages \
+    torch --index-url https://download.pytorch.org/whl/cpu
+
+RUN pip3 install --no-cache-dir --break-system-packages \
+    transformers \
+    accelerate \
+    opencv-python-headless \
+    matplotlib \
+    easyocr
+
+# Create python symlink for scripts that use 'python' instead of 'python3'
+RUN ln -sf /usr/bin/python3 /usr/bin/python
 
 # -----------------------------------------------------------------------------
 # Environment configuration
