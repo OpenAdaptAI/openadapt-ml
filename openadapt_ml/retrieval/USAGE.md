@@ -20,14 +20,14 @@ similar_demos = retriever.retrieve("Turn off Night Shift", top_k=3)
 
 ```python
 from openadapt_ml.retrieval import DemoIndex, DemoRetriever
-from openadapt_ml.schemas.sessions import Action, Episode, Observation, Step
+from openadapt_ml.schema import Action, ActionType, Episode, Observation, Step
 
 # Create test episodes
-def create_episode(goal, app_name=None):
+def create_episode(instruction, app_name=None):
     obs = Observation(app_name=app_name)
-    action = Action(type="click", x=0.5, y=0.5)
-    step = Step(t=0.0, observation=obs, action=action)
-    return Episode(id=f"ep_{goal[:10]}", goal=goal, steps=[step])
+    action = Action(type=ActionType.CLICK, normalized_coordinates=(0.5, 0.5))
+    step = Step(step_index=0, observation=obs, action=action)
+    return Episode(episode_id=f"ep_{instruction[:10]}", instruction=instruction, steps=[step])
 
 episodes = [
     create_episode("Turn off Night Shift", app_name="System Settings"),

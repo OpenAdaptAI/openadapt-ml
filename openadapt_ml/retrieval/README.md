@@ -14,7 +14,7 @@ The retrieval module consists of three main components:
 
 ```python
 from openadapt_ml.retrieval import DemoIndex, DemoRetriever
-from openadapt_ml.schemas.sessions import Episode
+from openadapt_ml.schema import Episode
 
 # 1. Create index and add episodes
 index = DemoIndex()

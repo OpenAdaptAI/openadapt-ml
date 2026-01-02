@@ -7,41 +7,41 @@ from pathlib import Path
 @pytest.fixture
 def sample_episodes():
     """Create sample episodes for testing."""
-    from openadapt_ml.schemas.sessions import Action, Episode, Observation, Step
+    from openadapt_ml.schema import Action, ActionType, Episode, Observation, Step
 
     return [
         Episode(
-            id="test-001",
-            goal="Test click and type",
+            episode_id="test-001",
+            instruction="Test click and type",
             steps=[
                 Step(
-                    t=0.0,
+                    step_index=0,
                     observation=Observation(
-                        image_path="screenshots/step_0.png",
+                        screenshot_path="screenshots/step_0.png",
                         window_title="Test App",
                         app_name="TestApp",
                     ),
-                    action=Action(type="click", x=0.5, y=0.5),
+                    action=Action(type=ActionType.CLICK, normalized_coordinates=(0.5, 0.5)),
                 ),
                 Step(
-                    t=1.5,
+                    step_index=1,
                     observation=Observation(
-                        image_path="screenshots/step_1.png",
+                        screenshot_path="screenshots/step_1.png",
                     ),
-                    action=Action(type="type", text="hello world"),
+                    action=Action(type=ActionType.TYPE, text="hello world"),
                     thought="Typing greeting",
                 ),
             ],
             workflow_id="test-workflow",
         ),
         Episode(
-            id="test-002",
-            goal="Test scroll",
+            episode_id="test-002",
+            instruction="Test scroll",
             steps=[
                 Step(
-                    t=0.0,
-                    observation=Observation(image_path="screenshots/scroll_0.png"),
-                    action=Action(type="scroll", scroll_direction="down"),
+                    step_index=0,
+                    observation=Observation(screenshot_path="screenshots/scroll_0.png"),
+                    action=Action(type=ActionType.SCROLL, scroll_direction="down"),
                 ),
             ],
         ),
@@ -123,8 +123,8 @@ class TestParquetExport:
         assert len(reconstructed) == 2
 
         # Check first episode
-        ep1 = next(ep for ep in reconstructed if ep.id == "test-001")
-        assert ep1.goal == "Test click and type"
+        ep1 = next(ep for ep in reconstructed if ep.episode_id == "test-001")
+        assert ep1.instruction == "Test click and type"
         assert len(ep1.steps) == 2
         assert ep1.steps[0].action.type == "click"
         assert ep1.steps[1].action.type == "type"
@@ -132,7 +132,7 @@ class TestParquetExport:
     def test_empty_episodes(self, tmp_path):
         """Test exporting empty episode list."""
         from openadapt_ml.export import to_parquet
-        from openadapt_ml.schemas.sessions import Episode
+        from openadapt_ml.schema import Episode
 
         output_path = tmp_path / "empty.parquet"
         to_parquet([], str(output_path))
@@ -145,17 +145,17 @@ class TestParquetExport:
     def test_episode_with_metadata(self, tmp_path):
         """Test exporting episodes with metadata."""
         from openadapt_ml.export import to_parquet
-        from openadapt_ml.schemas.sessions import Action, Episode, Observation, Step
+        from openadapt_ml.schema import Action, ActionType, Episode, Observation, Step
 
         episodes = [
             Episode(
-                id="meta-test",
-                goal="Test metadata",
+                episode_id="meta-test",
+                instruction="Test metadata",
                 steps=[
                     Step(
-                        t=0.0,
-                        observation=Observation(image_path="test.png"),
-                        action=Action(type="click", x=0.1, y=0.2),
+                        step_index=0,
+                        observation=Observation(screenshot_path="test.png"),
+                        action=Action(type=ActionType.CLICK, normalized_coordinates=(0.1, 0.2)),
                     )
                 ],
                 metadata={"domain": "testing", "quality": "high"},

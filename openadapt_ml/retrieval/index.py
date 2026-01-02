@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from openadapt_ml.retrieval.embeddings import TextEmbedder
-from openadapt_ml.schemas.sessions import Episode
+from openadapt_ml.schema import Episode
 
 
 @dataclass
@@ -124,13 +124,13 @@ class DemoIndex:
         if not self.demos:
             return
 
-        # Fit embedder on all goal texts
-        goal_texts = [demo.episode.goal for demo in self.demos]
-        self.embedder.fit(goal_texts)
+        # Fit embedder on all instruction texts
+        instruction_texts = [demo.episode.instruction for demo in self.demos]
+        self.embedder.fit(instruction_texts)
 
         # Compute embeddings for each demo
         for demo in self.demos:
-            demo.text_embedding = self.embedder.embed(demo.episode.goal)
+            demo.text_embedding = self.embedder.embed(demo.episode.instruction)
 
         self._is_fitted = True
 

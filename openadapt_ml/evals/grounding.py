@@ -212,30 +212,48 @@ def evaluate_grounder_on_episode(
     """
     from PIL import Image
 
-    from openadapt_ml.schemas.sessions import Episode
+    from openadapt_ml.schema import Episode, ActionType
 
     test_cases = []
 
     for step in episode.steps:
         action = step.action
 
+        # Get action type as string for comparison
+        action_type_str = action.type.value if isinstance(action.type, ActionType) else action.type
+
         # Only evaluate clicks with bboxes
-        if action.type not in ("click", "double_click"):
+        if action_type_str not in ("click", "double_click"):
             continue
-        if action.bbox is None:
+
+        # Check for bbox - in new schema, bbox is in element.bounds or raw
+        bbox = None
+        if action.element and action.element.bounds:
+            b = action.element.bounds
+            bbox = (b.x, b.y, b.x + b.width, b.y + b.height)
+        elif action.raw and "bbox" in action.raw:
+            bbox = action.raw["bbox"]
+
+        if bbox is None:
             continue
-        if step.observation.image_path is None:
+        if step.observation.screenshot_path is None:
             continue
 
         # Load image
         try:
-            image = Image.open(step.observation.image_path)
+            image = Image.open(step.observation.screenshot_path)
         except Exception:
             continue
 
-        # Create target description from thought or action
-        target_desc = step.thought or f"element at ({action.x:.2f}, {action.y:.2f})"
+        # Create target description from reasoning or action coordinates
+        coords_x, coords_y = None, None
+        if action.normalized_coordinates:
+            coords_x, coords_y = action.normalized_coordinates
+        if coords_x is not None and coords_y is not None:
+            target_desc = step.reasoning or f"element at ({coords_x:.2f}, {coords_y:.2f})"
+        else:
+            target_desc = step.reasoning or "target element"
 
-        test_cases.append((image, target_desc, action.bbox))
+        test_cases.append((image, target_desc, bbox))
 
     return evaluate_grounder(grounder, test_cases, k=k)

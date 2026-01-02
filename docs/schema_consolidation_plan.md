@@ -1,5 +1,9 @@
 # Schema Consolidation Plan
 
+## Schema Ownership Rule
+
+> `openadapt_ml/schema/episode.py` is the only source of truth. Any feature that cannot be represented here is not allowed elsewhere.
+
 ## Overview
 
 This document outlines the plan to consolidate from two schema modules to one:
@@ -90,6 +94,18 @@ This document outlines the plan to consolidate from two schema modules to one:
 | `Action.raw` | `Action.raw` | Same |
 | `Session` | (removed) | Container not needed |
 
+## Converters as the ONLY Legacy Boundary
+
+- `openadapt_ml/schema/converters.py` is the ONLY place for legacy format handling
+- All legacy JSON to canonical Episode conversion happens there
+- Everywhere else assumes canonical Episode only
+- **Rule**: If a function accepts Episode, it never branches on "old vs new"
+
+## Temporal Truth Rule
+
+- `step_index`: required, contiguous, zero-based, validated
+- `timestamp`: optional, float, monotonic if present, never used for ordering
+
 ## Migration Strategy
 
 ### Phase 1: Prepare New Schema (DONE)
@@ -99,7 +115,11 @@ This document outlines the plan to consolidate from two schema modules to one:
 - [x] Export JSON Schema to `docs/schema/episode.schema.json`
 - [x] Add documentation in `docs/schema/README.md`
 
-### Phase 2: Add Validation to New Schema
+### Phase 2: Update All Modules, Tests, and Docs (Single PR)
+
+This phase consolidates all migration work into a single focused PR.
+
+#### Add Validation to New Schema
 
 Port validation logic from `schemas/validation.py` to Pydantic validators:
 
@@ -121,15 +141,15 @@ class Episode(BaseModel):
         return self
 ```
 
-### Phase 3: Update Each Module
+#### Update Each Module
 
 Update imports and field access in order of dependency:
 
-#### 3.1 Core Data Structures (no dependencies)
+**Core Data Structures (no dependencies)**
 
 1. **`openadapt_ml/schema/episode.py`** - Already done
 
-#### 3.2 Ingest Layer (depends on schema)
+**Ingest Layer (depends on schema)**
 
 2. **`openadapt_ml/ingest/loader.py`**
    ```python
@@ -146,7 +166,7 @@ Update imports and field access in order of dependency:
 
 4. **`openadapt_ml/ingest/synthetic.py`** - Update Episode/Step construction
 
-#### 3.3 Processing Layer (depends on ingest)
+**Processing Layer (depends on ingest)**
 
 5. **`openadapt_ml/datasets/next_action.py`** - Update field access
 
@@ -156,40 +176,40 @@ Update imports and field access in order of dependency:
 
 8. **`openadapt_ml/retrieval/index.py`** - Update Episode usage
 
-#### 3.4 Training Layer (depends on ingest + processing)
+**Training Layer (depends on ingest + processing)**
 
 9. **`openadapt_ml/training/trainer.py`** - Update Episode usage
 
 10. **`openadapt_ml/scripts/compare.py`** - Update field access
 
-#### 3.5 Evaluation Layer (depends on all above)
+**Evaluation Layer (depends on all above)**
 
 11. **`openadapt_ml/evals/grounding.py`** - Update Episode usage
 
 12. **`openadapt_ml/evals/trajectory_matching.py`** - Update field access
 
-#### 3.6 Runtime (standalone)
+**Runtime (standalone)**
 
 13. **`openadapt_ml/runtime/policy.py`** - Update Action usage
 
 14. **`openadapt_ml/benchmarks/agent.py`** - Update Action usage
 
-#### 3.7 Experiments
+**Experiments**
 
 15. **`openadapt_ml/experiments/demo_prompt/format_demo.py`** - Update field access
 
-### Phase 4: Update Tests
+#### Update Tests
 
 16. **`tests/test_action_parsing.py`** - Update Action construction
 17. **`tests/test_parquet_export.py`** - Update Episode construction
 18. **`tests/test_retrieval.py`** - Update Episode construction
-19. **`test_retrieval.py`** - Update or remove (duplicate?)
+19. **`test_retrieval.py`** (root) - DELETE (duplicate of tests/test_retrieval.py)
 
 Add new tests:
 - `tests/test_schema_validation.py` - Test Pydantic validation
 - `tests/test_schema_serialization.py` - Test JSON round-trip
 
-### Phase 5: Update Documentation
+#### Update Documentation
 
 20. **`RETRIEVAL_QUICKSTART.md`** - Update import paths
 21. **`examples/README.md`** - Update examples
@@ -199,27 +219,14 @@ Add new tests:
 25. **`docs/enterprise_integration.md`** - Update code examples
 26. **`docs/schema/README.md`** - Remove "internal format" section
 
-### Phase 6: Delete Old Schema
+### Phase 3: Delete Old Schema
 
 27. Delete `openadapt_ml/schemas/sessions.py`
 28. Delete `openadapt_ml/schemas/validation.py`
 29. Delete `openadapt_ml/schemas/__init__.py`
 30. Remove `openadapt_ml/schemas/` directory
 
-### Phase 7: Backward Compatibility (Optional)
-
-If we want to maintain import compatibility during transition:
-
-```python
-# openadapt_ml/schemas/__init__.py (temporary)
-import warnings
-warnings.warn(
-    "openadapt_ml.schemas is deprecated, use openadapt_ml.schema instead",
-    DeprecationWarning,
-    stacklevel=2
-)
-from openadapt_ml.schema import *
-```
+No backward compatibility shim. Let imports break loudly.
 
 ## Testing Strategy
 
@@ -254,14 +261,11 @@ If issues are discovered:
 
 | Phase | Effort |
 |-------|--------|
-| Phase 2: Validation | 1-2 hours |
-| Phase 3: Module updates | 3-4 hours |
-| Phase 4: Test updates | 1-2 hours |
-| Phase 5: Doc updates | 1 hour |
-| Phase 6: Deletion | 10 minutes |
-| Phase 7: Compat layer | 30 minutes (optional) |
+| Phase 1: Prepare New Schema | DONE |
+| Phase 2: Single PR (modules, tests, docs) | 4-5 hours |
+| Phase 3: Delete Old Schema | 10 minutes |
 
-**Total: ~8-10 hours** of focused work
+**Total: ~4-5 hours** of focused work (single PR approach)
 
 ## Open Questions
 
@@ -275,4 +279,4 @@ If issues are discovered:
    - Recommendation: Support both, prefer normalized for training (resolution-independent)
 
 4. **Validation strictness**: Should validation be strict (raise errors) or lenient (warnings)?
-   - Recommendation: Configurable via `Episode.model_validate(data, strict=True/False)`
+   - **Decision**: Default to strict. No lenient mode exposed.

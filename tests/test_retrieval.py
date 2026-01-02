@@ -6,7 +6,7 @@ import pytest
 
 from openadapt_ml.retrieval import DemoIndex, DemoRetriever
 from openadapt_ml.retrieval.embeddings import TextEmbedder
-from openadapt_ml.schemas.sessions import Action, Episode, Observation, Step
+from openadapt_ml.schema import Action, ActionType, Episode, Observation, Step
 
 
 @pytest.fixture
@@ -15,14 +15,14 @@ def sample_episodes() -> list[Episode]:
 
     def create_episode(
         episode_id: str,
-        goal: str,
+        instruction: str,
         app_name: str | None = None,
         url: str | None = None,
     ) -> Episode:
         obs = Observation(app_name=app_name, url=url)
-        action = Action(type="click", x=0.5, y=0.5)
-        step = Step(t=0.0, observation=obs, action=action)
-        return Episode(id=episode_id, goal=goal, steps=[step])
+        action = Action(type=ActionType.CLICK, normalized_coordinates=(0.5, 0.5))
+        step = Step(step_index=0, observation=obs, action=action)
+        return Episode(episode_id=episode_id, instruction=instruction, steps=[step])
 
     return [
         create_episode("ep1", "Turn off Night Shift", app_name="System Settings"),
@@ -119,9 +119,9 @@ class TestDemoIndex:
         """Test domain extraction from URL."""
         index = DemoIndex()
         obs = Observation(url="https://github.com/user/repo")
-        action = Action(type="click", x=0.5, y=0.5)
-        step = Step(t=0.0, observation=obs, action=action)
-        episode = Episode(id="test", goal="test", steps=[step])
+        action = Action(type=ActionType.CLICK, normalized_coordinates=(0.5, 0.5))
+        step = Step(step_index=0, observation=obs, action=action)
+        episode = Episode(episode_id="test", instruction="test", steps=[step])
 
         index.add(episode)
         domains = index.get_domains()
@@ -195,7 +195,7 @@ class TestDemoRetriever:
         )
 
         # GitHub demo should get bonus
-        github_result = next(r for r in results if "GitHub" in r.demo.episode.goal)
+        github_result = next(r for r in results if "GitHub" in r.demo.episode.instruction)
         assert github_result.domain_bonus == 0.5
 
     def test_top_k_limit(self, built_index: DemoIndex) -> None:
@@ -230,4 +230,4 @@ class TestIntegration:
         assert all(isinstance(ep, Episode) for ep in results)
 
         # Most similar should be Night Shift demo
-        assert "Night Shift" in results[0].goal
+        assert "Night Shift" in results[0].instruction

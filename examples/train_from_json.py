@@ -29,7 +29,7 @@ import argparse
 from pathlib import Path
 
 from openadapt_ml.ingest import load_episodes
-from openadapt_ml.schemas import validate_episodes, summarize_episodes
+from openadapt_ml.schema import Episode
 
 
 def main():
@@ -106,12 +106,17 @@ Examples:
     print(f"Loaded {len(episodes)} episodes")
 
     # 2. Show summary statistics
-    summary = summarize_episodes(episodes)
+    total_steps = sum(len(ep.steps) for ep in episodes)
+    action_types = set()
+    for ep in episodes:
+        for step in ep.steps:
+            if step.action and step.action.type:
+                action_types.add(step.action.type.value if hasattr(step.action.type, 'value') else str(step.action.type))
     print("\nData Summary:")
-    print(f"  Episodes: {summary['count']}")
-    print(f"  Total steps: {summary['total_steps']}")
-    print(f"  Avg steps/episode: {summary['avg_steps_per_episode']:.1f}")
-    print(f"  Action types: {summary['action_types']}")
+    print(f"  Episodes: {len(episodes)}")
+    print(f"  Total steps: {total_steps}")
+    print(f"  Avg steps/episode: {total_steps / len(episodes):.1f}" if episodes else "  Avg steps/episode: 0")
+    print(f"  Action types: {action_types}")
 
     if args.validate_only:
         print("\nValidation complete. Use --help to see training options.")
@@ -212,7 +217,7 @@ def _train_demo_conditioned_mode(episodes: list, args) -> None:
     demo_samples = []
     for episode in train_episodes:
         # For each training episode, retrieve a relevant demo
-        demos = retriever.retrieve(episode.goal, top_k=1)
+        demos = retriever.retrieve(episode.instruction, top_k=1)
         if demos:
             demo_text = format_episode_as_demo(demos[0], max_steps=5)
         else:

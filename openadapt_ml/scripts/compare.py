@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from openadapt_ml.ingest.capture import capture_to_episode
-from openadapt_ml.schemas.sessions import Episode, Step
+from openadapt_ml.schema import Episode, Step, ActionType
 from openadapt_ml.datasets.next_action import SYSTEM_PROMPT, format_action
 from openadapt_ml.training.trainer import _get_shared_header_css, _generate_shared_header_html
 
@@ -141,14 +141,19 @@ def generate_comparison_data(
     total_steps = len(episode.steps)
 
     for i, step in enumerate(episode.steps):
+        # Extract normalized coordinates if available
+        action_x, action_y = None, None
+        if step.action.normalized_coordinates:
+            action_x, action_y = step.action.normalized_coordinates
+        action_type_str = step.action.type.value if isinstance(step.action.type, ActionType) else step.action.type
         step_data = {
             "index": i,
-            "time": step.t,
-            "image_path": step.observation.image_path,
+            "time": step.step_index,
+            "image_path": step.observation.screenshot_path,
             "human_action": {
-                "type": step.action.type,
-                "x": step.action.x,
-                "y": step.action.y,
+                "type": action_type_str,
+                "x": action_x,
+                "y": action_y,
                 "text": step.action.text,
             },
             "predicted_action": None,
@@ -156,11 +161,11 @@ def generate_comparison_data(
         }
 
         # Get prediction if model available
-        if model and step.observation.image_path:
+        if model and step.observation.screenshot_path:
             predicted = predict_action(
                 model,
-                step.observation.image_path,
-                episode.goal,
+                step.observation.screenshot_path,
+                episode.instruction,
                 step_index=i,
                 total_steps=total_steps,
                 action_history=action_history.copy(),
@@ -168,7 +173,7 @@ def generate_comparison_data(
             step_data["predicted_action"] = predicted
 
             # Check if prediction matches human action
-            if predicted and predicted.get("type") == step.action.type:
+            if predicted and predicted.get("type") == action_type_str:
                 step_data["match"] = True
             else:
                 step_data["match"] = False
@@ -839,21 +844,26 @@ def generate_unified_viewer(
         if available_captures is None:
             available_captures = [{
                 "id": capture_id,
-                "name": episode.goal or "Untitled",
+                "name": episode.instruction or "Untitled",
                 "steps": len(episode.steps),
             }]
 
         # Prepare base capture data (human actions only, no predictions)
         base_data = []
         for i, step in enumerate(episode.steps):
+            # Extract normalized coordinates if available
+            action_x, action_y = None, None
+            if step.action.normalized_coordinates:
+                action_x, action_y = step.action.normalized_coordinates
+            action_type_str = step.action.type.value if isinstance(step.action.type, ActionType) else step.action.type
             base_data.append({
                 "index": i,
-                "time": step.t,
-                "image_path": step.observation.image_path,
+                "time": step.step_index,
+                "image_path": step.observation.screenshot_path,
                 "human_action": {
-                    "type": step.action.type,
-                    "x": step.action.x,
-                    "y": step.action.y,
+                    "type": action_type_str,
+                    "x": action_x,
+                    "y": action_y,
                     "text": step.action.text,
                 },
             })

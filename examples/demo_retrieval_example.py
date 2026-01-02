@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from openadapt_ml.experiments.demo_prompt.format_demo import format_episode_as_demo
 from openadapt_ml.retrieval import DemoIndex, DemoRetriever
-from openadapt_ml.schemas.sessions import Action, Episode, Observation, Step
+from openadapt_ml.schema import Action, ActionType, Episode, Observation, Step
 
 
 def create_demo_episode(
@@ -41,13 +41,13 @@ def create_demo_episode(
             window_title=window_title,
             url=url,
         )
-        action = Action(type=action_type, x=coords[0], y=coords[1])
-        step = Step(t=float(i), observation=obs, action=action)
+        action = Action(type=ActionType(action_type), normalized_coordinates=(coords[0], coords[1]))
+        step = Step(step_index=i, observation=obs, action=action)
         steps.append(step)
 
     return Episode(
-        id=episode_id,
-        goal=goal,
+        episode_id=episode_id,
+        instruction=goal,
         steps=steps,
     )
 
@@ -98,7 +98,7 @@ def main() -> None:
 
     print(f"\nCreated {len(demos)} demonstration episodes")
     for demo in demos:
-        print(f"  - {demo.goal} ({len(demo.steps)} steps)")
+        print(f"  - {demo.instruction} ({len(demo.steps)} steps)")
 
     # Build the retrieval index
     print("\nBuilding retrieval index...")
@@ -128,7 +128,7 @@ def main() -> None:
 
     print(f"\nFound {len(results)} similar demos:")
     for i, result in enumerate(results, 1):
-        print(f"\n{i}. {result.demo.episode.goal}")
+        print(f"\n{i}. {result.demo.episode.instruction}")
         print(f"   Score: {result.score:.3f} (text: {result.text_score:.3f}, domain bonus: {result.domain_bonus:.3f})")
 
     # Format the best demo for prompting

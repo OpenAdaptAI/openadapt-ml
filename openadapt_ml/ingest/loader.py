@@ -10,8 +10,9 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from openadapt_ml.schemas.sessions import Action, Episode, Observation, Step
-from openadapt_ml.schemas.validation import validate_episodes, summarize_episodes
+from pydantic import ValidationError
+
+from openadapt_ml.schema import Action, ActionType, Episode, Observation, Step
 
 
 def load_episodes(
@@ -52,7 +53,7 @@ def load_episodes(
 
     if path.is_file():
         # Single JSON file
-        episodes = _load_episodes_from_file(path)
+        episodes = _load_episodes_from_file(path, validate=validate)
     elif path.is_dir():
         # Directory of JSON files
         json_files = sorted(path.glob("*.json"))
@@ -60,15 +61,15 @@ def load_episodes(
             raise ValueError(f"No JSON files found in {path}")
 
         for json_file in json_files:
-            file_episodes = _load_episodes_from_file(json_file)
+            file_episodes = _load_episodes_from_file(json_file, validate=validate)
             episodes.extend(file_episodes)
     else:
         raise ValueError(f"Path must be a file or directory: {path}")
 
-    if validate:
-        warnings = validate_episodes(episodes, check_images=check_images)
+    if check_images:
+        warnings = _check_episode_images(episodes)
         if warnings:
-            print(f"Validation warnings ({len(warnings)}):")
+            print(f"Image warnings ({len(warnings)}):")
             for w in warnings[:10]:  # Show first 10
                 print(f"  - {w}")
             if len(warnings) > 10:
@@ -77,7 +78,21 @@ def load_episodes(
     return episodes
 
 
-def _load_episodes_from_file(path: Path) -> List[Episode]:
+def _check_episode_images(episodes: List[Episode]) -> List[str]:
+    """Check that all referenced images exist on disk."""
+    warnings = []
+    for ep in episodes:
+        for step in ep.steps:
+            if step.observation.screenshot_path:
+                if not Path(step.observation.screenshot_path).exists():
+                    warnings.append(
+                        f"Episode {ep.episode_id}, step {step.step_index}: "
+                        f"Image not found: {step.observation.screenshot_path}"
+                    )
+    return warnings
+
+
+def _load_episodes_from_file(path: Path, validate: bool = True) -> List[Episode]:
     """Load episodes from a single JSON file."""
     with open(path, "r") as f:
         data = json.load(f)
@@ -85,75 +100,119 @@ def _load_episodes_from_file(path: Path) -> List[Episode]:
     # Handle different JSON structures
     if isinstance(data, list):
         # List of episodes
-        return [_dict_to_episode(ep) for ep in data]
+        return [_dict_to_episode(ep, validate=validate) for ep in data]
     elif isinstance(data, dict):
         # Single episode or wrapped format
         if "episodes" in data:
-            return [_dict_to_episode(ep) for ep in data["episodes"]]
-        elif "id" in data and "goal" in data:
-            # Single episode
-            return [_dict_to_episode(data)]
+            return [_dict_to_episode(ep, validate=validate) for ep in data["episodes"]]
+        elif "episode_id" in data or "id" in data:
+            # Single episode (support both old and new field names)
+            return [_dict_to_episode(data, validate=validate)]
         else:
             raise ValueError(f"Unrecognized JSON format in {path}")
     else:
         raise ValueError(f"Expected list or dict in {path}, got {type(data)}")
 
 
-def _dict_to_episode(data: Dict[str, Any]) -> Episode:
+def _parse_action_type(type_str: str) -> ActionType:
+    """Parse action type string to ActionType enum."""
+    # Handle common mappings from old format
+    type_map = {
+        "unknown": ActionType.CLICK,
+        "double_click": ActionType.DOUBLE_CLICK,
+        "right_click": ActionType.RIGHT_CLICK,
+        "key_press": ActionType.KEY,
+    }
+
+    type_lower = type_str.lower()
+    if type_lower in type_map:
+        return type_map[type_lower]
+
+    # Try direct enum lookup
+    try:
+        return ActionType(type_lower)
+    except ValueError:
+        # Default to CLICK for unknown types
+        return ActionType.CLICK
+
+
+def _dict_to_episode(data: Dict[str, Any], validate: bool = True) -> Episode:
     """Convert a dictionary to an Episode object."""
     steps = []
-    for step_data in data.get("steps", []):
+    for step_idx, step_data in enumerate(data.get("steps", [])):
         # Parse observation
         obs_data = step_data.get("observation", {})
         observation = Observation(
-            image_path=obs_data.get("image_path"),
-            meta=obs_data.get("meta"),
-            accessibility_tree=obs_data.get("accessibility_tree"),
-            dom_html=obs_data.get("dom_html"),
-            url=obs_data.get("url"),
+            screenshot_path=obs_data.get("screenshot_path") or obs_data.get("image_path"),
+            raw=obs_data.get("raw") or obs_data.get("meta"),
+            a11y_tree=obs_data.get("a11y_tree") or obs_data.get("accessibility_tree"),
+            dom=obs_data.get("dom") or obs_data.get("dom_html"),
             window_title=obs_data.get("window_title"),
-            app_name=obs_data.get("app_name"),
             focused_element=obs_data.get("focused_element"),
         )
 
         # Parse action
         action_data = step_data.get("action", {})
+
+        # Handle action type (string -> enum)
+        action_type_raw = action_data.get("type", "click")
+        action_type = _parse_action_type(action_type_raw)
+
+        # Handle coordinates: convert x,y to normalized_coordinates tuple
+        normalized_coords = None
+        if action_data.get("normalized_coordinates"):
+            normalized_coords = tuple(action_data["normalized_coordinates"])
+        elif action_data.get("x") is not None and action_data.get("y") is not None:
+            normalized_coords = (action_data["x"], action_data["y"])
+
+        # Handle end coordinates for drag actions
+        normalized_end = None
+        if action_data.get("normalized_end"):
+            normalized_end = tuple(action_data["normalized_end"])
+        elif action_data.get("end_x") is not None and action_data.get("end_y") is not None:
+            normalized_end = (action_data["end_x"], action_data["end_y"])
+
         action = Action(
-            type=action_data.get("type", "unknown"),
-            x=action_data.get("x"),
-            y=action_data.get("y"),
+            type=action_type,
+            normalized_coordinates=normalized_coords,
+            normalized_end=normalized_end,
             text=action_data.get("text"),
             raw=action_data.get("raw"),
-            bbox=tuple(action_data["bbox"]) if action_data.get("bbox") else None,
-            element_index=action_data.get("element_index"),
-            target_node_id=action_data.get("target_node_id"),
-            target_role=action_data.get("target_role"),
-            target_name=action_data.get("target_name"),
             key=action_data.get("key"),
             modifiers=action_data.get("modifiers"),
             scroll_direction=action_data.get("scroll_direction"),
             scroll_amount=action_data.get("scroll_amount"),
-            end_x=action_data.get("end_x"),
-            end_y=action_data.get("end_y"),
-            answer=action_data.get("answer"),
         )
 
+        # Handle step index and timestamp
+        step_index = step_data.get("step_index", step_idx)
+        timestamp = step_data.get("timestamp") or step_data.get("t")
+
         step = Step(
-            t=step_data.get("t", 0.0),
+            step_index=step_index,
             observation=observation,
             action=action,
-            thought=step_data.get("thought"),
+            reasoning=step_data.get("reasoning") or step_data.get("thought"),
+            timestamp=timestamp,
         )
         steps.append(step)
 
-    return Episode(
-        id=data.get("id", "unknown"),
-        goal=data.get("goal", ""),
-        steps=steps,
-        summary=data.get("summary"),
-        success=data.get("success"),
-        workflow_id=data.get("workflow_id"),
-    )
+    # Build episode with field mapping (old -> new)
+    episode_data = {
+        "episode_id": data.get("episode_id") or data.get("id", "unknown"),
+        "instruction": data.get("instruction") or data.get("goal", ""),
+        "steps": steps,
+        "success": data.get("success"),
+        "metadata": {
+            "summary": data.get("summary"),
+            "workflow_id": data.get("workflow_id"),
+        },
+    }
+
+    if validate:
+        return Episode.model_validate(episode_data)
+    else:
+        return Episode(**episode_data)
 
 
 def save_episodes(
@@ -178,9 +237,9 @@ def save_episodes(
 
     with open(path, "w") as f:
         if pretty:
-            json.dump(data, f, indent=2)
+            json.dump(data, f, indent=2, default=str)
         else:
-            json.dump(data, f)
+            json.dump(data, f, default=str)
 
 
 def _episode_to_dict(episode: Episode) -> Dict[str, Any]:
@@ -188,45 +247,34 @@ def _episode_to_dict(episode: Episode) -> Dict[str, Any]:
     steps = []
     for step in episode.steps:
         step_dict = {
-            "t": step.t,
+            "step_index": step.step_index,
+            "timestamp": step.timestamp,
             "observation": {
-                "image_path": step.observation.image_path,
-                "meta": step.observation.meta,
-                "accessibility_tree": step.observation.accessibility_tree,
-                "dom_html": step.observation.dom_html,
-                "url": step.observation.url,
+                "screenshot_path": step.observation.screenshot_path,
+                "raw": step.observation.raw,
+                "a11y_tree": step.observation.a11y_tree,
+                "dom": step.observation.dom,
                 "window_title": step.observation.window_title,
-                "app_name": step.observation.app_name,
-                "focused_element": step.observation.focused_element,
             },
             "action": {
-                "type": step.action.type,
-                "x": step.action.x,
-                "y": step.action.y,
+                "type": step.action.type.value,
+                "normalized_coordinates": step.action.normalized_coordinates,
+                "normalized_end": step.action.normalized_end,
                 "text": step.action.text,
                 "raw": step.action.raw,
-                "bbox": list(step.action.bbox) if step.action.bbox else None,
-                "element_index": step.action.element_index,
-                "target_node_id": step.action.target_node_id,
-                "target_role": step.action.target_role,
-                "target_name": step.action.target_name,
                 "key": step.action.key,
                 "modifiers": step.action.modifiers,
                 "scroll_direction": step.action.scroll_direction,
                 "scroll_amount": step.action.scroll_amount,
-                "end_x": step.action.end_x,
-                "end_y": step.action.end_y,
-                "answer": step.action.answer,
             },
-            "thought": step.thought,
+            "reasoning": step.reasoning,
         }
         steps.append(step_dict)
 
     return {
-        "id": episode.id,
-        "goal": episode.goal,
+        "episode_id": episode.episode_id,
+        "instruction": episode.instruction,
         "steps": steps,
-        "summary": episode.summary,
         "success": episode.success,
-        "workflow_id": episode.workflow_id,
+        "metadata": episode.metadata,
     }

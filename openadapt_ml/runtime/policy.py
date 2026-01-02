@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from PIL import Image
 
 from openadapt_ml.models.base_adapter import BaseVLMAdapter
-from openadapt_ml.schemas.sessions import Action
+from openadapt_ml.schema import Action, ActionType, UIElement
 
 
 # Coordinate-based DSL patterns
@@ -119,7 +119,7 @@ class AgentPolicy:
         m = _CLICK_SOM_RE.search(text)
         if m:
             idx = int(m.group(1))
-            return Action(type="click", element_index=idx)
+            return Action(type=ActionType.CLICK, element=UIElement(element_id=str(idx)))
 
         # TYPE([N], "text")
         m = _TYPE_SOM_RE.search(text)
@@ -127,14 +127,14 @@ class AgentPolicy:
             idx = int(m.group(1))
             raw_text = m.group(2)
             unescaped = raw_text.replace('\\"', '"').replace("\\\\", "\\")
-            return Action(type="type", text=unescaped, element_index=idx)
+            return Action(type=ActionType.TYPE, text=unescaped, element=UIElement(element_id=str(idx)))
 
         # TYPE("text") - SoM style without index
         m = _TYPE_SOM_SIMPLE_RE.search(text)
         if m:
             raw_text = m.group(1)
             unescaped = raw_text.replace('\\"', '"').replace("\\\\", "\\")
-            return Action(type="type", text=unescaped)
+            return Action(type=ActionType.TYPE, text=unescaped)
 
         # Coordinate-based patterns
         # CLICK(x=..., y=...)
@@ -145,7 +145,7 @@ class AgentPolicy:
             # Clamp to [0, 1]
             x = max(0.0, min(1.0, x))
             y = max(0.0, min(1.0, y))
-            return Action(type="click", x=x, y=y)
+            return Action(type=ActionType.CLICK, normalized_coordinates=(x, y))
 
         # TYPE(text="...")
         m = _TYPE_RE.search(text)
@@ -153,18 +153,18 @@ class AgentPolicy:
             # Unescape the text content
             raw_text = m.group(1)
             unescaped = raw_text.replace('\\"', '"').replace("\\\\", "\\")
-            return Action(type="type", text=unescaped)
+            return Action(type=ActionType.TYPE, text=unescaped)
 
         # WAIT()
         if _WAIT_RE.search(text):
-            return Action(type="wait")
+            return Action(type=ActionType.WAIT)
 
         # DONE()
         if _DONE_RE.search(text):
-            return Action(type="done")
+            return Action(type=ActionType.DONE)
 
         # Fallback
-        return Action(type="failed", raw={"text": text})
+        return Action(type=ActionType.FAIL, raw={"text": text})
 
     def predict_action_from_sample(
         self, sample: Dict[str, Any], max_new_tokens: int = 150

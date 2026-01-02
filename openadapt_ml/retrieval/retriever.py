@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from openadapt_ml.retrieval.index import DemoIndex, DemoMetadata
-from openadapt_ml.schemas.sessions import Episode
+from openadapt_ml.schema import Episode
 
 
 @dataclass

@@ -36,7 +36,7 @@ from openadapt_ml.benchmarks.base import (
 if TYPE_CHECKING:
     from openadapt_ml.models.api_adapter import ApiVLMAdapter
     from openadapt_ml.runtime.policy import AgentPolicy
-    from openadapt_ml.schemas.sessions import Action
+    from openadapt_ml.schema import Action, ActionType
 
 
 class BenchmarkAgent(ABC):
@@ -259,22 +259,51 @@ class PolicyAgent(BenchmarkAgent):
         Returns:
             BenchmarkAction.
         """
+        # Extract normalized coordinates
+        x, y = None, None
+        if action.normalized_coordinates is not None:
+            x, y = action.normalized_coordinates
+
+        # Extract end coordinates for drag
+        end_x, end_y = None, None
+        if action.normalized_end is not None:
+            end_x, end_y = action.normalized_end
+
+        # Extract action type value (enum -> string)
+        action_type = action.type.value if hasattr(action.type, 'value') else action.type
+
+        # Extract element info if available
+        target_node_id = None
+        target_role = None
+        target_name = None
+        target_bbox = None
+        if action.element is not None:
+            target_node_id = action.element.element_id
+            target_role = action.element.role
+            target_name = action.element.name
+            if action.element.bounds is not None:
+                target_bbox = (
+                    action.element.bounds.x,
+                    action.element.bounds.y,
+                    action.element.bounds.x + action.element.bounds.width,
+                    action.element.bounds.y + action.element.bounds.height,
+                )
+
         return BenchmarkAction(
-            type=action.type,
-            x=action.x,
-            y=action.y,
+            type=action_type,
+            x=x,
+            y=y,
             text=action.text,
-            target_bbox=action.bbox,
-            # Map additional fields if present
-            target_node_id=getattr(action, "target_node_id", None),
-            target_role=getattr(action, "target_role", None),
-            target_name=getattr(action, "target_name", None),
+            target_bbox=target_bbox,
+            target_node_id=target_node_id,
+            target_role=target_role,
+            target_name=target_name,
             key=getattr(action, "key", None),
             modifiers=getattr(action, "modifiers", None),
             scroll_direction=getattr(action, "scroll_direction", None),
             scroll_amount=getattr(action, "scroll_amount", None),
-            end_x=getattr(action, "end_x", None),
-            end_y=getattr(action, "end_y", None),
+            end_x=end_x,
+            end_y=end_y,
             answer=getattr(action, "answer", None),
             raw_action={"thought": thought} if thought else None,
         )

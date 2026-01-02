@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 from openadapt_ml.runtime.policy import AgentPolicy
-from openadapt_ml.schemas.sessions import Action, Episode
+from openadapt_ml.schema import Action, Episode, ActionType
 
 
 @dataclass
@@ -92,22 +92,46 @@ class AggregateMetrics:
     element_accuracy: Optional[float] = None  # SoM element index accuracy
 
 
+def _get_action_type_str(action: Action) -> str:
+    """Get action type as string, handling both enum and string types."""
+    return action.type.value if isinstance(action.type, ActionType) else action.type
+
+
+def _get_normalized_coords(action: Action) -> tuple[Optional[float], Optional[float]]:
+    """Extract normalized coordinates from action."""
+    if action.normalized_coordinates:
+        return action.normalized_coordinates
+    return None, None
+
+
+def _get_bbox(action: Action) -> Optional[tuple[float, float, float, float]]:
+    """Extract bounding box from action, checking element.bounds or raw."""
+    if action.element and action.element.bounds:
+        b = action.element.bounds
+        return (b.x, b.y, b.x + b.width, b.y + b.height)
+    elif action.raw and "bbox" in action.raw:
+        return action.raw["bbox"]
+    return None
+
+
 def compute_coordinate_error(pred_action: Action, gt_action: Action) -> Optional[float]:
     """Compute normalized L2 distance between predicted and ground-truth coords.
 
     Returns None if either action is missing coordinates.
     """
+    pred_x, pred_y = _get_normalized_coords(pred_action)
+    gt_x, gt_y = _get_normalized_coords(gt_action)
 
     if (
-        pred_action.x is None
-        or pred_action.y is None
-        or gt_action.x is None
-        or gt_action.y is None
+        pred_x is None
+        or pred_y is None
+        or gt_x is None
+        or gt_y is None
     ):
         return None
 
-    dx = pred_action.x - gt_action.x
-    dy = pred_action.y - gt_action.y
+    dx = pred_x - gt_x
+    dy = pred_y - gt_y
     return math.sqrt(dx * dx + dy * dy)
 
 
@@ -119,14 +143,16 @@ def is_click_in_bbox(pred_action: Action, gt_action: Action) -> Optional[bool]:
         - False if prediction is outside bbox
         - None if no bbox is available (fall back to coord distance)
     """
-    if gt_action.bbox is None:
+    gt_bbox = _get_bbox(gt_action)
+    if gt_bbox is None:
         return None
 
-    if pred_action.x is None or pred_action.y is None:
+    pred_x, pred_y = _get_normalized_coords(pred_action)
+    if pred_x is None or pred_y is None:
         return False
 
-    x_min, y_min, x_max, y_max = gt_action.bbox
-    return (x_min <= pred_action.x <= x_max) and (y_min <= pred_action.y <= y_max)
+    x_min, y_min, x_max, y_max = gt_bbox
+    return (x_min <= pred_x <= x_max) and (y_min <= pred_y <= y_max)
 
 
 def evaluate_episode(
@@ -177,7 +203,7 @@ def evaluate_episode(
 
     for step_idx, step in enumerate(episode.steps):
         # Skip steps without an image; the dataset builder does the same.
-        if not step.observation.image_path:
+        if not step.observation.screenshot_path:
             continue
 
         if sample_idx >= len(samples):
@@ -189,13 +215,17 @@ def evaluate_episode(
         pred_action, _thought, pred_state, raw_text = policy.predict_action_from_sample(sample)
         gt_action = step.action
 
+        # Get action types as strings for comparison
+        pred_type_str = _get_action_type_str(pred_action)
+        gt_type_str = _get_action_type_str(gt_action)
+
         # Track state-based success from final step
         if pred_state and isinstance(pred_state, dict):
             success_val = pred_state.get("success")
             if isinstance(success_val, bool):
                 last_state_success = success_val
 
-        type_match = pred_action.type == gt_action.type
+        type_match = pred_type_str == gt_type_str
         if type_match:
             step_matches += 1
         else:
@@ -206,14 +236,28 @@ def evaluate_episode(
         bbox_hit = False
         element_hit = False
 
+        # Helper to get element index - check element.element_id or raw field
+        def _get_element_index(action: Action) -> Optional[int]:
+            if action.element and action.element.element_id:
+                try:
+                    return int(action.element.element_id)
+                except (ValueError, TypeError):
+                    pass
+            if action.raw and "element_index" in action.raw:
+                return action.raw["element_index"]
+            return None
+
+        gt_element_index = _get_element_index(gt_action)
+        pred_element_index = _get_element_index(pred_action)
+
         # SoM mode: evaluate by element index for click/drag/type actions
-        if use_som and gt_action.type in {"click", "drag", "type"}:
-            if gt_action.element_index is not None:
+        if use_som and gt_type_str in {"click", "drag", "type"}:
+            if gt_element_index is not None:
                 element_total += 1
-                if pred_action.element_index == gt_action.element_index:
+                if pred_element_index == gt_element_index:
                     element_hits += 1
                     element_hit = True
-        elif gt_action.type in {"click", "drag"}:
+        elif gt_type_str in {"click", "drag"}:
             # Coordinate mode: evaluate by coordinate distance
             coord_error = compute_coordinate_error(pred_action, gt_action)
             if coord_error is not None:
@@ -233,11 +277,11 @@ def evaluate_episode(
 
         # Full step correctness: type matches AND element/coord match for relevant actions
         if type_match:
-            if use_som and gt_action.type in {"click", "drag", "type"}:
+            if use_som and gt_type_str in {"click", "drag", "type"}:
                 # SoM mode: require element index match
                 if element_hit:
                     full_step_correct += 1
-            elif gt_action.type in {"click", "drag"}:
+            elif gt_type_str in {"click", "drag"}:
                 # Coordinate mode: require click hit
                 if click_hit:
                     full_step_correct += 1
@@ -247,8 +291,8 @@ def evaluate_episode(
 
         # Track semantic milestones using the milestone spec
         for milestone in milestones:
-            if step_idx == milestone.step_index and gt_action.type == milestone.expected_type:
-                if pred_action.type == milestone.expected_type:
+            if step_idx == milestone.step_index and gt_type_str == milestone.expected_type:
+                if pred_type_str == milestone.expected_type:
                     # Check coord threshold if specified (for click actions)
                     if milestone.coord_threshold is not None:
                         if coord_error is not None and coord_error < milestone.coord_threshold:
@@ -258,8 +302,12 @@ def evaluate_episode(
                         milestones_achieved[milestone.name] = True
 
         # Ensure DONE is correct at the DONE step.
-        if gt_action.type == "done" and pred_action.type != "done":
+        if gt_type_str == "done" and pred_type_str != "done":
             success_pred = False
+
+        # Get normalized coordinates for logging
+        pred_x, pred_y = _get_normalized_coords(pred_action)
+        gt_x, gt_y = _get_normalized_coords(gt_action)
 
         # Optional logging of this step.
         if log_fn is not None and (log_limit is None or logged_count < log_limit):
@@ -273,30 +321,30 @@ def evaluate_episode(
                     user_prompt = m.get("content")
 
             record: Dict[str, Any] = {
-                "episode_id": episode.id,
+                "episode_id": episode.episode_id,
                 "step_index": step_idx,
-                "goal": episode.goal,
+                "goal": episode.instruction,
                 "system_prompt": system_prompt,
                 "user_prompt": user_prompt,
                 "model_output_raw": raw_text,
                 "pred_action": {
-                    "type": pred_action.type,
-                    "x": pred_action.x,
-                    "y": pred_action.y,
+                    "type": pred_type_str,
+                    "x": pred_x,
+                    "y": pred_y,
                     "text": pred_action.text,
-                    "element_index": pred_action.element_index,
+                    "element_index": pred_element_index,
                 },
                 "ground_truth_action": {
-                    "type": gt_action.type,
-                    "x": gt_action.x,
-                    "y": gt_action.y,
+                    "type": gt_type_str,
+                    "x": gt_x,
+                    "y": gt_y,
                     "text": gt_action.text,
-                    "element_index": gt_action.element_index,
+                    "element_index": gt_element_index,
                 },
-                "correct_type": pred_action.type == gt_action.type,
+                "correct_type": pred_type_str == gt_type_str,
                 "coord_error_norm": coord_error,
-                "element_match": pred_action.element_index == gt_action.element_index
-                if gt_action.element_index is not None
+                "element_match": pred_element_index == gt_element_index
+                if gt_element_index is not None
                 else None,
             }
 
@@ -306,7 +354,7 @@ def evaluate_episode(
         step_total += 1
 
     metrics = EpisodeMetrics(
-        episode_id=episode.id,
+        episode_id=episode.episode_id,
         step_matches=step_matches,
         step_total=step_total,
         coord_errors=coord_errors,

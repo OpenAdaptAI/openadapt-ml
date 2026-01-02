@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from openadapt_ml.datasets.next_action import NextActionDataset, build_next_action_sft_samples
-from openadapt_ml.ingest.synthetic import generate_synthetic_sessions
+from openadapt_ml.ingest.synthetic import generate_synthetic_episodes
 from openadapt_ml.models.dummy_adapter import DummyAdapter
 from openadapt_ml.training.trainer import TrainingConfig, train_supervised
 
@@ -187,12 +187,11 @@ def test_training_with_early_stopping():
     """Test training with early stopping enabled - should complete quickly."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Generate tiny synthetic dataset
-        sessions = generate_synthetic_sessions(
-            num_sessions=1,
+        episodes = generate_synthetic_episodes(
+            num_episodes=1,
             seed=42,
             output_dir=os.path.join(tmpdir, "synthetic_data"),
         )
-        episodes = [ep for sess in sessions for ep in sess.episodes]
         samples = build_next_action_sft_samples(episodes)
         dataset = NextActionDataset(samples)
 
@@ -222,12 +221,11 @@ def test_training_generates_output():
             os.chdir(tmpdir)
 
             # Generate tiny synthetic dataset
-            sessions = generate_synthetic_sessions(
-                num_sessions=1,
+            episodes = generate_synthetic_episodes(
+                num_episodes=1,
                 seed=42,
                 output_dir="synthetic_data",
             )
-            episodes = [ep for sess in sessions for ep in sess.episodes]
             samples = build_next_action_sft_samples(episodes)
             dataset = NextActionDataset(samples)
 
