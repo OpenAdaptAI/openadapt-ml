@@ -36,6 +36,8 @@ import webbrowser
 from pathlib import Path
 from typing import Any
 
+from openadapt_ml.cloud.ssh_tunnel import get_tunnel_manager
+
 # Training output directory
 TRAINING_OUTPUT = Path("training_output")
 
@@ -575,6 +577,24 @@ def cmd_serve(args: argparse.Namespace) -> int:
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
                     self.wfile.write(json.dumps({"error": str(e)}).encode())
+            elif self.path == '/api/benchmark/start':
+                # Start a benchmark run with configurable parameters
+                content_length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(content_length).decode('utf-8') if content_length else '{}'
+                try:
+                    params = json.loads(body)
+                    result = self._start_benchmark_run(params)
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps(result).encode())
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
             else:
                 self.send_error(404, "Not found")
 
@@ -707,6 +727,32 @@ def cmd_serve(args: argparse.Namespace) -> int:
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
                     self.wfile.write(json.dumps({"error": str(e), "responding": False}).encode())
+            elif self.path.startswith('/api/tunnels'):
+                # Return SSH tunnel status
+                try:
+                    tunnel_mgr = get_tunnel_manager()
+                    status = tunnel_mgr.get_tunnel_status()
+                    result = {
+                        name: {
+                            "active": s.active,
+                            "local_port": s.local_port,
+                            "remote_endpoint": s.remote_endpoint,
+                            "pid": s.pid,
+                            "error": s.error,
+                        }
+                        for name, s in status.items()
+                    }
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps(result).encode())
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
             elif self.path.startswith('/api/current-run'):
                 # Return currently running benchmark info
                 try:
@@ -1117,19 +1163,18 @@ def cmd_serve(args: argparse.Namespace) -> int:
                                     progress = 0.0
                                     description = "Starting..."
 
-                                    # Use internal IP from environment if available
-                                    probe_ip = env_internal_ip if env_vm_ip else "20.20.20.21"
-
                                     if "Windows started successfully" in logs:
-                                        # Check if WAA server is ready
+                                        # Check if WAA server is ready via Docker port forwarding
+                                        # See docs/waa_network_architecture.md - always use localhost
                                         server_check = subprocess.run(
                                             ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
                                              "-i", str(Path.home() / ".ssh" / "id_rsa"),
                                              f"azureuser@{vm_ip}",
-                                             f"curl -s --connect-timeout 2 http://{probe_ip}:5000/probe 2>/dev/null"],
+                                             "curl -s --connect-timeout 2 http://localhost:5000/probe 2>/dev/null"],
                                             capture_output=True, text=True, timeout=10
                                         )
-                                        if server_check.returncode == 0 and server_check.stdout.strip():
+                                        waa_ready = server_check.returncode == 0 and "Service is operational" in server_check.stdout
+                                        if waa_ready:
                                             phase = "ready"
                                             progress = 100.0
                                             description = "WAA Server ready - benchmarks can run"
@@ -1165,11 +1210,12 @@ def cmd_serve(args: argparse.Namespace) -> int:
                                             description = f"Phase 0/6: Downloading Windows 11... {download_match.group(1)}% ({eta}s left)"
 
                                     # Improve phase detection - if Windows is booted but WAA not ready,
-                                    # it might be at login screen waiting for OEM scripts
+                                    # it might be at login screen waiting for OEM scripts or running install.bat
                                     if phase == "oobe" and "Boot0004" in logs:
                                         # Windows finished installing, at login/desktop
-                                        description = "Phase 5/6: Windows ready. Login via VNC, then run: \\\\host.lan\\Data\\install.bat"
-                                        progress = 85.0
+                                        # install.bat should auto-run from FirstLogonCommands (see Dockerfile)
+                                        description = "Phase 5/6: Windows at desktop, OEM scripts running... (WAA server starting)"
+                                        progress = 90.0
 
                                     # Get detailed metadata for VM Details panel
                                     vm_metadata = self._get_vm_detailed_metadata(vm_ip, container_name, logs, phase)
@@ -1190,9 +1236,11 @@ def cmd_serve(args: argparse.Namespace) -> int:
                                             "phase": phase,
                                             "windows_ready": phase in ["oobe", "ready"],
                                             "waa_server_ready": phase == "ready",
-                                            "vnc_url": f"http://{vm_ip}:8006",
+                                            # Use localhost - SSH tunnel handles routing to VM
+                                            # See docs/waa_network_architecture.md
+                                            "vnc_url": "http://localhost:8006",
                                             "windows_username": "Docker",
-                                            "windows_password": "(empty - just press Enter)",
+                                            "windows_password": "admin",
                                             "recent_logs": logs[-500:] if logs else "",
                                             # Enhanced VM details
                                             "disk_usage_gb": vm_metadata["disk_usage_gb"],
@@ -1266,11 +1314,11 @@ def cmd_serve(args: argparse.Namespace) -> int:
                     pass
 
                 # Check WAA probe via SSH
+                # Probe WAA via localhost (Docker port forwarding handles routing)
+                # See docs/waa_network_architecture.md for architecture details
                 try:
-                    internal_ip = vm.get("internal_ip", "20.20.20.21")
                     waa_port = vm.get("waa_port", 5000)
-                    ssh_cmd = f"curl -s --connect-timeout 2 http://{internal_ip}:{waa_port}/probe 2>/dev/null"
-
+                    ssh_cmd = f"curl -s --connect-timeout 2 http://localhost:{waa_port}/probe 2>/dev/null"
                     result = subprocess.run(
                         ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=3",
                          "-i", str(Path.home() / ".ssh" / "id_rsa"),
@@ -1278,12 +1326,33 @@ def cmd_serve(args: argparse.Namespace) -> int:
                          ssh_cmd],
                         capture_output=True, text=True, timeout=5
                     )
-                    if result.returncode == 0 and result.stdout.strip():
+                    probe_success = result.returncode == 0 and "Service is operational" in result.stdout
+                    if probe_success:
                         vm["waa_probe_status"] = "ready"
                         vm["status"] = "online"
+                        # Auto-start SSH tunnels for VNC and WAA
+                        try:
+                            tunnel_mgr = get_tunnel_manager()
+                            tunnel_status = tunnel_mgr.ensure_tunnels_for_vm(
+                                vm_ip=vm["ssh_host"],
+                                ssh_user=vm.get("ssh_user", "azureuser"),
+                            )
+                            vm["tunnels"] = {
+                                name: {"active": s.active, "local_port": s.local_port, "error": s.error}
+                                for name, s in tunnel_status.items()
+                            }
+                        except Exception as e:
+                            vm["tunnels"] = {"error": str(e)}
                     else:
                         vm["waa_probe_status"] = "not responding"
                         vm["status"] = "offline"
+                        # Stop tunnels when VM goes offline
+                        try:
+                            tunnel_mgr = get_tunnel_manager()
+                            tunnel_mgr.stop_all_tunnels()
+                            vm["tunnels"] = {}
+                        except Exception:
+                            pass
                 except Exception:
                     vm["waa_probe_status"] = "ssh failed"
                     vm["status"] = "offline"
@@ -1893,6 +1962,118 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 return {"status": "success", "vm": new_vm}
             except Exception as e:
                 return {"status": "error", "message": str(e)}
+
+        def _start_benchmark_run(self, params: dict) -> dict:
+            """Start a benchmark run with the given parameters.
+
+            Runs the benchmark in a background thread and returns immediately.
+            Progress is tracked via benchmark_progress.json.
+
+            Expected params:
+            {
+                "model": "gpt-4o",
+                "num_tasks": 5,
+                "agent": "navi",
+                "task_selection": "all" | "domain" | "task_ids",
+                "domain": "general",  // if task_selection == "domain"
+                "task_ids": ["task_001", "task_015"]  // if task_selection == "task_ids"
+            }
+
+            Returns:
+                dict with status and params
+            """
+            from dotenv import load_dotenv
+
+            # Load .env file for API keys
+            project_root = Path(__file__).parent.parent.parent
+            load_dotenv(project_root / ".env")
+
+            # Build CLI command
+            cmd = [
+                "uv", "run", "python", "-m", "openadapt_ml.benchmarks.cli",
+                "vm", "run-waa",
+                "--num-tasks", str(params.get("num_tasks", 5)),
+                "--model", params.get("model", "gpt-4o"),
+                "--agent", params.get("agent", "navi"),
+                "--no-open"  # Don't open viewer (already open)
+            ]
+
+            # Add task selection args
+            task_selection = params.get("task_selection", "all")
+            if task_selection == "domain":
+                domain = params.get("domain", "general")
+                cmd.extend(["--domain", domain])
+            elif task_selection == "task_ids":
+                task_ids = params.get("task_ids", [])
+                if task_ids:
+                    cmd.extend(["--task-ids", ",".join(task_ids)])
+
+            # Create progress log file (in cwd which is serve_dir)
+            progress_file = Path("benchmark_progress.json")
+
+            # Write initial progress
+            model = params.get("model", "gpt-4o")
+            num_tasks = params.get("num_tasks", 5)
+            agent = params.get("agent", "navi")
+
+            print(f"\n[Benchmark] Starting WAA benchmark: model={model}, tasks={num_tasks}, agent={agent}")
+            print(f"[Benchmark] Task selection: {task_selection}")
+            if task_selection == "domain":
+                print(f"[Benchmark] Domain: {params.get('domain', 'general')}")
+            elif task_selection == "task_ids":
+                print(f"[Benchmark] Task IDs: {params.get('task_ids', [])}")
+            print(f"[Benchmark] Command: {' '.join(cmd)}")
+
+            progress_file.write_text(json.dumps({
+                "status": "running",
+                "model": model,
+                "num_tasks": num_tasks,
+                "agent": agent,
+                "task_selection": task_selection,
+                "tasks_complete": 0,
+                "message": f"Starting {model} benchmark with {num_tasks} tasks..."
+            }))
+
+            # Copy environment with loaded vars
+            env = os.environ.copy()
+
+            # Run in background thread
+            def run():
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    cwd=str(project_root),
+                    env=env
+                )
+
+                print(f"\n[Benchmark] Output:\n{result.stdout}")
+                if result.stderr:
+                    print(f"[Benchmark] Stderr: {result.stderr}")
+
+                if result.returncode == 0:
+                    print(f"[Benchmark] Complete. Regenerating viewer...")
+                    progress_file.write_text(json.dumps({
+                        "status": "complete",
+                        "model": model,
+                        "num_tasks": num_tasks,
+                        "message": "Benchmark complete. Refresh to see results."
+                    }))
+                    # Regenerate benchmark viewer
+                    _regenerate_benchmark_viewer_if_available(serve_dir)
+                else:
+                    error_msg = result.stderr[:200] if result.stderr else "Unknown error"
+                    print(f"[Benchmark] Failed: {error_msg}")
+                    progress_file.write_text(json.dumps({
+                        "status": "error",
+                        "model": model,
+                        "num_tasks": num_tasks,
+                        "message": f"Benchmark failed: {error_msg}"
+                    }))
+
+            threading.Thread(target=run, daemon=True).start()
+
+            return {"status": "started", "params": params}
 
         def do_OPTIONS(self):
             # Handle CORS preflight

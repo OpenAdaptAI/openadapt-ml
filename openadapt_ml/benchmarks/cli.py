@@ -2297,14 +2297,15 @@ EOF'''
                 capture_output=True, text=True
             )
 
+            vm_created = False
             if result.returncode == 0 and result.stdout.strip():
                 ip = result.stdout.strip()
                 print(f"[✓] VM already exists: {ip}")
+                vm_created = True
             else:
                 print("[1/6] Creating Azure VM with nested virtualization...")
                 # Try multiple locations if needed
                 locations_to_try = [location, "westus2", "centralus", "eastus2"]
-                vm_created = False
                 for loc in locations_to_try:
                     result = subprocess.run(
                         ["az", "vm", "create",
@@ -2546,11 +2547,11 @@ EOF'''
         build_cmd = '''
 mkdir -p ~/build-waa
 cp -r ~/WindowsAgentArena/src/win-arena-container/vm ~/build-waa/
-cd ~/build-waa && docker build -t waa-auto:latest . 2>&1 | tail -10
+cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tail -10
 '''
         result = subprocess.run(
             ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}", build_cmd],
-            capture_output=True, text=True, timeout=300
+            capture_output=True, text=True, timeout=1800  # 30 min for Docker build
         )
         if "Successfully" not in result.stdout and result.returncode != 0:
             print(f"  ✗ Failed to build image: {result.stderr}")
@@ -2706,11 +2707,17 @@ cd ~/build-waa && docker build -t waa-auto:latest . 2>&1 | tail -10
         open_viewer = getattr(args, 'open', True)
         port = getattr(args, 'port', 8765)
         internal_ip = getattr(args, 'internal_ip', '172.30.0.2')
+        domain = getattr(args, 'domain', None)
+        task_ids = getattr(args, 'task_ids', None)
 
         print(f"  VM IP: {ip}")
         print(f"  Model: {model}")
         print(f"  Agent: {agent}")
         print(f"  Tasks: {num_tasks}")
+        if domain:
+            print(f"  Domain: {domain}")
+        if task_ids:
+            print(f"  Task IDs: {task_ids}")
         print(f"\n  Monitor Windows at: http://{ip}:8006")
 
         # Get API key from args, settings, or environment (in priority order)
@@ -2778,6 +2785,13 @@ cd ~/build-waa && docker build -t waa-auto:latest . 2>&1 | tail -10
 
         # Use official WAA container with start-client true
         # Storage must be on /mnt (bigger disk) not root
+        # Build task filtering arguments
+        task_filter_args = ""
+        if domain:
+            task_filter_args += f" --domain {domain}"
+        if task_ids:
+            task_filter_args += f" --task-ids {task_ids}"
+
         docker_cmd = f'''docker run --rm \
   --name winarena \
   --device=/dev/kvm \
@@ -2789,7 +2803,7 @@ cd ~/build-waa && docker build -t waa-auto:latest . 2>&1 | tail -10
   -v ~/waa-results:/results \
   -e OPENAI_API_KEY="{api_key}" \
   windowsarena/winarena:latest \
-  "/entry.sh --start-client true --model {model} --agent {agent} --result-dir /results"'''
+  "/entry.sh --start-client true --model {model} --agent {agent} --result-dir /results{task_filter_args}"'''
 
         result = subprocess.run(
             ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ServerAliveInterval=60",
@@ -3391,6 +3405,83 @@ ls -lh /mnt/waa-storage/
         print("\nCleanup complete.")
 
 
+def cmd_view(args: argparse.Namespace) -> None:
+    """View benchmark results from collected data.
+
+    Generates an HTML viewer for benchmark results and optionally serves it.
+
+    Usage:
+        uv run python -m openadapt_ml.benchmarks.cli view --run-name {name}
+    """
+    import http.server
+    import socketserver
+    import threading
+    import webbrowser
+
+    from openadapt_ml.benchmarks.viewer import generate_benchmark_viewer
+
+    benchmark_dir = Path(args.output) / args.run_name
+
+    if not benchmark_dir.exists():
+        print(f"Error: Benchmark directory not found: {benchmark_dir}")
+        print(f"\nAvailable runs in {args.output}/:")
+        output_dir = Path(args.output)
+        if output_dir.exists():
+            runs = [d.name for d in output_dir.iterdir() if d.is_dir()]
+            if runs:
+                for run in sorted(runs):
+                    print(f"  - {run}")
+            else:
+                print("  (no benchmark runs found)")
+        else:
+            print(f"  (directory does not exist)")
+        sys.exit(1)
+
+    print(f"\n=== Benchmark Viewer ===\n")
+    print(f"  Run: {args.run_name}")
+    print(f"  Directory: {benchmark_dir}")
+
+    # Generate the HTML viewer
+    print("\n[1/2] Generating HTML viewer...")
+    output_path = generate_benchmark_viewer(
+        benchmark_dir=benchmark_dir,
+        output_path=benchmark_dir / "benchmark.html",
+        embed_screenshots=getattr(args, 'embed_screenshots', False),
+    )
+    print(f"  Generated: {output_path}")
+
+    # Serve the viewer
+    port = args.port
+
+    print(f"\n[2/2] Starting server on port {port}...")
+
+    class QuietHandler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *handler_args, **kwargs):
+            super().__init__(*handler_args, directory=str(benchmark_dir), **kwargs)
+
+        def log_message(self, format, *log_args):
+            pass  # Suppress logging
+
+    try:
+        with socketserver.TCPServer(("", port), QuietHandler) as httpd:
+            url = f"http://localhost:{port}/benchmark.html"
+            print(f"\n  Viewer: {url}")
+            print("  Press Ctrl+C to stop\n")
+
+            if not getattr(args, 'no_open', False):
+                webbrowser.open(url)
+
+            httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopped.")
+    except OSError as e:
+        if "Address already in use" in str(e):
+            print(f"\n  Error: Port {port} is already in use.")
+            print(f"  Try a different port: --port {port + 1}")
+        else:
+            raise
+
+
 def cmd_setup(args: argparse.Namespace) -> None:
     """Run full setup (Azure + WAA submodule)."""
     import subprocess
@@ -3614,6 +3705,8 @@ Quick Start:
     p_vm.add_argument("--api-key", help="OpenAI API key for WAA agent (or set OPENAI_API_KEY env var)")
     p_vm.add_argument("--tasks", help="Comma-separated task IDs to run (e.g., notepad_1,notepad_2)")
     p_vm.add_argument("--num-tasks", type=int, default=5, help="Number of tasks to run (for run-waa)")
+    p_vm.add_argument("--domain", choices=["general", "office", "web", "coding", "system", "creative", "data", "communication", "media", "gaming", "utility"], help="WAA domain to filter tasks (for run-waa)")
+    p_vm.add_argument("--task-ids", help="Comma-separated task IDs to run (e.g., 'task_001,task_015,task_042') for run-waa")
     p_vm.add_argument("--model", default="gpt-4o", help="Model to use (gpt-4o, gpt-5.2, etc.)")
     p_vm.add_argument("--agent", default="navi", help="Agent type (navi is the default WAA agent)")
     # Multi-worker options
@@ -3640,6 +3733,14 @@ Quick Start:
     p_viewer.add_argument("--port", type=int, default=8765, help="Port for local dashboard server (default: 8765)")
     p_viewer.add_argument("--no-open", action="store_true", help="Don't auto-open browser")
     p_viewer.add_argument("--internal-ip", default="172.30.0.2", help="Internal IP of Windows VM (default: 172.30.0.2)")
+
+    # View benchmark results - generate and serve HTML viewer for collected benchmark data
+    p_view = subparsers.add_parser("view", help="View benchmark results from collected data")
+    p_view.add_argument("--run-name", required=True, help="Name of the benchmark run to view")
+    p_view.add_argument("--output", default="benchmark_results", help="Base directory containing benchmark runs (default: benchmark_results)")
+    p_view.add_argument("--port", type=int, default=8765, help="Port for local server (default: 8765)")
+    p_view.add_argument("--no-open", action="store_true", help="Don't auto-open browser")
+    p_view.add_argument("--embed-screenshots", action="store_true", help="Embed screenshots as base64 (creates larger but standalone HTML)")
 
     args = parser.parse_args()
 
@@ -3683,6 +3784,8 @@ Quick Start:
         cmd_analyze(args)
     elif args.command == "viewer":
         cmd_viewer(args)
+    elif args.command == "view":
+        cmd_view(args)
     else:
         parser.print_help()
 
