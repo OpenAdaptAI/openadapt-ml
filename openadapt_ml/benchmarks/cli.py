@@ -917,6 +917,140 @@ def cmd_test_collection(args: argparse.Namespace) -> None:
     print()
 
 
+def cmd_waa_demo(args: argparse.Namespace) -> None:
+    """Run WAA demo-conditioned experiment.
+
+    This runs the demo-conditioned prompting experiment comparing
+    zero-shot vs demo-conditioned performance on WAA tasks.
+
+    The experiment validates that including task demonstrations
+    significantly improves first-action accuracy.
+    """
+    from openadapt_ml.experiments.waa_demo.runner import (
+        DemoConditionedAgent,
+        TASKS,
+        get_complete_demos,
+        get_task,
+    )
+    from openadapt_ml.benchmarks import (
+        WAAMockAdapter,
+        compute_metrics,
+    )
+    from openadapt_ml.benchmarks.runner import EvaluationConfig, evaluate_agent_on_benchmark
+
+    print(f"\n=== WAA Demo-Conditioned Experiment ===")
+    print(f"  Condition:   {args.condition}")
+    print(f"  Provider:    {args.provider}")
+    print(f"  Tasks:       {args.tasks or 'all with demos'}")
+    print(f"  Max steps:   {args.max_steps}")
+    print()
+
+    # Determine which tasks to run
+    task_ids = None
+    if args.tasks:
+        task_nums = [t.strip() for t in args.tasks.split(",")]
+        task_ids = []
+        for num in task_nums:
+            task = get_task(num)
+            if task:
+                task_ids.append(task.task_id)
+            else:
+                print(f"  Warning: Task {num} not found")
+    else:
+        complete_demos = get_complete_demos()
+        task_ids = []
+        for num in complete_demos.keys():
+            task = get_task(num)
+            if task:
+                task_ids.append(task.task_id)
+        print(f"  Running {len(task_ids)} tasks with complete demos")
+
+    # Determine adapter
+    if args.mock:
+        print("  Using mock adapter (no Windows required)")
+        adapter = WAAMockAdapter(num_tasks=len(task_ids) if task_ids else 10)
+        task_ids = None
+    else:
+        # Auto-detect WAA
+        waa_path = find_waa_path()
+        if waa_path and sys.platform == "win32":
+            from openadapt_ml.benchmarks import WAAAdapter
+            print(f"  Using real WAA from: {waa_path}")
+            adapter = WAAAdapter(waa_repo_path=waa_path)
+        else:
+            print("  WAA not available, using mock adapter")
+            adapter = WAAMockAdapter(num_tasks=len(task_ids) if task_ids else 10)
+            task_ids = None
+
+    # Create agent
+    agent = DemoConditionedAgent(
+        provider=args.provider,
+        condition=args.condition,
+        max_tokens=args.max_tokens,
+        use_accessibility_tree=not args.no_a11y,
+        use_history=not args.no_history,
+    )
+
+    # Configure evaluation
+    model_id = f"{args.provider}-{args.condition}"
+    config = EvaluationConfig(
+        max_steps=args.max_steps,
+        parallel=1,
+        save_trajectories=True,
+        save_execution_traces=True,
+        model_id=model_id,
+        output_dir=args.output,
+        run_name=args.run_name,
+        verbose=args.verbose,
+    )
+
+    print()
+    print("Starting evaluation...")
+    print("(Each step calls the VLM API - this may take a while)")
+    print()
+
+    try:
+        results = evaluate_agent_on_benchmark(
+            agent=agent,
+            adapter=adapter,
+            task_ids=task_ids,
+            config=config,
+        )
+    except Exception as e:
+        print(f"\nERROR: {e}")
+        key_name = "ANTHROPIC_API_KEY" if args.provider == "anthropic" else "OPENAI_API_KEY"
+        if "API key" in str(e) or "api_key" in str(e).lower():
+            print(f"\nMake sure {key_name} is set in your environment or .env file.")
+        sys.exit(1)
+
+    # Print results
+    metrics = compute_metrics(results)
+    print("\n=== Results ===")
+    print(f"Condition:    {args.condition}")
+    print(f"Tasks:        {metrics['num_tasks']}")
+    print(f"Success rate: {metrics['success_rate']:.1%}")
+    print(f"Successes:    {metrics['success_count']}")
+    print(f"Failures:     {metrics['fail_count']}")
+    print(f"Avg steps:    {metrics['avg_steps']:.1f}")
+    print()
+
+    # Per-task results
+    if args.verbose:
+        print("Per-task results:")
+        for result in results:
+            status = "PASS" if result.success else "FAIL"
+            print(f"  {result.task_id}: {status} ({result.num_steps} steps)")
+        print()
+
+    # Output location
+    output_dir = Path(args.output)
+    run_dirs = sorted(output_dir.glob("*/metadata.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if run_dirs:
+        run_dir = run_dirs[0].parent
+        print(f"Results saved to: {run_dir.absolute()}")
+    print()
+
+
 def cmd_run_api(args: argparse.Namespace) -> None:
     """Run evaluation using API-backed VLM (Claude/GPT-5.1).
 
@@ -3423,6 +3557,22 @@ Quick Start:
     p_api.add_argument("--force", action="store_true", help="Force run on non-Windows")
     p_api.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
 
+    # WAA Demo-conditioned experiment
+    p_demo = subparsers.add_parser("waa-demo", help="Run WAA demo-conditioned experiment (zero-shot vs demo)")
+    p_demo.add_argument("--condition", choices=["zero-shot", "demo"], default="demo",
+                        help="Experiment condition (default: demo)")
+    p_demo.add_argument("--provider", choices=["anthropic", "openai"], default="anthropic",
+                        help="VLM API provider (default: anthropic)")
+    p_demo.add_argument("--tasks", help="Comma-separated task numbers 1-10 (default: all with demos)")
+    p_demo.add_argument("--max-steps", type=int, default=15, help="Max steps per task (default: 15)")
+    p_demo.add_argument("--max-tokens", type=int, default=512, help="Max tokens for API response")
+    p_demo.add_argument("--mock", action="store_true", help="Use mock adapter (no Windows required)")
+    p_demo.add_argument("--no-a11y", action="store_true", help="Disable accessibility tree in prompt")
+    p_demo.add_argument("--no-history", action="store_true", help="Disable action history in prompt")
+    p_demo.add_argument("--output", default="benchmark_results", help="Output directory")
+    p_demo.add_argument("--run-name", help="Run name (default: auto-generated)")
+    p_demo.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+
     # Create config
     p_config = subparsers.add_parser("create-config", help="Create sample Azure config")
     p_config.add_argument("--output", default="azure_config.json", help="Output path")
@@ -3517,6 +3667,8 @@ Quick Start:
         cmd_test_collection(args)
     elif args.command == "run-api":
         cmd_run_api(args)
+    elif args.command == "waa-demo":
+        cmd_waa_demo(args)
     elif args.command == "create-config":
         cmd_create_config(args)
     elif args.command == "cleanup-vms":
