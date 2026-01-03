@@ -194,12 +194,13 @@ def _get_background_tasks_panel_css() -> str:
             color: #10b981;
             font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
         }
+        /* VM Details section - using native <details> element to preserve state across re-renders */
         .vm-details-section {
             margin-top: 12px;
             border-top: 1px solid var(--border-color);
             padding-top: 12px;
         }
-        .vm-details-toggle {
+        .vm-details-summary {
             cursor: pointer;
             font-size: 0.75rem;
             color: var(--text-muted);
@@ -208,26 +209,26 @@ def _get_background_tasks_panel_css() -> str:
             align-items: center;
             gap: 6px;
             padding: 6px 0;
+            list-style: none;
         }
-        .vm-details-toggle:hover {
+        .vm-details-summary::-webkit-details-marker {
+            display: none;
+        }
+        .vm-details-summary:hover {
             color: var(--text-secondary);
         }
-        .vm-details-toggle-icon {
+        .vm-details-icon {
             transition: transform 0.2s;
         }
-        .vm-details-toggle.expanded .vm-details-toggle-icon {
+        details.vm-details[open] .vm-details-icon {
             transform: rotate(90deg);
         }
         .vm-details-content {
-            display: none;
             margin-top: 8px;
             padding: 12px;
             background: rgba(0, 0, 0, 0.3);
             border-radius: 6px;
             font-size: 0.75rem;
-        }
-        .vm-details-toggle.expanded + .vm-details-content {
-            display: block;
         }
         .vm-detail-row {
             display: flex;
@@ -452,51 +453,131 @@ def _get_background_tasks_panel_html() -> str:
                 `;
             };
 
+            // Use native <details> element to preserve expanded state across SSE re-renders
             return `
                 <div class="vm-details-section">
-                    <div class="vm-details-toggle" onclick="this.classList.toggle('expanded')">
-                        <span class="vm-details-toggle-icon">▶</span>
-                        <span>VM Details</span>
-                    </div>
-                    <div class="vm-details-content">
-                        ${metadata.setup_script_phase ? `
-                            <div class="vm-detail-row">
-                                <div class="vm-detail-label">Setup Phase</div>
-                                <div class="vm-detail-value">${metadata.setup_script_phase}</div>
-                            </div>
-                        ` : ''}
-                        ${metadata.disk_usage_gb ? `
-                            <div class="vm-detail-row">
-                                <div class="vm-detail-label">Disk Usage</div>
-                                <div class="vm-detail-value">${metadata.disk_usage_gb}</div>
-                            </div>
-                        ` : ''}
-                        ${metadata.memory_usage_mb ? `
-                            <div class="vm-detail-row">
-                                <div class="vm-detail-label">Memory Usage</div>
-                                <div class="vm-detail-value">${metadata.memory_usage_mb}</div>
-                            </div>
-                        ` : ''}
-                        ${metadata.probe_response !== undefined ? `
-                            <div class="vm-detail-row">
-                                <div class="vm-detail-label">WAA Server (/probe)</div>
-                                <div class="vm-detail-value ${statusClass(metadata.probe_response, 'probe')}">
-                                    ${metadata.probe_response}
+                    <details class="vm-details">
+                        <summary class="vm-details-summary">
+                            <span class="vm-details-icon">&#9654;</span>
+                            <span>VM Details</span>
+                        </summary>
+                        <div class="vm-details-content">
+                            ${metadata.setup_script_phase ? `
+                                <div class="vm-detail-row">
+                                    <div class="vm-detail-label">Setup Phase</div>
+                                    <div class="vm-detail-value">${metadata.setup_script_phase}</div>
                                 </div>
-                            </div>
-                        ` : ''}
-                        ${metadata.qmp_connected !== undefined ? `
-                            <div class="vm-detail-row">
-                                <div class="vm-detail-label">QMP (port 7200)</div>
-                                <div class="vm-detail-value ${statusClass(metadata.qmp_connected, 'qmp')}">
-                                    ${metadata.qmp_connected ? 'Connected ✓' : 'Not connected'}
+                            ` : ''}
+                            ${metadata.disk_usage_gb ? `
+                                <div class="vm-detail-row">
+                                    <div class="vm-detail-label">Disk Usage</div>
+                                    <div class="vm-detail-value">${metadata.disk_usage_gb}</div>
                                 </div>
-                            </div>
-                        ` : ''}
-                        ${renderDependencies(metadata.dependencies)}
-                    </div>
+                            ` : ''}
+                            ${metadata.memory_usage_mb ? `
+                                <div class="vm-detail-row">
+                                    <div class="vm-detail-label">Memory Usage</div>
+                                    <div class="vm-detail-value">${metadata.memory_usage_mb}</div>
+                                </div>
+                            ` : ''}
+                            ${metadata.probe_response !== undefined ? `
+                                <div class="vm-detail-row">
+                                    <div class="vm-detail-label">WAA Server (/probe)</div>
+                                    <div class="vm-detail-value ${statusClass(metadata.probe_response, 'probe')}">
+                                        ${metadata.probe_response}
+                                    </div>
+                                </div>
+                            ` : ''}
+                            ${metadata.qmp_connected !== undefined ? `
+                                <div class="vm-detail-row">
+                                    <div class="vm-detail-label">QMP (port 7200)</div>
+                                    <div class="vm-detail-value ${statusClass(metadata.qmp_connected, 'qmp')}">
+                                        ${metadata.qmp_connected ? 'Connected ✓' : 'Not connected'}
+                                    </div>
+                                </div>
+                            ` : ''}
+                            ${renderDependencies(metadata.dependencies)}
+                        </div>
+                    </details>
                 </div>
             `;
+        }
+
+        // Track expanded states for VM Details and logs panels across page refreshes
+        // Uses localStorage to persist states across browser reloads
+        // Key: task_id, Value: { vmDetailsExpanded: bool, logsExpanded: bool }
+        const STORAGE_KEY = 'openadapt_task_expanded_states';
+
+        function getTaskExpandedStates() {
+            try {
+                const stored = localStorage.getItem(STORAGE_KEY);
+                return stored ? JSON.parse(stored) : {};
+            } catch (e) {
+                console.warn('Failed to load expanded states from localStorage:', e);
+                return {};
+            }
+        }
+
+        function saveTaskExpandedStates() {
+            const taskExpandedStates = getTaskExpandedStates();
+
+            // First, clear all expanded states (we'll re-add the currently expanded ones)
+            // This handles the case where a user collapses a panel
+            for (const key of Object.keys(taskExpandedStates)) {
+                taskExpandedStates[key].vmDetailsExpanded = false;
+                taskExpandedStates[key].logsExpanded = false;
+            }
+
+            // Save VM Details expanded states (using native <details> element)
+            document.querySelectorAll('details.vm-details[open]').forEach(details => {
+                const card = details.closest('.task-card');
+                if (card) {
+                    const taskTitle = card.querySelector('.task-title')?.textContent || '';
+                    if (taskTitle) {
+                        if (!taskExpandedStates[taskTitle]) taskExpandedStates[taskTitle] = {};
+                        taskExpandedStates[taskTitle].vmDetailsExpanded = true;
+                    }
+                }
+            });
+
+            // Save logs details expanded states
+            document.querySelectorAll('.task-logs-details[open]').forEach(details => {
+                const card = details.closest('.task-card');
+                if (card) {
+                    const taskTitle = card.querySelector('.task-title')?.textContent || '';
+                    if (taskTitle) {
+                        if (!taskExpandedStates[taskTitle]) taskExpandedStates[taskTitle] = {};
+                        taskExpandedStates[taskTitle].logsExpanded = true;
+                    }
+                }
+            });
+
+            // Persist to localStorage
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(taskExpandedStates));
+            } catch (e) {
+                console.warn('Failed to save expanded states to localStorage:', e);
+            }
+        }
+
+        function restoreTaskExpandedStates() {
+            const taskExpandedStates = getTaskExpandedStates();
+
+            // Restore VM Details expanded states (using native <details> element)
+            document.querySelectorAll('.task-card').forEach(card => {
+                const taskTitle = card.querySelector('.task-title')?.textContent || '';
+                const state = taskExpandedStates[taskTitle];
+                if (state) {
+                    if (state.vmDetailsExpanded) {
+                        const details = card.querySelector('details.vm-details');
+                        if (details) details.open = true;
+                    }
+                    if (state.logsExpanded) {
+                        const details = card.querySelector('.task-logs-details');
+                        if (details) details.open = true;
+                    }
+                }
+            });
         }
 
         function renderBackgroundTasks(tasks) {
@@ -504,6 +585,9 @@ def _get_background_tasks_panel_html() -> str:
 
             // Debug: Log incoming tasks data
             console.log('[SSE Debug] renderBackgroundTasks called with:', JSON.stringify(tasks, null, 2));
+
+            // Save expanded states before replacing DOM
+            saveTaskExpandedStates();
 
             if (!tasks || tasks.length === 0) {
                 container.innerHTML = '<div class="no-tasks">No active background tasks</div>';
@@ -608,6 +692,9 @@ def _get_background_tasks_panel_html() -> str:
             }).join('');
 
             container.innerHTML = html;
+
+            // Restore expanded states after DOM update
+            restoreTaskExpandedStates();
         }
 
         // Initial fetch and poll every 10 seconds
@@ -1160,14 +1247,28 @@ def _get_azure_jobs_panel_css() -> str:
             background: linear-gradient(135deg, rgba(0, 120, 212, 0.15) 0%, rgba(0, 120, 212, 0.05) 100%);
             border: 1px solid rgba(0, 120, 212, 0.3);
             border-radius: 12px;
-            padding: 20px 24px;
             margin-bottom: 24px;
+            overflow: hidden;
+        }
+        .azure-jobs-panel.collapsed .azure-jobs-body {
+            display: none;
+        }
+        .azure-jobs-panel.collapsed .azure-jobs-header {
+            margin-bottom: 0;
         }
         .azure-jobs-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 16px;
+            padding: 16px 24px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .azure-jobs-header:hover {
+            background: rgba(0, 120, 212, 0.1);
+        }
+        .azure-jobs-body {
+            padding: 0 24px 20px 24px;
         }
         .azure-jobs-title {
             display: flex;
@@ -1180,6 +1281,21 @@ def _get_azure_jobs_panel_css() -> str:
         .azure-jobs-title svg {
             width: 20px;
             height: 20px;
+        }
+        .azure-jobs-expand-icon {
+            font-size: 0.75rem;
+            transition: transform 0.2s;
+            margin-left: 8px;
+            color: var(--text-muted);
+        }
+        .azure-jobs-panel:not(.collapsed) .azure-jobs-expand-icon {
+            transform: rotate(90deg);
+        }
+        .azure-jobs-tooltip {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            font-weight: 400;
+            margin-left: 8px;
         }
         .azure-jobs-controls {
             display: flex;
@@ -1423,17 +1539,23 @@ def _get_azure_jobs_panel_css() -> str:
 
 
 def _get_azure_jobs_panel_html() -> str:
-    """Return HTML for the Azure jobs status panel with JS polling, error handling, and loading states."""
+    """Return HTML for the Azure jobs status panel with JS polling, error handling, and loading states.
+
+    NOTE: This panel is now used in the Training tab (not Benchmarks) because Azure ML
+    is used for training jobs, not for WAA benchmarks (which require nested virtualization
+    that managed compute doesn't support).
+    """
     return '''
-    <div class="azure-jobs-panel" id="azure-jobs-panel">
-        <div class="azure-jobs-header">
+    <div class="azure-jobs-panel collapsed" id="azure-jobs-panel">
+        <div class="azure-jobs-header" onclick="toggleAzureJobsPanel()" title="Azure ML training jobs">
             <div class="azure-jobs-title">
                 <svg viewBox="0 0 24 24" fill="currentColor">
                     <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
                 </svg>
                 Azure ML Jobs
+                <span class="azure-jobs-expand-icon">&#9654;</span>
             </div>
-            <div class="azure-jobs-controls">
+            <div class="azure-jobs-controls" onclick="event.stopPropagation()">
                 <span class="azure-jobs-refresh" id="jobs-refresh-time">Checking...</span>
                 <button id="azure-jobs-refresh-btn" class="refresh-btn" onclick="refreshAzureJobs()" title="Refresh job status from Azure">
                     <span class="refresh-icon">&#8635;</span>
@@ -1443,58 +1565,60 @@ def _get_azure_jobs_panel_html() -> str:
             </div>
         </div>
 
-        <!-- API Error Banner (hidden by default) -->
-        <div class="api-error-banner" id="azure-jobs-error">
-            <span class="error-icon">!</span>
-            <span class="error-message" id="azure-jobs-error-msg">Failed to fetch Azure jobs</span>
-            <button class="retry-btn" onclick="refreshAzureJobs()">Retry</button>
-        </div>
-
-        <!-- Loading state -->
-        <div id="azure-jobs-loading" style="display: none; text-align: center; padding: 30px;">
-            <div style="display: inline-block; width: 24px; height: 24px; border: 3px solid rgba(0,120,212,0.3); border-top-color: #0078d4; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-            <div style="margin-top: 12px; color: var(--text-muted); font-size: 0.85rem;">Loading Azure jobs...</div>
-        </div>
-
-        <div id="azure-jobs-list">
-            <div class="no-jobs">
-                <div style="font-size: 2rem; margin-bottom: 12px; opacity: 0.5;">&#9729;</div>
-                Checking Azure ML for jobs...
+        <div class="azure-jobs-body">
+            <!-- API Error Banner (hidden by default) -->
+            <div class="api-error-banner" id="azure-jobs-error">
+                <span class="error-icon">!</span>
+                <span class="error-message" id="azure-jobs-error-msg">Failed to fetch Azure jobs</span>
+                <button class="retry-btn" onclick="refreshAzureJobs()">Retry</button>
             </div>
-        </div>
 
-        <button id="toggle-logs-btn" onclick="toggleLogs()" style="
-            margin-top: 12px;
-            padding: 8px 14px;
-            background: rgba(0, 120, 212, 0.2);
-            border: 1px solid rgba(0, 120, 212, 0.4);
-            border-radius: 6px;
-            color: var(--text-primary);
-            cursor: pointer;
-            font-size: 0.8rem;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            transition: all 0.2s;
-        ">
-            <span id="logs-icon">&#9660;</span>
-            <span id="logs-btn-text">Show Logs</span>
-        </button>
-        <div id="job-logs-panel" style="display: none; margin-top: 12px;">
-            <div id="log-job-status" style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 6px;"></div>
-            <pre id="job-logs-content" style="
-                background: #1a1a1a;
-                color: #10b981;
-                padding: 14px;
+            <!-- Loading state -->
+            <div id="azure-jobs-loading" style="display: none; text-align: center; padding: 30px;">
+                <div style="display: inline-block; width: 24px; height: 24px; border: 3px solid rgba(0,120,212,0.3); border-top-color: #0078d4; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                <div style="margin-top: 12px; color: var(--text-muted); font-size: 0.85rem;">Loading Azure jobs...</div>
+            </div>
+
+            <div id="azure-jobs-list">
+                <div class="no-jobs">
+                    <div style="font-size: 2rem; margin-bottom: 12px; opacity: 0.5;">&#9729;</div>
+                    Checking Azure ML for jobs...
+                </div>
+            </div>
+
+            <button id="toggle-logs-btn" onclick="toggleLogs()" style="
+                margin-top: 12px;
+                padding: 8px 14px;
+                background: rgba(0, 120, 212, 0.2);
+                border: 1px solid rgba(0, 120, 212, 0.4);
                 border-radius: 6px;
-                font-size: 0.75rem;
-                max-height: 300px;
-                overflow-y: auto;
-                white-space: pre-wrap;
-                word-wrap: break-word;
-                font-family: 'SF Mono', Monaco, monospace;
-                border: 1px solid rgba(255,255,255,0.1);
-            ">Loading logs...</pre>
+                color: var(--text-primary);
+                cursor: pointer;
+                font-size: 0.8rem;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                transition: all 0.2s;
+            ">
+                <span id="logs-icon">&#9660;</span>
+                <span id="logs-btn-text">Show Logs</span>
+            </button>
+            <div id="job-logs-panel" style="display: none; margin-top: 12px;">
+                <div id="log-job-status" style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 6px;"></div>
+                <pre id="job-logs-content" style="
+                    background: #1a1a1a;
+                    color: #10b981;
+                    padding: 14px;
+                    border-radius: 6px;
+                    font-size: 0.75rem;
+                    max-height: 300px;
+                    overflow-y: auto;
+                    white-space: pre-wrap;
+                    word-wrap: break-word;
+                    font-family: 'SF Mono', Monaco, monospace;
+                    border: 1px solid rgba(255,255,255,0.1);
+                ">Loading logs...</pre>
+            </div>
         </div>
     </div>
 
@@ -1502,6 +1626,43 @@ def _get_azure_jobs_panel_html() -> str:
         // Track refresh state
         let isAzureJobsRefreshing = false;
         let azureJobsErrorCount = 0;
+        let azureJobsPanelUserToggled = false;  // Track if user manually toggled panel
+
+        // Toggle Azure jobs panel expand/collapse
+        function toggleAzureJobsPanel() {
+            const panel = document.getElementById('azure-jobs-panel');
+            if (panel) {
+                panel.classList.toggle('collapsed');
+                azureJobsPanelUserToggled = true;  // User manually toggled, respect their choice
+            }
+        }
+
+        // Check if panel should auto-expand based on jobs (only for running jobs)
+        // NOTE: Panel is collapsed by default and only auto-expands if there are running jobs
+        function shouldAutoExpandAzurePanel(jobs) {
+            if (!jobs || jobs.length === 0) return false;
+
+            for (const job of jobs) {
+                const status = (job.status || '').toLowerCase();
+                // Auto-expand only for running/active jobs
+                if (['running', 'provisioning', 'preparing', 'queued', 'starting'].includes(status)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Auto-expand panel if there are running/recent jobs (only if user hasn't manually toggled)
+        function maybeAutoExpandAzurePanel(jobs) {
+            if (azureJobsPanelUserToggled) return;  // Respect user's manual choice
+
+            const panel = document.getElementById('azure-jobs-panel');
+            if (!panel) return;
+
+            if (shouldAutoExpandAzurePanel(jobs)) {
+                panel.classList.remove('collapsed');
+            }
+        }
 
         // Show/hide loading state and error banner
         function setAzureJobsState(state, errorMsg = '') {
@@ -1626,6 +1787,9 @@ def _get_azure_jobs_panel_html() -> str:
         }
 
         function renderAzureJobs(jobs, isLive) {
+            // Auto-expand panel if there are running/recent jobs
+            maybeAutoExpandAzurePanel(jobs);
+
             if (!jobs || jobs.length === 0) {
                 document.getElementById('azure-jobs-list').innerHTML =
                     '<div class="no-jobs">' +
@@ -1954,6 +2118,28 @@ def _get_vm_discovery_panel_css() -> str:
             opacity: 0.9;
             margin-left: 4px;
         }
+        .vm-vnc-link .tunnel-badge {
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            margin-left: 6px;
+        }
+        .vm-vnc-link .tunnel-badge.tunnel-error {
+            background: rgba(239, 68, 68, 0.3);
+            color: #fca5a5;
+        }
+        .vm-vnc-link.tunnel-inactive {
+            background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+            opacity: 0.8;
+        }
+        .vm-vnc-link.tunnel-inactive:hover {
+            background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+        }
+        .tunnel-mini {
+            font-size: 0.7rem;
+            color: #10b981;
+        }
         .vm-waa-status {
             display: inline-flex;
             align-items: center;
@@ -2183,13 +2369,17 @@ def _get_vm_discovery_panel_html() -> str:
             const errorMsgEl = document.getElementById('vm-error-msg');
             if (errorEl && errorMsgEl) {
                 errorMsgEl.textContent = msg;
+                errorEl.style.display = 'flex';  // Override any inline display:none
                 errorEl.classList.add('show');
             }
         }
 
         function hideVMError() {
             const errorEl = document.getElementById('vm-api-error');
-            if (errorEl) errorEl.classList.remove('show');
+            if (errorEl) {
+                errorEl.classList.remove('show');
+                errorEl.style.display = 'none';  // Explicit hide as backup
+            }
         }
 
         async function refreshVMs() {
@@ -2205,6 +2395,7 @@ def _get_vm_discovery_panel_html() -> str:
                 if (vms.error) throw new Error(vms.error);
 
                 renderVMs(vms);
+                hideVMError();  // Hide error again after successful render
                 vmErrorCount = 0;
                 document.getElementById('vm-refresh-time').textContent =
                     'Updated ' + new Date().toLocaleTimeString();
@@ -2271,7 +2462,9 @@ def _get_vm_discovery_panel_html() -> str:
                                      vm.waa_probe_status === 'checking' ? 'Checking...' :
                                      vm.waa_probe_status === 'ssh failed' ? 'SSH Failed' : 'Unknown';
 
-                const vncUrl = 'http://' + vm.ssh_host + ':' + (vm.vnc_port || 8006);
+                // Use localhost for VNC (requires SSH tunnel: ssh -fN -L 8006:localhost:8006 user@vm-ip)
+                const vncPort = vm.vnc_port || 8006;
+                const vncUrl = 'http://localhost:' + vncPort;
                 const vmIp = vm.ssh_host;
 
                 return '<div class="vm-item">' +
@@ -2302,14 +2495,16 @@ def _get_vm_discovery_panel_html() -> str:
                     '</div>' +
 
                     '<div class="vm-actions">' +
-                        // Large prominent VNC button
-                        '<a href="' + vncUrl + '" target="_blank" class="vm-vnc-link">' +
+                        // Large prominent VNC button - uses localhost (SSH tunnel)
+                        '<a href="' + vncUrl + '" target="_blank" class="vm-vnc-link' + (vm.tunnels && vm.tunnels.vnc && vm.tunnels.vnc.active ? ' tunnel-active' : ' tunnel-inactive') + '">' +
                             '<span class="vnc-icon">&#128424;</span>' +
                             'Open VNC' +
-                            '<span class="vnc-ip">:' + (vm.vnc_port || 8006) + '</span>' +
+                            '<span class="vnc-ip">localhost:' + vncPort + '</span>' +
+                            (vm.tunnels && vm.tunnels.vnc && vm.tunnels.vnc.active ? '<span class="tunnel-badge">&#10003; tunnel</span>' : '<span class="tunnel-badge tunnel-error">&#10007; no tunnel</span>') +
                         '</a>' +
                         '<div class="vm-waa-status ' + waaStatusClass + '">' +
                             waaStatusIcon + ' ' + waaStatusText +
+                            (vm.tunnels && vm.tunnels.waa && vm.tunnels.waa.active ? ' <span class="tunnel-mini">&#10003;</span>' : '') +
                         '</div>' +
                     '</div>' +
 
@@ -2377,6 +2572,396 @@ def _get_vm_discovery_panel_html() -> str:
         setInterval(fetchVMs, 10000);
     </script>
     '''
+
+
+def _get_run_benchmark_panel_css() -> str:
+    """Return CSS for the Run Benchmark configuration panel."""
+    return '''
+        .run-benchmark-panel {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin-bottom: 24px;
+        }
+        .run-benchmark-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+        .run-benchmark-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #10b981;
+        }
+        .run-benchmark-title svg {
+            width: 20px;
+            height: 20px;
+        }
+        .run-benchmark-form {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .form-group label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+        .form-group select,
+        .form-group input[type="text"],
+        .form-group input[type="number"] {
+            padding: 8px 12px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+        .form-group select:focus,
+        .form-group input:focus {
+            outline: none;
+            border-color: #10b981;
+        }
+        .task-selection-group {
+            grid-column: 1 / -1;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 12px 16px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+        }
+        .task-selection-group-label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+        .task-selection-option {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .task-selection-option input[type="radio"] {
+            accent-color: #10b981;
+        }
+        .task-selection-option label {
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            cursor: pointer;
+        }
+        .task-selection-option select,
+        .task-selection-option input[type="text"] {
+            padding: 6px 10px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-size: 0.85rem;
+            flex: 1;
+            max-width: 200px;
+        }
+        .task-selection-option select:disabled,
+        .task-selection-option input:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .custom-model-input {
+            display: none;
+            margin-top: 8px;
+        }
+        .custom-model-input.show {
+            display: block;
+        }
+        .start-btn {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #10b981, #059669);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .start-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+        .start-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .start-btn .spinner {
+            display: none;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        .start-btn.loading .spinner {
+            display: inline-block;
+        }
+        .start-btn.loading .start-icon {
+            display: none;
+        }
+        .run-benchmark-status {
+            margin-top: 12px;
+            padding: 10px 14px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            display: none;
+        }
+        .run-benchmark-status.show {
+            display: block;
+        }
+        .run-benchmark-status.error {
+            background: rgba(239, 68, 68, 0.15);
+            color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        .run-benchmark-status.success {
+            background: rgba(16, 185, 129, 0.15);
+            color: #6ee7b7;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+    '''
+
+
+def _get_run_benchmark_panel_html() -> str:
+    """Return HTML for the Run Benchmark configuration panel."""
+    return '''
+    <div class="run-benchmark-panel" id="run-benchmark-panel">
+        <div class="run-benchmark-header">
+            <div class="run-benchmark-title">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M8 5v14l11-7z"/>
+                </svg>
+                Run Benchmark
+            </div>
+            <button class="start-btn" id="start-benchmark-btn" onclick="startBenchmarkRun()">
+                <span class="start-icon">&#9654;</span>
+                <span class="spinner"></span>
+                Start Run
+            </button>
+        </div>
+
+        <div class="run-benchmark-form">
+            <div class="form-group">
+                <label for="benchmark-model">Model</label>
+                <select id="benchmark-model" onchange="handleModelChange()">
+                    <option value="gpt-4o">GPT-4o</option>
+                    <option value="gpt-4o-mini">GPT-4o-mini</option>
+                    <option value="claude-sonnet-4-5-20250929">Claude Sonnet 4.5</option>
+                    <option value="claude-opus-4-5-20251101">Claude Opus 4.5</option>
+                    <option value="custom">Custom...</option>
+                </select>
+                <div class="custom-model-input" id="custom-model-container">
+                    <input type="text" id="custom-model-id" placeholder="Enter model ID (e.g., gpt-4-turbo)">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="benchmark-tasks">Number of Tasks</label>
+                <input type="number" id="benchmark-tasks" value="5" min="1" max="154">
+            </div>
+
+            <div class="form-group">
+                <label for="benchmark-agent">Agent</label>
+                <select id="benchmark-agent">
+                    <option value="navi">Navi (default)</option>
+                    <option value="som">Set-of-Marks</option>
+                    <option value="random">Random (baseline)</option>
+                </select>
+            </div>
+
+            <div class="task-selection-group">
+                <div class="task-selection-group-label">Task Selection</div>
+
+                <div class="task-selection-option">
+                    <input type="radio" id="task-selection-all" name="task-selection" value="all" checked onchange="updateTaskSelectionState()">
+                    <label for="task-selection-all">All tasks (154 total, random selection)</label>
+                </div>
+
+                <div class="task-selection-option">
+                    <input type="radio" id="task-selection-domain" name="task-selection" value="domain" onchange="updateTaskSelectionState()">
+                    <label for="task-selection-domain">Domain:</label>
+                    <select id="benchmark-domain" disabled>
+                        <option value="general">General</option>
+                        <option value="office">Office</option>
+                        <option value="web">Web</option>
+                        <option value="coding">Coding</option>
+                        <option value="system">System</option>
+                        <option value="creative">Creative</option>
+                        <option value="data">Data</option>
+                        <option value="communication">Communication</option>
+                        <option value="media">Media</option>
+                        <option value="gaming">Gaming</option>
+                        <option value="utility">Utility</option>
+                    </select>
+                </div>
+
+                <div class="task-selection-option">
+                    <input type="radio" id="task-selection-ids" name="task-selection" value="task_ids" onchange="updateTaskSelectionState()">
+                    <label for="task-selection-ids">Task IDs:</label>
+                    <input type="text" id="benchmark-task-ids" placeholder="e.g., task_001, task_015, task_042" disabled>
+                </div>
+            </div>
+        </div>
+
+        <div class="run-benchmark-status" id="run-benchmark-status"></div>
+    </div>
+    '''
+
+
+def _get_run_benchmark_panel_js(include_script_tags: bool = True) -> str:
+    """Return JavaScript for the Run Benchmark panel form handling and API calls.
+
+    Args:
+        include_script_tags: If True, wrap JS in <script> tags. Set to False when
+            inserting into an existing script block.
+    """
+    js_code = '''
+        // Handle model dropdown change to show/hide custom input
+        function handleModelChange() {
+            const select = document.getElementById('benchmark-model');
+            const customContainer = document.getElementById('custom-model-container');
+            if (select.value === 'custom') {
+                customContainer.classList.add('show');
+            } else {
+                customContainer.classList.remove('show');
+            }
+        }
+
+        // Enable/disable task selection inputs based on radio selection
+        function updateTaskSelectionState() {
+            const allRadio = document.getElementById('task-selection-all');
+            const domainRadio = document.getElementById('task-selection-domain');
+            const idsRadio = document.getElementById('task-selection-ids');
+            const domainSelect = document.getElementById('benchmark-domain');
+            const taskIdsInput = document.getElementById('benchmark-task-ids');
+
+            domainSelect.disabled = !domainRadio.checked;
+            taskIdsInput.disabled = !idsRadio.checked;
+        }
+
+        // Show status message
+        function showBenchmarkStatus(message, type) {
+            const statusEl = document.getElementById('run-benchmark-status');
+            statusEl.textContent = message;
+            statusEl.className = 'run-benchmark-status show ' + (type || '');
+        }
+
+        // Hide status message
+        function hideBenchmarkStatus() {
+            const statusEl = document.getElementById('run-benchmark-status');
+            statusEl.classList.remove('show');
+        }
+
+        // Start benchmark run
+        async function startBenchmarkRun() {
+            const btn = document.getElementById('start-benchmark-btn');
+
+            // Build params object
+            const modelSelect = document.getElementById('benchmark-model');
+            let model = modelSelect.value;
+            if (model === 'custom') {
+                model = document.getElementById('custom-model-id').value.trim();
+                if (!model) {
+                    showBenchmarkStatus('Please enter a custom model ID', 'error');
+                    return;
+                }
+            }
+
+            const numTasks = parseInt(document.getElementById('benchmark-tasks').value);
+            if (isNaN(numTasks) || numTasks < 1 || numTasks > 154) {
+                showBenchmarkStatus('Number of tasks must be between 1 and 154', 'error');
+                return;
+            }
+
+            const agent = document.getElementById('benchmark-agent').value;
+
+            // Get task selection
+            const taskSelection = document.querySelector('input[name="task-selection"]:checked').value;
+
+            const params = {
+                model: model,
+                num_tasks: numTasks,
+                agent: agent,
+                task_selection: taskSelection
+            };
+
+            if (taskSelection === 'domain') {
+                params.domain = document.getElementById('benchmark-domain').value;
+            } else if (taskSelection === 'task_ids') {
+                const taskIdsStr = document.getElementById('benchmark-task-ids').value.trim();
+                if (!taskIdsStr) {
+                    showBenchmarkStatus('Please enter task IDs', 'error');
+                    return;
+                }
+                params.task_ids = taskIdsStr.split(',').map(id => id.trim()).filter(id => id);
+                if (params.task_ids.length === 0) {
+                    showBenchmarkStatus('Please enter valid task IDs', 'error');
+                    return;
+                }
+            }
+
+            // Disable button and show loading state
+            btn.disabled = true;
+            btn.classList.add('loading');
+            hideBenchmarkStatus();
+
+            try {
+                const response = await fetch('/api/benchmark/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(params)
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.status === 'started') {
+                    showBenchmarkStatus('Benchmark started! Model: ' + params.model + ', Tasks: ' + params.num_tasks + '. Check progress in Background Tasks section below.', 'success');
+                    // Refresh background tasks to show new benchmark
+                    if (typeof refreshBackgroundTasks === 'function') {
+                        setTimeout(refreshBackgroundTasks, 1000);
+                    }
+                } else {
+                    throw new Error(result.error || result.message || 'Failed to start benchmark');
+                }
+            } catch (e) {
+                console.error('Failed to start benchmark:', e);
+                showBenchmarkStatus('Error: ' + e.message, 'error');
+                btn.disabled = false;
+                btn.classList.remove('loading');
+            }
+        }
+
+        // Initialize on load
+        document.addEventListener('DOMContentLoaded', function() {
+            updateTaskSelectionState();
+        });
+    '''
+    if include_script_tags:
+        return f'<script>{js_code}</script>'
+    return js_code
 
 
 def generate_benchmark_viewer(
@@ -2586,8 +3171,10 @@ def generate_empty_benchmark_viewer(output_path: Path | str) -> Path:
 
     shared_header_css = _get_shared_header_css()
     shared_header_html = _generate_shared_header_html("benchmarks")
-    azure_jobs_css = _get_azure_jobs_panel_css()
-    azure_jobs_html = _get_azure_jobs_panel_html()
+    # NOTE: Azure ML Jobs panel moved to Training tab (not used for WAA benchmarks)
+    run_benchmark_css = _get_run_benchmark_panel_css()
+    run_benchmark_html = _get_run_benchmark_panel_html()
+    run_benchmark_js = _get_run_benchmark_panel_js()
     tasks_css = _get_background_tasks_panel_css()
     tasks_html = _get_background_tasks_panel_html()
     live_eval_css = _get_live_evaluation_panel_css()
@@ -2621,8 +3208,8 @@ def generate_empty_benchmark_viewer(output_path: Path | str) -> Path:
             min-height: 100vh;
         }}
         {shared_header_css}
+        {run_benchmark_css}
         {tasks_css}
-        {azure_jobs_css}
         {live_eval_css}
         {vm_discovery_css}
         .container {{
@@ -2698,11 +3285,13 @@ def generate_empty_benchmark_viewer(output_path: Path | str) -> Path:
     {shared_header_html}
 
     <div class="container">
+        {run_benchmark_html}
         {live_eval_html}
         {tasks_html}
-        {azure_jobs_html}
         {vm_discovery_html}
     </div>
+
+    {run_benchmark_js}
 
     <div class="empty-state">
         <div class="empty-icon">🚧</div>
@@ -3418,9 +4007,11 @@ def _generate_multi_run_benchmark_viewer_html(
     Returns:
         Complete HTML string
     """
-    # Get Azure jobs panel components
-    azure_jobs_css = _get_azure_jobs_panel_css()
-    azure_jobs_html = _get_azure_jobs_panel_html()
+    # NOTE: Azure ML Jobs panel moved to Training tab (not used for WAA benchmarks)
+    run_benchmark_css = _get_run_benchmark_panel_css()
+    run_benchmark_html = _get_run_benchmark_panel_html()
+    # Use include_script_tags=False since we insert into existing script block
+    run_benchmark_js = _get_run_benchmark_panel_js(include_script_tags=False)
     tasks_css = _get_background_tasks_panel_css()
     tasks_html = _get_background_tasks_panel_html()
     live_eval_css = _get_live_evaluation_panel_css()
@@ -3486,8 +4077,8 @@ def _generate_multi_run_benchmark_viewer_html(
         }}
 
         {shared_header_css}
+        {run_benchmark_css}
         {tasks_css}
-        {azure_jobs_css}
         {live_eval_css}
         {vm_discovery_css}
 
@@ -3848,9 +4439,9 @@ def _generate_multi_run_benchmark_viewer_html(
     {shared_header_html}
 
     <div class="container">
+        {run_benchmark_html}
         {live_eval_html}
         {tasks_html}
-        {azure_jobs_html}
         {vm_discovery_html}
 
         <div id="mock-banner" class="mock-banner" style="display: none;">
@@ -4159,6 +4750,9 @@ def _generate_multi_run_benchmark_viewer_html(
 
             return parts.length > 0 ? parts.join(', ') : 'No details';
         }}
+
+        // Run Benchmark panel functionality
+        {run_benchmark_js}
 
         // Initialize on page load
         init();
