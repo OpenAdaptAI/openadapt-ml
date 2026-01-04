@@ -114,18 +114,15 @@ RUN if grep -q "</FirstLogonCommands>" /run/assets/win11x64.xml; then \
     fi
 
 # -----------------------------------------------------------------------------
-# Copy Python environment from official WAA image (has all deps pre-installed)
-# This avoids Python 3.13 compatibility issues with torch/easyocr
+# Install Python and dependencies directly
+# dockurr/windows base is Debian trixie which has Python 3.12
 # -----------------------------------------------------------------------------
 
-# Copy Python installation and packages from official WAA image
-COPY --from=windowsarena/winarena:latest /usr/bin/python3 /usr/bin/python3
-COPY --from=windowsarena/winarena:latest /usr/bin/python3.10 /usr/bin/python3.10
-COPY --from=windowsarena/winarena:latest /usr/lib/python3.10 /usr/lib/python3.10
-COPY --from=windowsarena/winarena:latest /usr/local/lib/python3.10 /usr/local/lib/python3.10
-
-# Install system dependencies
+# Install Python 3 and system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-venv \
+    python3-pip \
     tesseract-ocr \
     libgl1 \
     libglib2.0-0 \
@@ -133,12 +130,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     libxrender-dev \
     ffmpeg \
-    libpython3.10 \
     && rm -rf /var/lib/apt/lists/*
 
-# Create python symlinks
-RUN ln -sf /usr/bin/python3.10 /usr/bin/python3 && \
-    ln -sf /usr/bin/python3 /usr/bin/python
+# Install Python dependencies for WAA client
+# Using --break-system-packages since we're in a container
+RUN pip3 install --no-cache-dir --break-system-packages \
+    torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
+    pip3 install --no-cache-dir --break-system-packages \
+    easyocr pillow requests flask pyautogui pydrive openpyxl python-docx \
+    python-pptx xlrd xlwt xlsxwriter mammoth pdf2image pytesseract \
+    google-api-python-client google-auth-httplib2 google-auth-oauthlib \
+    beautifulsoup4 lxml opencv-python-headless numpy pandas
 
 # -----------------------------------------------------------------------------
 # Environment configuration

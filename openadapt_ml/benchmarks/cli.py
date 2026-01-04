@@ -101,6 +101,48 @@ logging.getLogger("openadapt_ml.benchmarks.azure").setLevel(logging.WARNING)
 import warnings
 warnings.filterwarnings("ignore", message=".*experimental class.*")
 
+# SSH options to handle host key changes when VMs are recreated
+# StrictHostKeyChecking=no: Accept new host keys automatically
+# UserKnownHostsFile=/dev/null: Don't save/check known_hosts (avoids conflicts)
+SSH_OPTS = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"]
+
+
+def ssh_cmd(ip: str, cmd: str, extra_opts: list[str] | None = None) -> list[str]:
+    """Build SSH command with proper options for Azure VMs.
+
+    Args:
+        ip: IP address of the VM
+        cmd: Command to run on the VM
+        extra_opts: Additional SSH options (e.g., ["-o", "ConnectTimeout=10"])
+
+    Returns:
+        Complete SSH command as a list for subprocess
+    """
+    base = ["ssh", *SSH_OPTS]
+    if extra_opts:
+        base.extend(extra_opts)
+    base.append(f"azureuser@{ip}")
+    base.append(cmd)
+    return base
+
+
+def scp_cmd(src: str, dest: str, recursive: bool = False) -> list[str]:
+    """Build SCP command with proper options for Azure VMs.
+
+    Args:
+        src: Source path (local or remote user@host:path)
+        dest: Destination path (local or remote user@host:path)
+        recursive: Whether to copy directories recursively
+
+    Returns:
+        Complete SCP command as a list for subprocess
+    """
+    base = ["scp", *SSH_OPTS]
+    if recursive:
+        base.append("-r")
+    base.extend([src, dest])
+    return base
+
 
 def setup_logging(verbose: bool = False) -> None:
     """Configure logging with appropriate verbosity.
@@ -170,7 +212,7 @@ sleep 0.5
 ) | timeout 10 docker exec -i winarena nc localhost 7100 2>/dev/null
 '''
             result = subprocess.run(
-                ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+                ["ssh", *SSH_OPTS, "-o", "ConnectTimeout=10",
                  f"azureuser@{ip}", ssh_cmd],
                 capture_output=True, text=True, timeout=30
             )
@@ -1492,7 +1534,7 @@ def capture_vm_screenshot(ip: str, output_path: Path | str = None) -> Path | Non
     try:
         # Take screenshot via QEMU monitor and convert to PNG on VM
         result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+            ["ssh", *SSH_OPTS, "-o", "ConnectTimeout=10",
              f"azureuser@{ip}",
              '(echo "screendump /tmp/screen.ppm"; sleep 1) | docker exec -i winarena nc localhost 7100 2>/dev/null; '
              'docker cp winarena:/tmp/screen.ppm /tmp/screen.ppm 2>/dev/null && '
@@ -1536,7 +1578,7 @@ def check_waa_probe(ip: str, timeout: int = 5, internal_ip: str = "172.30.0.2") 
 
     try:
         result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
+            ["ssh", *SSH_OPTS, "-o", "ConnectTimeout=5",
              f"azureuser@{ip}",
              f"curl -s --connect-timeout {timeout} http://{internal_ip}:5000/probe 2>/dev/null"],
             capture_output=True, text=True, timeout=30
@@ -1664,7 +1706,7 @@ print(json.dumps(result))
 
         try:
             result = subprocess.run([
-                "ssh", "-o", "StrictHostKeyChecking=no",
+                "ssh", *SSH_OPTS,
                 f"azureuser@{vm_ip}",
                 f"python3 -c '{analysis_script}'"
             ], capture_output=True, text=True, timeout=30)
@@ -1734,7 +1776,7 @@ print(json.dumps(result))
 
         try:
             subprocess.run([
-                "scp", "-r", "-o", "StrictHostKeyChecking=no",
+                "scp", "-r", *SSH_OPTS,
                 f"azureuser@{vm_ip}:{remote_path}/pyautogui",
                 results_dir
             ], check=True, capture_output=True)
@@ -2120,7 +2162,7 @@ def cmd_vm(args: argparse.Namespace) -> None:
             "sudo usermod -aG docker $USER"
         )
         result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}", docker_cmd],
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}", docker_cmd],
             capture_output=True, text=True
         )
         if result.returncode != 0:
@@ -2130,7 +2172,7 @@ def cmd_vm(args: argparse.Namespace) -> None:
 
         print("\n[2/3] Verifying nested virtualization...")
         result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}",
              "egrep -c '(vmx|svm)' /proc/cpuinfo"],
             capture_output=True, text=True
         )
@@ -2182,7 +2224,7 @@ def cmd_vm(args: argparse.Namespace) -> None:
         # Login to ACR on VM and pull
         pull_cmd = f"sudo docker login {acr_url} -u 00000000-0000-0000-0000-000000000000 -p '{token}' && sudo docker pull {image}"
         result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}", pull_cmd],
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}", pull_cmd],
             capture_output=False  # Show output live
         )
         if result.returncode != 0:
@@ -2253,7 +2295,7 @@ def cmd_vm(args: argparse.Namespace) -> None:
                 "sudo systemctl start docker",
             ]
             result = subprocess.run(
-                ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=30",
+                ["ssh", *SSH_OPTS, "-o", "ConnectTimeout=30",
                  f"azureuser@{ip}", " && ".join(docker_cmds)],
                 capture_output=True, text=True
             )
@@ -2262,14 +2304,14 @@ def cmd_vm(args: argparse.Namespace) -> None:
 
             # Pull Windows image
             subprocess.run(
-                ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
+                ["ssh", *SSH_OPTS, f"azureuser@{ip}",
                  "sudo docker pull dockurr/windows:latest 2>&1 | tail -5"],
                 capture_output=True, text=True, timeout=300
             )
 
             # Clone WAA repo
             subprocess.run(
-                ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
+                ["ssh", *SSH_OPTS, f"azureuser@{ip}",
                  "cd ~ && git clone --depth 1 https://github.com/microsoft/WindowsAgentArena.git 2>/dev/null || echo 'Already cloned'"],
                 capture_output=True, text=True
             )
@@ -2283,7 +2325,7 @@ def cmd_vm(args: argparse.Namespace) -> None:
 }}
 EOF'''
             subprocess.run(
-                ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}", config_cmd],
+                ["ssh", *SSH_OPTS, f"azureuser@{ip}", config_cmd],
                 capture_output=True, text=True
             )
             return True
@@ -2347,7 +2389,7 @@ EOF'''
                 "sudo systemctl start docker",
             ]
             result = subprocess.run(
-                ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=30",
+                ["ssh", *SSH_OPTS, "-o", "ConnectTimeout=30",
                  f"azureuser@{ip}", " && ".join(docker_cmds)],
                 capture_output=True, text=True
             )
@@ -2358,7 +2400,7 @@ EOF'''
 
             print(f"\n[3/6] Verifying nested virtualization...")
             result = subprocess.run(
-                ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
+                ["ssh", *SSH_OPTS, f"azureuser@{ip}",
                  "egrep -c '(vmx|svm)' /proc/cpuinfo"],
                 capture_output=True, text=True
             )
@@ -2372,7 +2414,7 @@ EOF'''
             print(f"\n[4/6] Pulling dockurr/windows image (for Windows VM)...")
             # Use dockurr/windows directly - the ACR winarena image has broken dockur
             result = subprocess.run(
-                ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
+                ["ssh", *SSH_OPTS, f"azureuser@{ip}",
                  "sudo docker pull dockurr/windows:latest 2>&1 | tail -5"],
                 capture_output=True, text=True, timeout=300
             )
@@ -2382,7 +2424,7 @@ EOF'''
 
             print(f"\n[5/6] Cloning WindowsAgentArena repository...")
             result = subprocess.run(
-                ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
+                ["ssh", *SSH_OPTS, f"azureuser@{ip}",
                  "cd ~ && git clone --depth 1 https://github.com/microsoft/WindowsAgentArena.git 2>/dev/null || echo 'Already cloned'"],
                 capture_output=True, text=True
             )
@@ -2402,7 +2444,7 @@ EOF'''
 }}
 EOF'''
             subprocess.run(
-                ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}", config_cmd],
+                ["ssh", *SSH_OPTS, f"azureuser@{ip}", config_cmd],
                 capture_output=True, text=True
             )
             print("  ✓ Config created")
@@ -2539,7 +2581,7 @@ EOF'''
 
         # Sync Dockerfile to VM and build
         subprocess.run(
-            ["scp", "-o", "StrictHostKeyChecking=no", str(dockerfile_path),
+            ["scp", *SSH_OPTS, str(dockerfile_path),
              f"azureuser@{ip}:~/build-waa/Dockerfile"],
             capture_output=True, text=True
         )
@@ -2550,7 +2592,7 @@ cp -r ~/WindowsAgentArena/src/win-arena-container/vm ~/build-waa/
 cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tail -10
 '''
         result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}", build_cmd],
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}", build_cmd],
             capture_output=True, text=True, timeout=1800  # 30 min for Docker build
         )
         if "Successfully" not in result.stdout and result.returncode != 0:
@@ -2563,7 +2605,7 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
         # Use /mnt/waa-storage for temp disk (115GB) instead of ~/waa-storage (root, <10GB)
         print("\n[2/4] Cleaning up for fresh Windows installation...")
         subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}",
              "docker stop winarena 2>/dev/null; docker rm -f winarena 2>/dev/null; " +
              "rm -f /mnt/waa-storage/data.img /mnt/waa-storage/windows.* 2>/dev/null; " +
              "sudo mkdir -p /mnt/waa-storage /mnt/waa-results; " +
@@ -2595,7 +2637,7 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
   waa-auto:latest'''
 
         result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}", docker_cmd],
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}", docker_cmd],
             capture_output=True, text=True, timeout=60
         )
         if result.returncode != 0:
@@ -2615,7 +2657,7 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
             time_module.sleep(10)
             # Check docker logs for progress
             log_result = subprocess.run(
-                ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
+                ["ssh", *SSH_OPTS, f"azureuser@{ip}",
                  "docker logs winarena 2>&1 | tail -1"],
                 capture_output=True, text=True, timeout=30
             )
@@ -2653,7 +2695,7 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
             # Check if WAA server /probe endpoint responds
             try:
                 probe_result = subprocess.run(
-                    ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
+                    ["ssh", *SSH_OPTS, "-o", "ConnectTimeout=5",
                      f"azureuser@{ip}",
                      "curl -s --connect-timeout 3 http://20.20.20.21:5000/probe 2>/dev/null"],
                     capture_output=True, text=True, timeout=30
@@ -2672,7 +2714,7 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
 
             # Show progress from docker logs
             log_result = subprocess.run(
-                ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
+                ["ssh", *SSH_OPTS, f"azureuser@{ip}",
                  "docker logs winarena 2>&1 | tail -2"],
                 capture_output=True, text=True
             )
@@ -2771,7 +2813,7 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
         # Stop any existing container
         print("[1/4] Stopping any existing WAA container...")
         subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}",
              "docker stop winarena 2>/dev/null; docker rm -f winarena 2>/dev/null"],
             capture_output=True, text=True
         )
@@ -2783,7 +2825,7 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
         # Check if waa-auto exists and is recent (built with current dockurr/windows)
         check_image_cmd = "docker images waa-auto:latest --format '{{.ID}}' | head -1"
         check_result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}", check_image_cmd],
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}", check_image_cmd],
             capture_output=True, text=True
         )
         waa_auto_exists = bool(check_result.stdout.strip())
@@ -2799,7 +2841,7 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
             dockerfile_path = Path(__file__).parent / "waa" / "Dockerfile"
             if dockerfile_path.exists():
                 scp_result = subprocess.run(
-                    ["scp", "-o", "StrictHostKeyChecking=no",
+                    ["scp", *SSH_OPTS,
                      str(dockerfile_path), f"azureuser@{ip}:~/Dockerfile.waa"],
                     capture_output=True, text=True
                 )
@@ -2811,7 +2853,7 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
                 print("      Building waa-auto image (this may take a few minutes)...")
                 build_cmd = "cd ~ && docker build --pull -t waa-auto:latest -f ~/Dockerfile.waa . 2>&1 | tail -20"
                 build_result = subprocess.run(
-                    ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ServerAliveInterval=60",
+                    ["ssh", *SSH_OPTS, "-o", "ServerAliveInterval=60",
                      f"azureuser@{ip}", build_cmd],
                     capture_output=True, text=True,
                     timeout=1200  # 20 minute timeout for build
@@ -2821,27 +2863,41 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
                     print("      ✓ waa-auto image built successfully")
                 else:
                     print(f"      Build output: {build_result.stdout[-500:]}")
-                    if build_result.returncode != 0:
-                        print(f"      ✗ Build may have failed. Continuing anyway...")
+                    print()
+                    print("      ✗ CRITICAL: waa-auto build failed!")
+                    print("      The official windowsarena/winarena image is BROKEN (uses outdated dockurr/windows v0.00)")
+                    print("      The waa-auto image is REQUIRED for Windows 11 to auto-download.")
+                    print()
+                    print("      Troubleshooting:")
+                    print("        1. Check Docker storage: uv run python -m openadapt_ml.benchmarks.cli vm diag")
+                    print("        2. If disk full: uv run python -m openadapt_ml.benchmarks.cli vm fix-storage")
+                    print("        3. Clean Docker: ssh azureuser@<ip> 'docker system prune -af'")
+                    print("        4. Retry: uv run python -m openadapt_ml.benchmarks.cli vm run-waa --rebuild")
+                    sys.exit(1)
             else:
-                print(f"      ✗ Dockerfile not found at {dockerfile_path}")
-                print("      Falling back to official image...")
+                print(f"      ✗ CRITICAL: Dockerfile not found at {dockerfile_path}")
+                print("      Cannot proceed without waa-auto image.")
+                sys.exit(1)
         else:
             print("      ✓ waa-auto image found")
 
-        # Verify the image we'll use
-        print("[3/4] Selecting Docker image...")
+        # Verify waa-auto image exists (required - official image is broken)
+        print("[3/4] Verifying waa-auto image...")
         verify_cmd = "docker images waa-auto:latest --format '{{.Repository}}:{{.Tag}}' | head -1"
         verify_result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}", verify_cmd],
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}", verify_cmd],
             capture_output=True, text=True
         )
         if verify_result.stdout.strip() == "waa-auto:latest":
             docker_image = "waa-auto:latest"
-            print(f"      Using: {docker_image} (custom image with fixes)")
+            print(f"      ✓ Using: {docker_image} (with dockurr/windows auto-download)")
         else:
-            docker_image = "windowsarena/winarena:latest"
-            print(f"      Using: {docker_image} (official image)")
+            print("      ✗ CRITICAL: waa-auto image not found!")
+            print("      The official windowsarena/winarena image is BROKEN and cannot be used.")
+            print()
+            print("      Run with --rebuild to build waa-auto:")
+            print(f"        uv run python -m openadapt_ml.benchmarks.cli vm run-waa --rebuild --num-tasks {num_tasks}")
+            sys.exit(1)
 
         # Start WAA container with full benchmark run
         print(f"[4/4] Starting WAA benchmark (this will take a while)...")
@@ -2871,7 +2927,7 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
   "/entry.sh --start-client true --model {model} --agent {agent} --result-dir /results{task_filter_args}"'''
 
         result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ServerAliveInterval=60",
+            ["ssh", *SSH_OPTS, "-o", "ServerAliveInterval=60",
              f"azureuser@{ip}", f"mkdir -p ~/waa-results && {docker_cmd}"],
             timeout=7200  # 2 hour timeout for full benchmark
         )
@@ -2925,7 +2981,7 @@ echo '---'
 docker inspect winarena --format='Storage: {{range .Mounts}}{{.Source}}{{end}}' 2>/dev/null || echo 'No container running'
 """
         result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}", check_cmd],
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}", check_cmd],
             capture_output=True, text=True
         )
         print(result.stdout)
@@ -2933,7 +2989,7 @@ docker inspect winarena --format='Storage: {{range .Mounts}}{{.Source}}{{end}}' 
         # Step 2: Stop container
         print("[2/4] Stopping WAA container...")
         subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}",
              "docker stop winarena 2>/dev/null; docker rm winarena 2>/dev/null"],
             capture_output=True, text=True
         )
@@ -2959,7 +3015,7 @@ fi
 ls -lh /mnt/waa-storage/
 """
         result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}", move_cmd],
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}", move_cmd],
             capture_output=True, text=True
         )
         print(result.stdout)
@@ -2981,7 +3037,7 @@ ls -lh /mnt/waa-storage/
   waa-auto:latest'''
 
         result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}", docker_cmd],
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}", docker_cmd],
             capture_output=True, text=True, timeout=60
         )
         if result.returncode != 0:
@@ -3018,7 +3074,7 @@ ls -lh /mnt/waa-storage/
         # Step 1: Stop container
         print("[1/3] Stopping WAA container...")
         subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}",
              "docker stop winarena 2>/dev/null; docker rm winarena 2>/dev/null"],
             capture_output=True, text=True
         )
@@ -3037,7 +3093,7 @@ rm -f /mnt/waa-storage/data.img /mnt/waa-storage/windows.mac /mnt/waa-storage/wi
 ls -lh /mnt/waa-storage/
 """
         result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}", cleanup_cmd],
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}", cleanup_cmd],
             capture_output=True, text=True
         )
         print(result.stdout)
@@ -3059,7 +3115,7 @@ ls -lh /mnt/waa-storage/
   waa-auto:latest'''
 
         result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}", docker_cmd],
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}", docker_cmd],
             capture_output=True, text=True, timeout=60
         )
         if result.returncode != 0:
@@ -3079,7 +3135,7 @@ ls -lh /mnt/waa-storage/
             # Check if WAA server /probe endpoint responds
             try:
                 probe_result = subprocess.run(
-                    ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
+                    ["ssh", *SSH_OPTS, "-o", "ConnectTimeout=5",
                      f"azureuser@{ip}",
                      "curl -s --connect-timeout 3 http://20.20.20.21:5000/probe 2>/dev/null"],
                     capture_output=True, text=True, timeout=30
@@ -3096,7 +3152,7 @@ ls -lh /mnt/waa-storage/
 
             # Show progress from docker logs
             log_result = subprocess.run(
-                ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
+                ["ssh", *SSH_OPTS, f"azureuser@{ip}",
                  "docker logs winarena 2>&1 | tail -2"],
                 capture_output=True, text=True
             )
@@ -3469,6 +3525,109 @@ ls -lh /mnt/waa-storage/
 
         print("\nCleanup complete.")
 
+    elif args.action == "logs":
+        # Get VM IP
+        ip = get_vm_ip(resource_group, vm_name)
+        if not ip:
+            print(f"✗ VM '{vm_name}' not found. Run 'vm setup-waa' first.")
+            sys.exit(1)
+
+        num_lines = getattr(args, 'lines', 50)
+        follow = getattr(args, 'follow', False)
+
+        if follow:
+            # Follow logs (streaming)
+            print(f"Following logs from winarena container on {ip}...")
+            print("Press Ctrl+C to stop.\n")
+            import os
+            os.execvp("ssh", ["ssh", *SSH_OPTS, f"azureuser@{ip}",
+                             "docker logs -f winarena"])
+        else:
+            result = subprocess.run(
+                ["ssh", *SSH_OPTS, f"azureuser@{ip}",
+                 f"docker logs --tail {num_lines} winarena 2>&1"],
+                capture_output=True, text=True
+            )
+            print(result.stdout)
+            if result.returncode != 0:
+                print(f"Error: {result.stderr}")
+
+    elif args.action == "diag":
+        print(f"\n=== VM Diagnostics: {vm_name} ===\n")
+
+        # Get VM IP
+        ip = get_vm_ip(resource_group, vm_name)
+        if not ip:
+            print(f"✗ VM '{vm_name}' not found. Run 'vm setup-waa' first.")
+            sys.exit(1)
+
+        print(f"  VM IP: {ip}")
+        print()
+
+        # Disk usage
+        print("[1/4] Disk Usage")
+        print("-" * 50)
+        result = subprocess.run(
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}",
+             "df -h / /mnt 2>/dev/null || df -h /"],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            print(result.stdout)
+        else:
+            print(f"  Error: {result.stderr[:100]}")
+
+        # Docker info
+        print("[2/4] Docker Status")
+        print("-" * 50)
+        result = subprocess.run(
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}",
+             "docker system df 2>/dev/null || echo 'Docker not installed'"],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            print(result.stdout)
+        else:
+            print(f"  Error: {result.stderr[:100]}")
+
+        # Docker images
+        print("[3/4] Docker Images")
+        print("-" * 50)
+        result = subprocess.run(
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}",
+             "docker images --format 'table {{.Repository}}:{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}' 2>/dev/null || echo 'Docker not installed'"],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            print(result.stdout)
+        else:
+            print(f"  Error: {result.stderr[:100]}")
+
+        # Running containers
+        print("[4/4] Running Containers")
+        print("-" * 50)
+        result = subprocess.run(
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}",
+             "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' 2>/dev/null || echo 'Docker not installed'"],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            print(result.stdout)
+        else:
+            print(f"  Error: {result.stderr[:100]}")
+
+        # WAA probe status
+        print("\n[Bonus] WAA Probe Status")
+        print("-" * 50)
+        is_ready, response = check_waa_probe(ip, internal_ip='172.30.0.2')
+        if is_ready:
+            print(f"  ✓ WAA server READY: {response[:100] if response else '(empty)'}")
+        else:
+            print("  ✗ WAA server not responding")
+
+        print(f"\n  VNC: http://{ip}:8006")
+        print(f"  SSH: ssh azureuser@{ip}")
+
 
 def cmd_view(args: argparse.Namespace) -> None:
     """View benchmark results from collected data.
@@ -3761,7 +3920,7 @@ Quick Start:
 
     # WAA eval VM management
     p_vm = subparsers.add_parser("vm", help="Manage dedicated WAA eval VM (with nested virtualization)")
-    p_vm.add_argument("action", choices=["create", "status", "ssh", "delete", "list-sizes", "setup", "pull-image", "setup-waa", "run-waa", "prepare-windows", "fix-storage", "reset-windows", "screenshot", "probe", "pool-status", "delete-pool", "cleanup-stale"], help="Action to perform")
+    p_vm.add_argument("action", choices=["create", "status", "ssh", "delete", "list-sizes", "setup", "pull-image", "setup-waa", "run-waa", "prepare-windows", "fix-storage", "reset-windows", "screenshot", "probe", "pool-status", "delete-pool", "cleanup-stale", "diag", "logs"], help="Action to perform")
     p_vm.add_argument("--resource-group", default="openadapt-agents", help="Azure resource group")
     p_vm.add_argument("--name", default="waa-eval-vm", help="VM name")
     p_vm.add_argument("--size", default="Standard_D4s_v3", help="VM size (must support nested virt)")
@@ -3789,6 +3948,9 @@ Quick Start:
     # Auto-shutdown option (for run-waa)
     p_vm.add_argument("--auto-shutdown", action="store_true", default=False, help="Deallocate VM after benchmark completes to save costs (for run-waa)")
     p_vm.add_argument("--rebuild", action="store_true", default=False, help="Force rebuild of waa-auto Docker image (for run-waa)")
+    # Log viewing options (for logs action)
+    p_vm.add_argument("--lines", "-n", type=int, default=50, help="Number of log lines to show (for logs)")
+    p_vm.add_argument("--follow", "-f", action="store_true", default=False, help="Follow log output (for logs)")
     # Cleanup-stale options
     p_vm.add_argument("--max-hours", type=float, default=2.0, help="For cleanup-stale: cancel jobs running longer than this (default: 2 hours)")
     p_vm.add_argument("--vm-max-hours", type=float, default=24.0, help="For cleanup-stale: deallocate VMs running longer than this (default: 24 hours)")
