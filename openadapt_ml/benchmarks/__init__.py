@@ -72,6 +72,8 @@ from openadapt_ml.benchmarks.runner import (
     evaluate_agent_on_benchmark,
 )
 from openadapt_ml.benchmarks.waa import WAAAdapter, WAAConfig, WAAMockAdapter
+from openadapt_ml.benchmarks.waa_live import WAALiveAdapter, WAALiveConfig
+from openadapt_ml.benchmarks.viewer import generate_benchmark_viewer
 
 # Azure orchestration (lazy import to avoid requiring azure-ai-ml)
 def _get_azure_classes():
@@ -108,6 +110,10 @@ __all__ = [
     "WAAAdapter",
     "WAAConfig",
     "WAAMockAdapter",
+    "WAALiveAdapter",
+    "WAALiveConfig",
+    # Viewer
+    "generate_benchmark_viewer",
     # Azure (lazy-loaded)
     "AzureConfig",
     "AzureWAAOrchestrator",
