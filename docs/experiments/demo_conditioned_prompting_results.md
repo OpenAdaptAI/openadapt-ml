@@ -1,6 +1,6 @@
 # Demo-Conditioned Prompting Experiment Results
 
-**Date**: December 2024
+**Date**: December 2025
 **Author**: OpenAdapt Team
 **Status**: Validated (n=45, first-action accuracy)
 
@@ -290,8 +290,8 @@ This experiment establishes a *prompt-level upper bound* before any fine-tuning.
 
 | Experiment | Date | File |
 |------------|------|------|
-| Preliminary (n=3) | 2024-12-31 | `openadapt_ml/experiments/demo_prompt/results/experiment_20251231_002125.json` |
-| **Full validation (n=45)** | 2024-12-31 | `openadapt_ml/experiments/demo_prompt/results/experiment_n30_20251231_165958.json` |
+| Preliminary (n=3) | 2025-12-31 | `openadapt_ml/experiments/demo_prompt/results/experiment_20251231_002125.json` |
+| **Full validation (n=45)** | 2025-12-31 | `openadapt_ml/experiments/demo_prompt/results/experiment_n30_20251231_165958.json` |
 
 ---
 

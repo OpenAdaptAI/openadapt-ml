@@ -112,21 +112,52 @@ New comparison layout:
 
 ### Implementation Plan
 
-#### Phase 1: Data Collection
+#### Phase 1: Data Collection (DONE)
 1. Extend `BenchmarkRunner` to save execution traces
 2. Save screenshots at each step during benchmark runs
 3. Store structured results in `benchmark_results/` directory
 
-#### Phase 2: Viewer Backend
-1. Add `load_benchmark_results()` function to trainer.py
-2. Generate `benchmark.html` from results
-3. Reuse existing viewer components where possible
+Implementation: `openadapt_ml/benchmarks/data_collection.py` with `ExecutionTraceCollector`
 
-#### Phase 3: UI Components
-1. Benchmark summary dashboard (success rates, charts)
-2. Task list with filtering (by domain, status, model)
-3. Step-by-step replay with model comparison
-4. Export capabilities (CSV, JSON)
+#### Phase 2: Viewer Backend (DONE)
+1. Add `generate_benchmark_viewer()` function to `openadapt_ml/benchmarks/viewer.py`
+2. Generate `benchmark.html` from results
+3. Reuse existing viewer components via `shared_ui.py`
+
+Implementation: `openadapt_ml/benchmarks/viewer.py` with:
+- `load_benchmark_metadata()` - Load metadata.json
+- `load_benchmark_summary()` - Load summary.json
+- `load_task_results()` - Load all task execution traces and screenshots
+- `generate_benchmark_viewer()` - Generate standalone HTML viewer
+
+CLI command:
+```bash
+uv run python -m openadapt_ml.benchmarks.cli view --run-name {name}
+```
+
+#### Phase 3: UI Components (DONE - Basic Implementation)
+1. Benchmark summary dashboard (success rates, domain breakdown)
+2. Task list with filtering (by domain, status)
+3. Step-by-step replay with playback controls
+4. Screenshot display with action details and reasoning
+
+The viewer includes:
+- Summary panel with total tasks, passed/failed counts, success rate
+- Domain breakdown tags showing per-domain statistics
+- Filter controls for domain and status (pass/fail)
+- Task list with task ID, status badge, domain, step count
+- Step viewer with:
+  - Screenshot display with click markers
+  - Playback controls (prev/next, play/pause, speed control)
+  - Progress bar
+  - Step list for quick navigation
+  - Action detail panel
+  - Reasoning display (when available)
+- Keyboard shortcuts: Space (play/pause), arrows (prev/next), Home/End
+
+TODO for future:
+- Model comparison (multiple model traces per task)
+- Export capabilities (CSV, JSON)
 
 #### Phase 4: Analysis Features
 1. Failure clustering: Group similar failures
@@ -164,16 +195,30 @@ Reuse from existing viewer:
 - Playback controls
 
 ### CLI Integration
+
 ```bash
-# Run benchmark and generate viewer
-uv run python -m openadapt_ml.benchmarks.cli run-azure --tasks 10 --viewer
+# Run benchmark with data collection (test-collection command)
+uv run python -m openadapt_ml.benchmarks.cli test-collection --tasks 5
 
-# Generate viewer from existing results
-uv run python -m openadapt_ml.benchmarks.cli viewer benchmark_results/waa_eval_20241214/
+# View benchmark results (generates HTML and starts server)
+uv run python -m openadapt_ml.benchmarks.cli view --run-name {name}
 
-# Serve benchmark viewer
-uv run python -m openadapt_ml.cloud.local serve --benchmark benchmark_results/waa_eval_20241214/
+# View with embedded screenshots (standalone HTML)
+uv run python -m openadapt_ml.benchmarks.cli view --run-name {name} --embed-screenshots
+
+# View without opening browser
+uv run python -m openadapt_ml.benchmarks.cli view --run-name {name} --no-open
+
+# Use custom port
+uv run python -m openadapt_ml.benchmarks.cli view --run-name {name} --port 9000
 ```
+
+Available options:
+- `--run-name`: Name of the benchmark run to view (required)
+- `--output`: Base directory containing benchmark runs (default: benchmark_results)
+- `--port`: Port for local server (default: 8765)
+- `--no-open`: Don't auto-open browser
+- `--embed-screenshots`: Embed screenshots as base64 (creates larger but standalone HTML)
 
 ## Open Questions
 
