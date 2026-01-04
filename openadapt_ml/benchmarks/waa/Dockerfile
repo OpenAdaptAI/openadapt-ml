@@ -114,14 +114,18 @@ RUN if grep -q "</FirstLogonCommands>" /run/assets/win11x64.xml; then \
     fi
 
 # -----------------------------------------------------------------------------
-# Install Python dependencies for benchmark client (runs on Linux host)
+# Copy Python environment from official WAA image (has all deps pre-installed)
+# This avoids Python 3.13 compatibility issues with torch/easyocr
 # -----------------------------------------------------------------------------
 
+# Copy Python installation and packages from official WAA image
+COPY --from=windowsarena/winarena:latest /usr/bin/python3 /usr/bin/python3
+COPY --from=windowsarena/winarena:latest /usr/bin/python3.10 /usr/bin/python3.10
+COPY --from=windowsarena/winarena:latest /usr/lib/python3.10 /usr/lib/python3.10
+COPY --from=windowsarena/winarena:latest /usr/local/lib/python3.10 /usr/local/lib/python3.10
+
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 \
-    python3-pip \
-    python3-dev \
-    build-essential \
     tesseract-ocr \
     libgl1 \
     libglib2.0-0 \
@@ -129,86 +133,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     libxrender-dev \
     ffmpeg \
+    libpython3.10 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python packages for benchmark client
-# Use --break-system-packages for Debian Trixie (Python 3.13 with PEP 668)
-# Install in stages to avoid timeouts and handle compatibility issues
-RUN pip3 install --no-cache-dir --break-system-packages \
-    openai \
-    requests \
-    pillow \
-    numpy \
-    tenacity \
-    tqdm \
-    pandas \
-    flask \
-    psutil \
-    gymnasium \
-    fabric \
-    pyyaml \
-    tiktoken \
-    backoff \
-    beautifulsoup4 \
-    lxml \
-    cssselect \
-    xmltodict \
-    anthropic
-
-# Install ML packages (separate layer for caching)
-RUN pip3 install --no-cache-dir --break-system-packages \
-    torch --index-url https://download.pytorch.org/whl/cpu
-
-RUN pip3 install --no-cache-dir --break-system-packages \
-    transformers \
-    accelerate \
-    opencv-python-headless \
-    matplotlib \
-    easyocr \
-    playwright
-
-# Install additional WAA client dependencies (from client/requirements.txt)
-RUN pip3 install --no-cache-dir --break-system-packages \
-    pydrive \
-    pydrive2 \
-    requests-toolbelt \
-    rapidfuzz \
-    formulas \
-    fastdtw \
-    odfpy \
-    func-timeout \
-    mutagen \
-    pdfplumber \
-    gdown \
-    timm \
-    pytesseract \
-    LnkParse3 \
-    anytree \
-    supervision \
-    py7zr \
-    einops \
-    openpyxl \
-    python-docx \
-    python-pptx \
-    pypdf \
-    pypdf2 \
-    ImageHash \
-    scikit-image \
-    pymupdf \
-    chardet \
-    borb \
-    wandb \
-    wrapt_timeout_decorator \
-    addict \
-    yapf \
-    pynput \
-    pyautogui
-
-# Install Playwright browsers (required for web automation in WAA)
-RUN playwright install chromium --with-deps
-
-# Create python symlink for scripts that use 'python' instead of 'python3'
-RUN ln -sf /usr/bin/python3 /usr/bin/python
+# Create python symlinks
+RUN ln -sf /usr/bin/python3.10 /usr/bin/python3 && \
+    ln -sf /usr/bin/python3 /usr/bin/python
 
 # -----------------------------------------------------------------------------
 # Environment configuration
