@@ -9,7 +9,7 @@ import yaml
 
 from openadapt_ml.datasets.next_action import build_next_action_sft_samples, parse_action_som
 from openadapt_ml.evals.trajectory_matching import evaluate_policy_on_episodes
-from openadapt_ml.ingest.synthetic import generate_synthetic_sessions
+from openadapt_ml.ingest.synthetic import generate_synthetic_episodes
 from openadapt_ml.models.dummy_adapter import DummyAdapter
 from openadapt_ml.models.qwen_vl import QwenVLAdapter
 from openadapt_ml.models.api_adapter import ApiVLMAdapter
@@ -63,9 +63,9 @@ def main(
     # Determine scenario: CLI arg takes precedence, then config, then default "login"
     scenario_to_use = scenario if scenario else synth_cfg.get("scenario", "login")
 
-    # Generate sessions with SoM if requested
-    sessions = generate_synthetic_sessions(
-        num_sessions=num_sessions,
+    # Generate episodes with SoM if requested
+    episodes = generate_synthetic_episodes(
+        num_episodes=num_sessions,
         seed=seed,
         output_dir=output_dir,
         use_som=use_som,
@@ -73,7 +73,6 @@ def main(
         scenario=scenario_to_use,
     )
     print(f"[INFO] Scenario: {scenario_to_use}")
-    episodes = [ep for sess in sessions for ep in sess.episodes]
 
     # Build samples with appropriate DSL mode
     samples = build_next_action_sft_samples(episodes, use_som=use_som)

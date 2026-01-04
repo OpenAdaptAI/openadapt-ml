@@ -355,6 +355,22 @@ The training dashboard and capture viewer share UI components for visual consist
 - Single source of truth for styling (no duplicate CSS to maintain)
 - Easier to add new dashboards that match existing style
 
+## CRITICAL: Always Start Dashboard When Running Azure Resources
+
+**WHENEVER starting, managing, or waiting on Azure VMs or cloud resources, IMMEDIATELY start the dashboard viewer:**
+
+```bash
+python -m openadapt_ml.cloud.local serve --port 8765 --open
+```
+
+This provides:
+- Live VM status with WAA probe checks
+- Azure ML job status
+- Real-time benchmark progress via SSE
+- Background task monitoring
+
+**DO NOT** make the user wait for CLI output or manually check VNC. The dashboard shows everything in one place.
+
 ## Don't Do
 
 - Don't add timelines/estimates to plans
@@ -362,6 +378,7 @@ The training dashboard and capture viewer share UI components for visual consist
 - Don't over-engineer - keep solutions minimal
 - Don't use `os.environ` directly - use `config.settings` instead
 - Don't use `pip install` - always use `uv pip install` or `uv add` for consistency
+- **Don't run Azure/VM operations without starting the dashboard first**
 
 ## TODO / Known Issues
 
@@ -461,8 +478,12 @@ uv run python -m openadapt_ml.benchmarks.cli vm reset-windows
 1. Uses modern `dockurr/windows:latest` base (auto-downloads Windows 11)
 2. Copies `/oem` folder from official WAA image (fixes OEM folder issue)
 3. Patches IP addresses (20.20.20.21 → 172.30.0.2)
-4. Adds automation commands (disable firewall, sleep, lock screen)
+4. Adds automation commands to Windows FirstLogonCommands:
+   - Disable firewall, sleep, lock screen
+   - **Auto-runs install.bat** to install Python, Chrome, LibreOffice, VSCode, WAA server
 5. Installs Python dependencies for benchmark client
+
+**Fully automated** - no manual VNC login or script execution needed!
 
 **Key requirements**:
 1. **VM Size**: `Standard_D4ds_v5` or larger (nested virtualization required)
@@ -482,12 +503,63 @@ Azure VM (Standard_D4ds_v5, nested virt enabled)
 ```
 
 **Monitor progress**:
-- VNC: `http://<vm-ip>:8006`
+- VNC: `http://localhost:8006` (via SSH tunnel, auto-managed by dashboard)
 - Logs: `tail -f /tmp/waa_benchmark.log` (if running via nohup)
 
 **Files**:
 - `openadapt_ml/benchmarks/cli.py` - `vm` subcommand with setup-waa, probe
+- `openadapt_ml/cloud/ssh_tunnel.py` - SSH tunnel manager (auto VNC/WAA tunnels)
 - `docs/waa_setup.md` - Detailed setup guide
+
+### SSH Tunnel Management (VNC/WAA Access)
+**Status**: DONE
+
+**Problem**: Azure VMs have Network Security Groups (NSGs) that only expose port 22 (SSH) by default. Ports 8006 (VNC) and 5000 (WAA) are not accessible directly.
+
+**Solution**: Automatic SSH tunnel management via `SSHTunnelManager`:
+
+```
+Browser → localhost:8006 → SSH Tunnel → Azure VM:8006 → Docker → noVNC
+Browser → localhost:5000 → SSH Tunnel → Azure VM:5000 → WAA Flask
+```
+
+**Architecture**:
+1. When VM's WAA probe becomes "ready", tunnels auto-start
+2. When VM goes offline, tunnels auto-stop
+3. Dashboard shows tunnel status next to VNC button
+4. VNC button links to localhost:port (tunnel endpoint)
+
+**Files**:
+- `openadapt_ml/cloud/ssh_tunnel.py` - SSHTunnelManager class
+- `openadapt_ml/cloud/local.py` - Integration with dashboard server
+- `openadapt_ml/training/benchmark_viewer.py` - UI showing tunnel status
+
+**API Endpoints**:
+- `GET /api/tunnels` - Returns tunnel status for VNC and WAA
+- `GET /api/vms` - Includes `tunnels` field with per-tunnel status
+
+**Key features**:
+- Auto-start on VM online (idempotent - safe to call repeatedly)
+- Auto-stop on VM offline
+- Port conflict detection
+- Graceful shutdown on process exit
+- No manual SSH commands needed
+
+**Manual usage** (if needed):
+```python
+from openadapt_ml.cloud.ssh_tunnel import get_tunnel_manager
+
+manager = get_tunnel_manager()
+manager.start_tunnels_for_vm("172.171.112.41", "azureuser")
+status = manager.get_tunnel_status()
+manager.stop_all_tunnels()
+```
+
+**Why not open NSG ports?**
+1. VNC has no authentication by default - anyone can connect
+2. SSH tunnel encrypts all traffic
+3. Requires SSH key auth - no password guessing
+4. No Azure NSG changes needed
 
 **Alternative: Mock evaluation** for testing without Windows:
 ```bash
@@ -614,7 +686,7 @@ Verified:
 - Backend flag options: `claude`, `openai` in CLI ✓
 
 ### Benchmark Viewer Integration
-**Status**: Phase 1 DONE, Phases 2-4 TODO
+**Status**: Phases 1-3 DONE, Phase 4 TODO
 
 **Goal**: Integrate benchmark evaluation results (WAA, WebArena, OSWorld) into the unified viewer.
 
@@ -624,7 +696,7 @@ Verified:
 1. **Benchmarks tab**: Third tab alongside Training and Viewer
 2. **Task-level view**: List of benchmark tasks with pass/fail status
 3. **Step-by-step replay**: Same UI as Viewer tab for benchmark executions
-4. **Model comparison**: Side-by-side comparison of different models on same task
+4. **Model comparison**: Side-by-side comparison of different models on same task (TODO)
 5. **Aggregate metrics**: Success rate by domain, difficulty rankings
 
 **Implementation phases**:
@@ -635,22 +707,30 @@ Verified:
    - Directory structure: `benchmark_results/{run_name}/tasks/{task_id}/`
    - Each task has: `task.json`, `execution.json`, `screenshots/`
    - Test script: `test_data_collection.py` validates all files are created
-2. **Viewer backend** (TODO): `generate_benchmark_viewer()` function
-3. **UI components** (TODO): Summary dashboard, task list, replay
+2. ✅ **Viewer backend** (DONE): `generate_benchmark_viewer()` function
+   - Created `openadapt_ml/benchmarks/viewer.py` with viewer generation
+   - Added CLI command: `uv run python -m openadapt_ml.benchmarks.cli view --run-name {name}`
+   - Generates standalone HTML with same styling as training viewer
+   - Uses shared header components via `shared_ui.py`
+3. ✅ **UI components** (DONE - Basic): Summary dashboard, task list, replay
+   - Summary panel with total tasks, passed/failed, success rate
+   - Domain breakdown with per-domain statistics
+   - Filter controls (domain, status)
+   - Task list with status badges
+   - Step-by-step viewer with screenshots, actions, reasoning
+   - Playback controls (prev/next, play/pause, speed)
+   - Keyboard shortcuts (Space, arrows, Home/End)
 4. **Analysis** (TODO): Failure clustering, regression detection
 
-**Phase 1 verification:**
+**View benchmark results:**
 ```bash
-# Test data collection
-uv run python -m openadapt_ml.benchmarks.cli test-collection --tasks 5
+# Generate HTML viewer and serve it
+uv run python -m openadapt_ml.benchmarks.cli view --run-name {name}
 
-# Verify output
-ls -la benchmark_results/{run_name}/tasks/task_001/
-# Should contain: task.json, execution.json, screenshots/
-
-# Check JSON structure
-cat benchmark_results/{run_name}/summary.json
-cat benchmark_results/{run_name}/tasks/task_001/execution.json
+# Options:
+# --embed-screenshots  Embed screenshots as base64 (standalone HTML)
+# --no-open            Don't auto-open browser
+# --port 9000          Use custom port
 ```
 
 ## Preventing Stale Data Issues

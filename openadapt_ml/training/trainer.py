@@ -21,6 +21,10 @@ from openadapt_ml.training.shared_ui import (
 from openadapt_ml.training.viewer import (
     generate_unified_viewer_from_output_dir,
 )
+from openadapt_ml.training.benchmark_viewer import (
+    _get_azure_jobs_panel_css,
+    _get_azure_jobs_panel_html,
+)
 
 
 def setup_job_directory(base_dir: str | Path, job_id: str) -> Path:
@@ -813,6 +817,8 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
         }}
         /* Shared header styles (injected from _get_shared_header_css) */
         {_get_shared_header_css()}
+        /* Azure ML Jobs panel styles */
+        {_get_azure_jobs_panel_css()}
         .eval-panel {{
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
@@ -1153,6 +1159,8 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
                 {''.join(f'<div class="setup-log-line{" current" if i == len(state.setup_logs) - 1 else ""}">{log}</div>' for i, log in enumerate(state.setup_logs)) if state.setup_logs else '<div class="setup-log-line">Waiting for setup logs...</div>'}
             </div>
         </div>
+
+        {_get_azure_jobs_panel_html()}
 
         <div class="config-panel" id="config-panel">
             <div class="config-grid">
