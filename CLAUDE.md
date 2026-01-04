@@ -2,6 +2,25 @@
 
 This file helps maintain context across sessions.
 
+---
+## ⚠️ MANDATORY: START DASHBOARD FIRST ⚠️
+
+**BEFORE doing ANYTHING with Azure VMs, ALWAYS run:**
+```bash
+uv run python -m openadapt_ml.cloud.local serve --port 8765 --open
+```
+
+This is NON-NEGOTIABLE. The dashboard provides:
+- Live VM status with SSH tunnels (VNC only accessible via localhost:8006)
+- Real-time WAA probe checks
+- SSE-enabled live refresh
+- Background task monitoring
+
+**VNC is NOT accessible at public IP** - only via SSH tunnel at `localhost:8006`
+
+**After every /compact or session restart, your FIRST action must be starting this dashboard.**
+---
+
 ## Project Overview
 
 openadapt-ml is a model-agnostic, domain-agnostic ML engine for GUI automation agents. It provides:
