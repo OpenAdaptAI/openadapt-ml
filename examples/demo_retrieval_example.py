@@ -6,12 +6,15 @@ This demonstrates the full pipeline:
 2. Build retrieval index
 3. Retrieve relevant demos for a new task
 4. Format demos for few-shot prompting
+
+Two APIs are shown:
+- New API (DemoRetriever): Simpler, supports multiple embedding methods
+- Legacy API (DemoIndex + LegacyDemoRetriever): For backward compatibility
 """
 
 from __future__ import annotations
 
-from openadapt_ml.experiments.demo_prompt.format_demo import format_episode_as_demo
-from openadapt_ml.retrieval import DemoIndex, DemoRetriever
+from openadapt_ml.retrieval import DemoRetriever
 from openadapt_ml.schema import Action, ActionType, Episode, Observation, Step
 
 
@@ -41,7 +44,14 @@ def create_demo_episode(
             window_title=window_title,
             url=url,
         )
-        action = Action(type=ActionType(action_type), normalized_coordinates=(coords[0], coords[1]))
+        # Create action with appropriate parameters based on type
+        action_kwargs = {
+            "type": ActionType(action_type),
+            "normalized_coordinates": (coords[0], coords[1]),
+        }
+        if action_type == "type":
+            action_kwargs["text"] = "example text"
+        action = Action(**action_kwargs)
         step = Step(step_index=i, observation=obs, action=action)
         steps.append(step)
 
@@ -94,28 +104,51 @@ def main() -> None:
             ],
             app_name="Calculator",
         ),
+        create_demo_episode(
+            "demo_dark_mode",
+            "Enable dark mode in system appearance settings",
+            [
+                ("Finder", "click", (0.5, 0.1)),  # Click Apple menu
+                ("System Settings", "click", (0.3, 0.4)),  # Click System Settings
+                ("System Settings - Appearance", "click", (0.2, 0.3)),  # Click Appearance
+                ("System Settings - Appearance", "click", (0.4, 0.5)),  # Click Dark mode
+            ],
+            app_name="System Settings",
+        ),
     ]
 
     print(f"\nCreated {len(demos)} demonstration episodes")
     for demo in demos:
         print(f"  - {demo.instruction} ({len(demo.steps)} steps)")
 
-    # Build the retrieval index
-    print("\nBuilding retrieval index...")
-    index = DemoIndex()
-    index.add_many(demos)
-    index.build()
-    print(f"Index: {index}")
-    print(f"Apps in index: {', '.join(index.get_apps())}")
-    print(f"Domains in index: {', '.join(index.get_domains())}")
+    # =========================================================================
+    # New API: DemoRetriever (Recommended)
+    # =========================================================================
+    print("\n" + "=" * 80)
+    print("USING NEW API: DemoRetriever")
+    print("=" * 80)
 
-    # Create retriever
-    retriever = DemoRetriever(index, domain_bonus=0.3)
+    # Create retriever with TF-IDF embeddings (default, no dependencies)
+    retriever = DemoRetriever(
+        embedding_method="tfidf",  # Options: "tfidf", "sentence_transformers", "openai"
+        domain_bonus=0.2,
+        app_bonus=0.15,
+    )
+
+    # Add demos
+    for demo in demos:
+        retriever.add_demo(demo)
+
+    # Build the index
+    retriever.build_index()
+    print(f"\nRetriever: {retriever}")
+    print(f"Apps in index: {', '.join(retriever.get_apps())}")
+    print(f"Domains in index: {', '.join(retriever.get_domains())}")
 
     # Simulate a new task
-    print("\n" + "=" * 80)
+    print("\n" + "-" * 40)
     print("NEW TASK")
-    print("=" * 80)
+    print("-" * 40)
     new_task = "Disable dark mode in macOS settings"
     app_context = "System Settings"
 
@@ -124,28 +157,32 @@ def main() -> None:
 
     # Retrieve relevant demos
     print(f"\nRetrieving top-3 similar demonstrations...")
-    results = retriever.retrieve_with_scores(new_task, app_context, top_k=3)
+    results = retriever.retrieve(new_task, top_k=3, app_context=app_context)
 
     print(f"\nFound {len(results)} similar demos:")
-    for i, result in enumerate(results, 1):
-        print(f"\n{i}. {result.demo.episode.instruction}")
-        print(f"   Score: {result.score:.3f} (text: {result.text_score:.3f}, domain bonus: {result.domain_bonus:.3f})")
+    for result in results:
+        print(f"\n{result.rank}. {result.demo.goal}")
+        print(f"   Score: {result.score:.3f} (text: {result.text_score:.3f}, bonus: {result.domain_bonus:.3f})")
+        print(f"   App: {result.demo.app_name}, Platform: {result.demo.platform}")
 
-    # Format the best demo for prompting
+    # Format for prompt using built-in method
     if results:
-        best_demo = results[0].demo.episode
-        print("\n" + "=" * 80)
+        print("\n" + "-" * 40)
         print("FORMATTED DEMO FOR PROMPT")
-        print("=" * 80)
-        formatted_demo = format_episode_as_demo(best_demo, max_steps=10)
+        print("-" * 40)
+        formatted_demo = retriever.format_for_prompt(
+            results[:1],  # Just the top result
+            max_steps_per_demo=10,
+            include_scores=True,
+        )
         print(formatted_demo)
 
-        # Show how this would be used in a prompt
-        print("\n" + "=" * 80)
-        print("FULL PROMPT EXAMPLE")
-        print("=" * 80)
+    # Show how this would be used in a prompt
+    print("\n" + "-" * 40)
+    print("FULL PROMPT EXAMPLE")
+    print("-" * 40)
 
-        full_prompt = f"""You are a GUI automation agent. I will show you a demonstration of a similar task, then ask you to perform a new task.
+    full_prompt = f"""You are a GUI automation agent. I will show you a demonstration of a similar task, then ask you to perform a new task.
 
 {formatted_demo}
 
@@ -155,15 +192,42 @@ App: {app_context}
 
 What is your first action?"""
 
-        print(full_prompt)
+    print(full_prompt)
+
+    # =========================================================================
+    # Alternative: Using sentence-transformers for better semantic matching
+    # =========================================================================
+    print("\n" + "=" * 80)
+    print("USING SENTENCE-TRANSFORMERS (if installed)")
+    print("=" * 80)
+
+    try:
+        retriever_st = DemoRetriever(
+            embedding_method="sentence_transformers",
+            embedding_model="all-MiniLM-L6-v2",  # Fast, 22MB
+        )
+        for demo in demos:
+            retriever_st.add_demo(demo)
+        retriever_st.build_index()
+
+        # Now semantic similarity works!
+        # "Disable dark mode" should match "Enable dark mode" despite different wording
+        results_st = retriever_st.retrieve("Disable blue light filter", top_k=2)
+        print("\nQuery: 'Disable blue light filter' (semantic)")
+        for result in results_st:
+            print(f"  {result.rank}. {result.demo.goal} (score: {result.score:.3f})")
+
+    except ImportError:
+        print("\nsentence-transformers not installed. Install with:")
+        print("  pip install sentence-transformers")
 
     print("\n" + "=" * 80)
     print("Example completed!")
     print("\nNext steps:")
     print("- Load real episodes from captures using openadapt_ml.ingest.capture")
-    print("- Integrate with VLM prompting pipeline")
-    print("- Experiment with different retrieval parameters")
-    print("- Add more sophisticated embedding models (sentence-transformers)")
+    print("- Use sentence-transformers for semantic matching")
+    print("- Save/load index for persistence")
+    print("- Filter by platform, tags, or app")
 
 
 if __name__ == "__main__":

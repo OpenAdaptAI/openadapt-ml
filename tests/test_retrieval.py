@@ -1,10 +1,14 @@
-"""Unit tests for demo retrieval module."""
+"""Unit tests for demo retrieval module (legacy API).
+
+These tests use the legacy DemoIndex and DemoRetriever (LegacyDemoRetriever).
+For the new API, see test_demo_retrieval.py.
+"""
 
 from __future__ import annotations
 
 import pytest
 
-from openadapt_ml.retrieval import DemoIndex, DemoRetriever
+from openadapt_ml.retrieval import DemoIndex, LegacyDemoRetriever as DemoRetriever
 from openadapt_ml.retrieval.embeddings import TextEmbedder
 from openadapt_ml.schema import Action, ActionType, Episode, Observation, Step
 
@@ -32,7 +36,11 @@ def sample_episodes() -> list[Episode]:
 
 
 class TestTextEmbedder:
-    """Test TextEmbedder class."""
+    """Test TextEmbedder class.
+
+    Note: TextEmbedder now returns numpy arrays instead of dicts.
+    These tests have been updated to work with the new interface.
+    """
 
     def test_tokenize(self) -> None:
         """Test tokenization."""
@@ -42,15 +50,17 @@ class TestTextEmbedder:
 
     def test_fit_and_embed(self) -> None:
         """Test fitting and embedding."""
+        import numpy as np
+
         embedder = TextEmbedder()
         docs = ["hello world", "world of python", "python programming"]
         embedder.fit(docs)
 
         # Embed a document
         vec = embedder.embed("hello python")
-        assert isinstance(vec, dict)
-        assert "hello" in vec
-        assert "python" in vec
+        assert isinstance(vec, np.ndarray)
+        assert vec.dtype == np.float32
+        assert len(vec) > 0
 
     def test_cosine_similarity(self) -> None:
         """Test cosine similarity."""
@@ -75,7 +85,7 @@ class TestTextEmbedder:
         embedder = TextEmbedder()
         embedder.fit([])
         vec = embedder.embed("test")
-        assert vec == {}
+        assert len(vec) == 0
 
 
 class TestDemoIndex:
