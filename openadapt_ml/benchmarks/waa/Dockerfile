@@ -186,7 +186,23 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     anytree \
     supervision \
     py7zr \
-    einops
+    einops \
+    openpyxl \
+    python-docx \
+    python-pptx \
+    pypdf \
+    pypdf2 \
+    ImageHash \
+    scikit-image \
+    pymupdf \
+    chardet \
+    borb \
+    wandb \
+    wrapt_timeout_decorator \
+    addict \
+    yapf \
+    pynput \
+    pyautogui
 
 # Install Playwright browsers (required for web automation in WAA)
 RUN playwright install chromium --with-deps
