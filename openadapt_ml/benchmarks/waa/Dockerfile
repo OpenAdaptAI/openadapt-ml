@@ -167,6 +167,27 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     easyocr \
     playwright
 
+# Install additional WAA client dependencies (from client/requirements.txt)
+RUN pip3 install --no-cache-dir --break-system-packages \
+    pydrive \
+    pydrive2 \
+    requests-toolbelt \
+    rapidfuzz \
+    formulas \
+    fastdtw \
+    odfpy \
+    func-timeout \
+    mutagen \
+    pdfplumber \
+    gdown \
+    timm \
+    pytesseract \
+    LnkParse3 \
+    anytree \
+    supervision \
+    py7zr \
+    einops
+
 # Install Playwright browsers (required for web automation in WAA)
 RUN playwright install chromium --with-deps
 
