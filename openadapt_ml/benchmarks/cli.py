@@ -2769,22 +2769,87 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
         print()
 
         # Stop any existing container
-        print("[1/2] Stopping any existing WAA container...")
+        print("[1/4] Stopping any existing WAA container...")
         subprocess.run(
             ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}",
              "docker stop winarena 2>/dev/null; docker rm -f winarena 2>/dev/null"],
             capture_output=True, text=True
         )
 
+        # Ensure waa-auto image exists (auto-rebuild if needed)
+        rebuild = getattr(args, 'rebuild', False)
+        print("[2/4] Checking waa-auto Docker image...")
+
+        # Check if waa-auto exists and is recent (built with current dockurr/windows)
+        check_image_cmd = "docker images waa-auto:latest --format '{{.ID}}' | head -1"
+        check_result = subprocess.run(
+            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}", check_image_cmd],
+            capture_output=True, text=True
+        )
+        waa_auto_exists = bool(check_result.stdout.strip())
+
+        if rebuild:
+            print("      --rebuild flag set, forcing image rebuild...")
+            waa_auto_exists = False  # Force rebuild
+
+        if not waa_auto_exists:
+            print("      waa-auto image not found, building...")
+
+            # Copy Dockerfile to VM
+            dockerfile_path = Path(__file__).parent / "waa" / "Dockerfile"
+            if dockerfile_path.exists():
+                scp_result = subprocess.run(
+                    ["scp", "-o", "StrictHostKeyChecking=no",
+                     str(dockerfile_path), f"azureuser@{ip}:~/Dockerfile.waa"],
+                    capture_output=True, text=True
+                )
+                if scp_result.returncode != 0:
+                    print(f"      ✗ Failed to copy Dockerfile: {scp_result.stderr}")
+                    sys.exit(1)
+
+                # Build the image (using /home/azureuser as context to avoid /tmp issues)
+                print("      Building waa-auto image (this may take a few minutes)...")
+                build_cmd = "cd ~ && docker build --pull -t waa-auto:latest -f ~/Dockerfile.waa . 2>&1 | tail -20"
+                build_result = subprocess.run(
+                    ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ServerAliveInterval=60",
+                     f"azureuser@{ip}", build_cmd],
+                    capture_output=True, text=True,
+                    timeout=1200  # 20 minute timeout for build
+                )
+                if "Successfully tagged waa-auto:latest" in build_result.stdout or \
+                   "naming to docker.io/library/waa-auto:latest" in build_result.stdout:
+                    print("      ✓ waa-auto image built successfully")
+                else:
+                    print(f"      Build output: {build_result.stdout[-500:]}")
+                    if build_result.returncode != 0:
+                        print(f"      ✗ Build may have failed. Continuing anyway...")
+            else:
+                print(f"      ✗ Dockerfile not found at {dockerfile_path}")
+                print("      Falling back to official image...")
+        else:
+            print("      ✓ waa-auto image found")
+
+        # Verify the image we'll use
+        print("[3/4] Selecting Docker image...")
+        verify_cmd = "docker images waa-auto:latest --format '{{.Repository}}:{{.Tag}}' | head -1"
+        verify_result = subprocess.run(
+            ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{ip}", verify_cmd],
+            capture_output=True, text=True
+        )
+        if verify_result.stdout.strip() == "waa-auto:latest":
+            docker_image = "waa-auto:latest"
+            print(f"      Using: {docker_image} (custom image with fixes)")
+        else:
+            docker_image = "windowsarena/winarena:latest"
+            print(f"      Using: {docker_image} (official image)")
+
         # Start WAA container with full benchmark run
-        print("[2/2] Starting WAA benchmark (this will take a while)...")
+        print(f"[4/4] Starting WAA benchmark (this will take a while)...")
         print(f"      Agent will run {num_tasks} tasks using {model}")
         if open_viewer:
             print(f"      Viewer running at: http://localhost:{port}/benchmark.html")
         print()
 
-        # Use official WAA container with start-client true
-        # Storage must be on /mnt (bigger disk) not root
         # Build task filtering arguments
         task_filter_args = ""
         if domain:
@@ -2802,7 +2867,7 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
   -v /mnt/docker/storage:/storage \
   -v ~/waa-results:/results \
   -e OPENAI_API_KEY="{api_key}" \
-  windowsarena/winarena:latest \
+  {docker_image} \
   "/entry.sh --start-client true --model {model} --agent {agent} --result-dir /results{task_filter_args}"'''
 
         result = subprocess.run(
@@ -3723,6 +3788,7 @@ Quick Start:
     p_vm.add_argument("--port", type=int, default=8765, help="Port for local dashboard server (default: 8765)")
     # Auto-shutdown option (for run-waa)
     p_vm.add_argument("--auto-shutdown", action="store_true", default=False, help="Deallocate VM after benchmark completes to save costs (for run-waa)")
+    p_vm.add_argument("--rebuild", action="store_true", default=False, help="Force rebuild of waa-auto Docker image (for run-waa)")
     # Cleanup-stale options
     p_vm.add_argument("--max-hours", type=float, default=2.0, help="For cleanup-stale: cancel jobs running longer than this (default: 2 hours)")
     p_vm.add_argument("--vm-max-hours", type=float, default=24.0, help="For cleanup-stale: deallocate VMs running longer than this (default: 24 hours)")
