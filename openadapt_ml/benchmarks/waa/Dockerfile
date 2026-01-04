@@ -58,10 +58,15 @@ RUN printf '#!/bin/bash\n/usr/bin/tini -s /run/entry.sh\n' > /start_vm.sh && chm
 # Patch IP addresses: official uses 20.20.20.21, dockurr/windows uses 172.30.0.2
 # -----------------------------------------------------------------------------
 
-RUN sed -i 's|20.20.20.21|172.30.0.2|g' /entry_setup.sh /entry.sh /start_client.sh /client/*.py 2>/dev/null || true
+# Patch entry scripts (must work - these files were just copied)
+RUN sed -i 's|20.20.20.21|172.30.0.2|g' /entry_setup.sh && \
+    sed -i 's|20.20.20.21|172.30.0.2|g' /entry.sh && \
+    sed -i 's|20.20.20.21|172.30.0.2|g' /start_client.sh && \
+    echo "Patched entry scripts"
 
-# Also patch the client Python files
-RUN find /client -name "*.py" -exec sed -i 's|20.20.20.21|172.30.0.2|g' {} \; 2>/dev/null || true
+# Patch client Python files
+RUN find /client -name "*.py" -exec sed -i 's|20.20.20.21|172.30.0.2|g' {} \; && \
+    echo "Patched client Python files"
 
 # -----------------------------------------------------------------------------
 # Fix Windows setup for automation
@@ -78,6 +83,7 @@ RUN if grep -q "</FirstLogonCommands>" /run/assets/win11x64.xml; then \
     N2=$((LAST_ORDER + 2)) && \
     N3=$((LAST_ORDER + 3)) && \
     N4=$((LAST_ORDER + 4)) && \
+    N5=$((LAST_ORDER + 5)) && \
     sed -i "s|</FirstLogonCommands>|\
         <SynchronousCommand wcm:action=\"add\">\n\
           <Order>$N1</Order>\n\
@@ -98,6 +104,11 @@ RUN if grep -q "</FirstLogonCommands>" /run/assets/win11x64.xml; then \
           <Order>$N4</Order>\n\
           <CommandLine>reg add \"HKLM\\\\SOFTWARE\\\\Policies\\\\Microsoft\\\\Windows\\\\Personalization\" /v NoLockScreen /t REG_DWORD /d 1 /f</CommandLine>\n\
           <Description>Disable lock screen</Description>\n\
+        </SynchronousCommand>\n\
+        <SynchronousCommand wcm:action=\"add\">\n\
+          <Order>$N5</Order>\n\
+          <CommandLine>cmd /c start /wait \\\\\\\\host.lan\\\\Data\\\\install.bat</CommandLine>\n\
+          <Description>Run WAA setup script to install Python, Chrome, etc.</Description>\n\
         </SynchronousCommand>\n\
       </FirstLogonCommands>|" /run/assets/win11x64.xml; \
     fi
@@ -153,7 +164,11 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     accelerate \
     opencv-python-headless \
     matplotlib \
-    easyocr
+    easyocr \
+    playwright
+
+# Install Playwright browsers (required for web automation in WAA)
+RUN playwright install chromium --with-deps
 
 # Create python symlink for scripts that use 'python' instead of 'python3'
 RUN ln -sf /usr/bin/python3 /usr/bin/python
