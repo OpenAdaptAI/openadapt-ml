@@ -3525,6 +3525,92 @@ ls -lh /mnt/waa-storage/
 
         print("\nCleanup complete.")
 
+    elif args.action == "monitor":
+        import socket
+        import webbrowser
+        import threading
+        import time
+        from datetime import datetime, timedelta
+
+        port = getattr(args, 'port', 8765)
+        auto_shutdown_hours = getattr(args, 'auto_shutdown_hours', 0)
+        print(f"\n=== VM Monitor Dashboard ===\n")
+
+        # Check if server is already running on port
+        def is_port_in_use(port: int) -> bool:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                return s.connect_ex(('localhost', port)) == 0
+
+        if is_port_in_use(port):
+            print(f"  Dashboard already running on port {port}")
+        else:
+            print(f"  Starting dashboard server on port {port}...")
+            # Start server in background
+            from openadapt_ml.cloud.local import get_current_output_dir, _regenerate_benchmark_viewer_if_available
+            import os
+
+            serve_dir = get_current_output_dir()
+            if not serve_dir.exists():
+                serve_dir.mkdir(parents=True)
+            _regenerate_benchmark_viewer_if_available(serve_dir)
+
+            def start_server():
+                os.chdir(serve_dir)
+                # Import the actual server from local.py
+                from openadapt_ml.cloud.local import cmd_serve
+                import argparse
+                fake_args = argparse.Namespace(port=port, open=False, no_regenerate=True)
+                cmd_serve(fake_args)
+
+            server_thread = threading.Thread(target=start_server, daemon=True)
+            server_thread.start()
+            time.sleep(1)
+            print(f"  ✓ Dashboard started")
+
+        # Open browser
+        url = f"http://localhost:{port}/benchmark.html"
+        print(f"\n  Opening: {url}")
+        print(f"  VNC (via SSH tunnel): http://localhost:8006")
+        if auto_shutdown_hours > 0:
+            shutdown_time = datetime.now() + timedelta(hours=auto_shutdown_hours)
+            print(f"  Auto-shutdown: {shutdown_time.strftime('%H:%M:%S')} ({auto_shutdown_hours}h)")
+        print(f"\n  Press Ctrl+C to stop monitoring.\n")
+        webbrowser.open(url)
+
+        # Track start time for auto-shutdown
+        start_time = datetime.now()
+
+        # Keep running to maintain dashboard and show probe status
+        try:
+            while True:
+                ip = get_vm_ip(resource_group, vm_name)
+                elapsed = datetime.now() - start_time
+                elapsed_str = f"{int(elapsed.total_seconds() // 3600)}h{int((elapsed.total_seconds() % 3600) // 60)}m"
+
+                if ip:
+                    is_ready, response = check_waa_probe(ip, internal_ip='172.30.0.2')
+                    status = "READY" if is_ready else "waiting..."
+                    print(f"  [{time.strftime('%H:%M:%S')}] WAA: {status} | Elapsed: {elapsed_str}      ", end='\r')
+                else:
+                    print(f"  [{time.strftime('%H:%M:%S')}] VM not found | Elapsed: {elapsed_str}      ", end='\r')
+
+                # Check auto-shutdown timeout
+                if auto_shutdown_hours > 0 and elapsed.total_seconds() >= auto_shutdown_hours * 3600:
+                    print(f"\n\n  Auto-shutdown triggered after {auto_shutdown_hours}h")
+                    deallocate_result = subprocess.run(
+                        ["az", "vm", "deallocate", "-g", resource_group, "-n", vm_name, "--no-wait"],
+                        capture_output=True, text=True
+                    )
+                    if deallocate_result.returncode == 0:
+                        print(f"  ✓ VM '{vm_name}' deallocation initiated")
+                    else:
+                        print(f"  ✗ Failed to deallocate: {deallocate_result.stderr[:50]}")
+                    break
+
+                time.sleep(10)
+        except KeyboardInterrupt:
+            print("\n\n  Monitoring stopped.")
+
     elif args.action == "logs":
         # Get VM IP
         ip = get_vm_ip(resource_group, vm_name)
@@ -3920,7 +4006,7 @@ Quick Start:
 
     # WAA eval VM management
     p_vm = subparsers.add_parser("vm", help="Manage dedicated WAA eval VM (with nested virtualization)")
-    p_vm.add_argument("action", choices=["create", "status", "ssh", "delete", "list-sizes", "setup", "pull-image", "setup-waa", "run-waa", "prepare-windows", "fix-storage", "reset-windows", "screenshot", "probe", "pool-status", "delete-pool", "cleanup-stale", "diag", "logs"], help="Action to perform")
+    p_vm.add_argument("action", choices=["monitor", "create", "status", "ssh", "delete", "list-sizes", "setup", "pull-image", "setup-waa", "run-waa", "prepare-windows", "fix-storage", "reset-windows", "screenshot", "probe", "pool-status", "delete-pool", "cleanup-stale", "diag", "logs"], help="Action to perform")
     p_vm.add_argument("--resource-group", default="openadapt-agents", help="Azure resource group")
     p_vm.add_argument("--name", default="waa-eval-vm", help="VM name")
     p_vm.add_argument("--size", default="Standard_D4s_v3", help="VM size (must support nested virt)")
@@ -3947,6 +4033,7 @@ Quick Start:
     p_vm.add_argument("--port", type=int, default=8765, help="Port for local dashboard server (default: 8765)")
     # Auto-shutdown option (for run-waa)
     p_vm.add_argument("--auto-shutdown", action="store_true", default=False, help="Deallocate VM after benchmark completes to save costs (for run-waa)")
+    p_vm.add_argument("--auto-shutdown-hours", type=float, default=0, help="For monitor: auto-deallocate VM after N hours (0=disabled)")
     p_vm.add_argument("--rebuild", action="store_true", default=False, help="Force rebuild of waa-auto Docker image (for run-waa)")
     # Log viewing options (for logs action)
     p_vm.add_argument("--lines", "-n", type=int, default=50, help="Number of log lines to show (for logs)")

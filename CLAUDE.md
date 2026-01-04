@@ -7,7 +7,7 @@ This file helps maintain context across sessions.
 
 **BEFORE doing ANYTHING with Azure VMs, ALWAYS run:**
 ```bash
-uv run python -m openadapt_ml.cloud.local serve --port 8765 --open
+uv run python -m openadapt_ml.benchmarks.cli vm monitor
 ```
 
 This is NON-NEGOTIABLE. The dashboard provides:
@@ -416,6 +416,8 @@ This provides:
 
 **Available VM CLI commands**:
 ```bash
+vm monitor     # THE GO-TO COMMAND: Start dashboard, open browser, show probe status
+               # Options: --auto-shutdown-hours N (deallocate after N hours)
 vm setup-waa   # Full VM setup with Docker and waa-auto image
 vm run-waa     # Run benchmark (requires waa-auto image)
 vm diag        # Check disk, Docker, containers, WAA probe status
