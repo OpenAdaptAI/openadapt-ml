@@ -379,6 +379,33 @@ This provides:
 - Don't use `os.environ` directly - use `config.settings` instead
 - Don't use `pip install` - always use `uv pip install` or `uv add` for consistency
 - **Don't run Azure/VM operations without starting the dashboard first**
+- **Don't use raw SSH/shell commands** - always use or create CLI commands instead (see below)
+
+## CLI-First Development (IMPORTANT)
+
+**ALWAYS** use CLI commands instead of raw SSH/shell commands:
+- ✅ `uv run python -m openadapt_ml.benchmarks.cli vm diag` (not `ssh ... df -h`)
+- ✅ `uv run python -m openadapt_ml.benchmarks.cli vm logs` (not `ssh ... docker logs`)
+- ✅ `uv run python -m openadapt_ml.benchmarks.cli vm probe` (not `ssh ... curl`)
+
+**Why**: CLI commands are documented, tested, and persist across context compactions. Raw commands are forgotten.
+
+**When you need a new operation**:
+1. Add a new action to the relevant CLI subcommand (e.g., `vm logs`, `vm exec`)
+2. Document it in CLAUDE.md
+3. Use the CLI command going forward
+
+**Available VM CLI commands**:
+```bash
+vm setup-waa   # Full VM setup with Docker and waa-auto image
+vm run-waa     # Run benchmark (requires waa-auto image)
+vm diag        # Check disk, Docker, containers, WAA probe status
+vm logs        # View container logs (--lines N, --follow)
+vm probe       # Check WAA server status (--wait to poll)
+vm status      # Azure VM status
+vm ssh         # Interactive SSH
+vm delete      # Delete VM
+```
 
 ## TODO / Known Issues
 
@@ -438,40 +465,45 @@ az ml workspace sync-keys -n openadapt-ml -g openadapt-agents
 - [ACR Pull Role Assignment](https://learn.microsoft.com/en-us/azure/container-registry/container-registry-authentication-managed-identity)
 
 ### Azure WAA Evaluation - Dedicated VM Setup
-**Status**: WORKING - Use official WAA repo scripts (verified Dec 2025)
+**Status**: WORKING - Custom `waa-auto` Docker image REQUIRED (verified Jan 2026)
 
 **Problem**: WAA requires running a Windows VM inside Docker (via QEMU). Azure ML managed compute doesn't support nested virtualization.
 
-**Solution**: Use the CLI commands which build a custom `waa-auto` Docker image that fixes OEM folder and automation issues.
+**CRITICAL**: The official `windowsarena/winarena:latest` image is **BROKEN**. It uses an outdated `dockurr/windows v0.00` that does NOT auto-download Windows 11. You will get "ISO file not found" errors and the VM will never start.
+
+**Solution**: The CLI builds a custom `waa-auto` Docker image that:
+1. Uses modern `dockurr/windows:latest` (v5.14+) which auto-downloads Windows 11
+2. Installs Python 3 and all WAA client dependencies
+3. Patches IP addresses for dockurr/windows networking
 
 **Working Quick Start** (via CLI - fully automated):
 ```bash
-# 1. Setup VM with Docker, WAA repo, and API key (~5 min)
+# 1. Setup VM with Docker and build waa-auto image (~10 min)
 uv run python -m openadapt_ml.benchmarks.cli vm setup-waa --api-key $OPENAI_API_KEY
 
-# 2. Prepare Windows golden image (~25 min, fully automated)
-uv run python -m openadapt_ml.benchmarks.cli vm prepare-windows
+# 2. Run benchmark (Windows downloads on first run, ~15 min, then ~30 min/20 tasks)
+uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 20
 
-# 3. Run benchmark
-uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 30
-
-# 4. Delete VM when done (IMPORTANT: stops billing!)
+# 3. Delete VM when done (IMPORTANT: stops billing!)
 uv run python -m openadapt_ml.benchmarks.cli vm delete
 ```
 
-**Other useful commands**:
+**Diagnostic commands**:
 ```bash
-# Check VM status
+# Check VM disk, Docker, containers, WAA probe status
+uv run python -m openadapt_ml.benchmarks.cli vm diag
+
+# Check VM Azure status
 uv run python -m openadapt_ml.benchmarks.cli vm status
 
 # SSH into VM for debugging
 uv run python -m openadapt_ml.benchmarks.cli vm ssh
 
 # Check if WAA server is ready
-uv run python -m openadapt_ml.benchmarks.cli vm probe
+uv run python -m openadapt_ml.benchmarks.cli vm probe --wait
 
-# Reset Windows (if stuck)
-uv run python -m openadapt_ml.benchmarks.cli vm reset-windows
+# Force rebuild waa-auto if needed
+uv run python -m openadapt_ml.benchmarks.cli vm run-waa --rebuild --num-tasks 5
 ```
 
 **What the CLI does** (via custom `waa-auto` Docker image in `openadapt_ml/benchmarks/waa/Dockerfile`):
