@@ -3206,7 +3206,8 @@ ls -lh /mnt/waa-storage/
                 print(f"\n  Ready to run benchmarks:")
                 print(f"    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5")
             else:
-                print(f"\n  Check Windows at: http://{ip}:8006 (VNC)")
+                print(f"\n  VNC (via SSH tunnel): http://localhost:8006")
+                print(f"  Start tunnel: ssh -L 8006:{ip}:8006 azureuser@{ip}")
                 sys.exit(1)
         else:
             # Single check mode
@@ -3222,7 +3223,8 @@ ls -lh /mnt/waa-storage/
             else:
                 print("  ✗ WAA server NOT responding")
                 print(f"\n  To poll until ready, use: vm probe --wait")
-                print(f"  Check Windows at: http://{ip}:8006 (VNC)")
+                print(f"  VNC (via SSH tunnel): http://localhost:8006")
+                print(f"  Start tunnel: ssh -L 8006:{ip}:8006 azureuser@{ip}")
 
     elif args.action == "pool-status":
         from openadapt_ml.benchmarks.vm_monitor import VMPoolRegistry, VMMonitor, VMConfig

@@ -376,19 +376,10 @@ The training dashboard and capture viewer share UI components for visual consist
 
 ## CRITICAL: Always Start Dashboard When Running Azure Resources
 
-**WHENEVER starting, managing, or waiting on Azure VMs or cloud resources, IMMEDIATELY start the dashboard viewer:**
-
+See the ⚠️ MANDATORY section at the TOP of this file. Use:
 ```bash
-python -m openadapt_ml.cloud.local serve --port 8765 --open
+uv run python -m openadapt_ml.benchmarks.cli vm monitor
 ```
-
-This provides:
-- Live VM status with WAA probe checks
-- Azure ML job status
-- Real-time benchmark progress via SSE
-- Background task monitoring
-
-**DO NOT** make the user wait for CLI output or manually check VNC. The dashboard shows everything in one place.
 
 ## Don't Do
 
