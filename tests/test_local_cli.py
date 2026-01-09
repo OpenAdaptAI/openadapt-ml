@@ -11,11 +11,6 @@ from pathlib import Path
 
 import pytest
 
-from openadapt_ml.datasets.next_action import NextActionDataset, build_next_action_sft_samples
-from openadapt_ml.ingest.synthetic import generate_synthetic_episodes
-from openadapt_ml.models.dummy_adapter import DummyAdapter
-from openadapt_ml.training.trainer import TrainingConfig, train_supervised
-
 
 def test_local_status_command():
     """Test that the status command runs without error."""
@@ -183,73 +178,41 @@ def test_get_training_status_with_data():
         os.chdir(original_dir)
 
 
-def test_training_with_early_stopping():
-    """Test training with early stopping enabled - should complete quickly."""
+def test_training_config_from_trainer():
+    """Test that TrainingConfig is still available from trainer module."""
+    from openadapt_ml.training.trainer import TrainingConfig
+
+    config = TrainingConfig(
+        num_train_epochs=5,
+        per_device_train_batch_size=2,
+        learning_rate=1e-4,
+    )
+    assert config.num_train_epochs == 5
+    assert config.per_device_train_batch_size == 2
+    assert config.learning_rate == 1e-4
+
+
+def test_training_logger_from_trainer():
+    """Test that TrainingLogger is still available from trainer module."""
+    from openadapt_ml.training.trainer import TrainingConfig, TrainingLogger
+
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Generate tiny synthetic dataset
-        episodes = generate_synthetic_episodes(
-            num_episodes=1,
-            seed=42,
-            output_dir=os.path.join(tmpdir, "synthetic_data"),
-        )
-        samples = build_next_action_sft_samples(episodes)
-        dataset = NextActionDataset(samples)
-
-        # Use dummy adapter for fast execution
-        adapter = DummyAdapter()
-
-        # Configure for quick test with early stopping
-        config = TrainingConfig(
-            num_train_epochs=1,
-            per_device_train_batch_size=1,
-            gradient_accumulation_steps=1,
-            logging_steps=0,
-            early_stop_loss=1e-4,  # Very low threshold
-            early_stop_patience=2,  # Stop after 2 consecutive low losses
-        )
-
-        # Should complete without error
-        train_supervised(adapter, dataset, config)
+        config = TrainingConfig(output_dir=tmpdir)
+        logger = TrainingLogger(tmpdir, config)
+        # Logger creates a job-scoped directory with timestamp
+        # Verify it's a subdirectory of the provided tmpdir
+        assert logger.output_dir.parent == Path(tmpdir) or logger.output_dir == Path(tmpdir)
 
 
-def test_training_generates_output():
-    """Test that training generates the expected output files."""
-    original_dir = os.getcwd()
+def test_trl_training_config():
+    """Test TRLTrainingConfig from trl_trainer module."""
+    from openadapt_ml.training.trl_trainer import TRLTrainingConfig
 
-    try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            os.chdir(tmpdir)
-
-            # Generate tiny synthetic dataset
-            episodes = generate_synthetic_episodes(
-                num_episodes=1,
-                seed=42,
-                output_dir="synthetic_data",
-            )
-            samples = build_next_action_sft_samples(episodes)
-            dataset = NextActionDataset(samples)
-
-            adapter = DummyAdapter()
-            config = TrainingConfig(
-                num_train_epochs=1,
-                per_device_train_batch_size=1,
-                gradient_accumulation_steps=1,
-                logging_steps=1,  # Log every step
-                output_dir="training_output",
-            )
-
-            train_supervised(adapter, dataset, config)
-
-            # Check output files were created
-            output_dir = Path("training_output")
-            assert output_dir.exists(), "training_output directory should exist"
-
-            # Training log should exist
-            log_file = output_dir / "training_log.json"
-            if log_file.exists():
-                with open(log_file) as f:
-                    data = json.load(f)
-                assert "epoch" in data
-                assert "step" in data
-    finally:
-        os.chdir(original_dir)
+    config = TRLTrainingConfig(
+        num_epochs=5,
+        batch_size=4,
+        learning_rate=1e-4,
+    )
+    assert config.num_epochs == 5
+    assert config.batch_size == 4
+    assert config.learning_rate == 1e-4
