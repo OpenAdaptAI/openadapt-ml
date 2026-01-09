@@ -52,6 +52,13 @@ lambda-labs = [
 parquet = [
     "pyarrow>=14.0.0",
 ]
+# TRL + Unsloth for optimized training (2x faster, 50% less VRAM)
+training = [
+    "trl>=0.12.0",
+    "datasets>=2.18.0",
+]
+# Note: Unsloth requires manual installation: pip install unsloth
+# See https://docs.unsloth.ai/get-started/installation
 
 dev = [
     "pytest>=9.0.0",
