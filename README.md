@@ -1,15 +1,17 @@
 # OpenAdapt-ML
 
+[![PyPI version](https://badge.fury.io/py/openadapt-ml.svg)](https://badge.fury.io/py/openadapt-ml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python Version](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 
 OpenAdapt-ML is a **model-agnostic, domain-agnostic ML engine** for GUI
-automation agents. It sits above TRL + Unsloth (which we use directly for training performance) and provides the GUI-specific layer:
+automation agents. It sits above **TRL + Unsloth** (which we use directly for training performance) and provides the GUI-specific layer:
 
 - **Episode semantics**: Step/action/observation alignment, screenshot-action coupling, termination handling
 - **Demo-conditioned inference**: Retrieval-augmented prompting (validated: 33% → 100% first-action accuracy)
 - **Benchmark adapters**: WAA today, OSWorld/WebArena planned
 - **VLM adapters**: Updated with leading GUI-agent SOTA open-source models
+- **Training pipeline**: TRL + Unsloth integration for 2x faster training with 50% less VRAM
 
 OpenAdapt-ML is **not** a training framework, optimizer, hardware orchestrator, or experiment manager. We use TRL/Unsloth, Lambda Labs/Azure, and W&B/MLflow for those.
 
@@ -19,24 +21,41 @@ It provides:
 - **Synthetic semantic UI generation** for bootstrapping datasets.
 - **Dataset builders** that turn episodes into next-action SFT samples.
 - **VLM adapters** (Qwen3-VL, Qwen2.5-VL) using Hugging Face + PEFT.
-- A minimal **supervised training loop** for fine-tuning.
+- **SFT training via TRL** with Unsloth optimizations for efficient fine-tuning.
 - A simple **runtime policy** API that predicts the next GUI action.
 
 The design is described in detail in [`docs/design.md`](docs/design.md).
 
 ---
 
-## 1. Quickstart
+## 1. Installation
 
-### 1.1 Install dependencies
-
-From the repository root:
+### 1.1 From PyPI (recommended)
 
 ```bash
+# Install the package
+uv add openadapt-ml
+
+# For training with TRL (recommended for fine-tuning)
+uv add openadapt-ml[training]
+
+# For API-backed VLMs (Claude, GPT)
+uv add openadapt-ml[api]
+```
+
+### 1.2 From source (development)
+
+```bash
+git clone https://github.com/OpenAdaptAI/openadapt-ml.git
+cd openadapt-ml
 uv sync
 ```
 
-### 1.2 Run a small demo policy
+---
+
+## 2. Quickstart
+
+### 2.1 Run a small demo policy
 
 Run a fast, model-free smoke test:
 
@@ -44,7 +63,7 @@ Run a fast, model-free smoke test:
 uv run python -m openadapt_ml.scripts.demo_policy --backend dummy
 ```
 
-### 1.3 Run the synthetic login benchmark (end-to-end)
+### 2.2 Run the synthetic login benchmark (end-to-end)
 
 On a machine with a suitable GPU, you can reproduce the Qwen3-VL synthetic
 login benchmark (train → eval base/FT → plot) with a single command:
@@ -98,7 +117,7 @@ For complete documentation including training setup, evaluation metrics, SoM mod
 
 ---
 
-## 2. Repository Structure
+## 3. Repository Structure
 
 Key modules:
 
@@ -119,9 +138,9 @@ Key modules:
 - `openadapt_ml/models/dummy_adapter.py`
   - Tiny fake adapter used to validate training and runtime flows without
     loading a real VLM.
-- `openadapt_ml/training/trainer.py`
-  - Minimal supervised training loop (`train_supervised`) with gradient
-    accumulation and logging.
+- `openadapt_ml/training/trl_trainer.py`
+  - TRL-based SFT training (`train_with_trl`) with Unsloth optimizations
+    for 2x faster training and 50% less VRAM.
 - `openadapt_ml/runtime/policy.py`
   - `AgentPolicy` that formats inputs for a VLM and parses textual actions
     like `CLICK(x=..., y=...)` and `DONE()` into structured `Action`s.
@@ -144,12 +163,12 @@ Configs and docs:
 
 ---
 
-## 3. Environment Setup
+## 4. Environment Setup
 
 OpenAdapt-ML targets **Python 3.12** and uses [`uv`](https://github.com/astral-sh/uv)
 for dependency management.
 
-### 2.1 Install and sync
+### 4.1 Install and sync
 
 From the repository root:
 
@@ -162,7 +181,7 @@ uv sync
 This will create a virtual environment (e.g. `.venv/`) and install all
 packages declared in `pyproject.toml`.
 
-### 2.2 Working inside the environment
+### 4.2 Working inside the environment
 
 Use `uv run` to execute Python modules and scripts with the synced
 environment:
@@ -175,12 +194,12 @@ You can also run `pytest` or other tools via `uv run`.
 
 ---
 
-## 4. Synthetic Data & Datasets
+## 5. Synthetic Data & Datasets
 
 The v1 pipeline is validated on **synthetic, semantic UIs**, starting with a
 simple login flow.
 
-### 3.1 Synthetic scenarios
+### 5.1 Synthetic scenarios
 
 OpenAdapt-ML includes synthetic UI generators for structured GUI automation benchmarks.
 Currently two scenarios are supported:
@@ -215,7 +234,7 @@ A more complex registration form with first name, last name, email, password, co
 | Episode Success Rate | **100%** |
 | Episodes / Steps | 32 / 384 |
 
-### 3.2 Generating synthetic data
+### 5.2 Generating synthetic data
 
 Synthetic data is generated on the fly by `generate_synthetic_sessions` in
 `openadapt_ml/ingest/synthetic.py` and used internally by the training
@@ -246,7 +265,7 @@ Each session contains episodes with:
   - An observation (screenshot path).
   - An action (e.g. `CLICK`, `TYPE`, `DONE`).
 
-### 3.3 Next-action SFT samples
+### 5.3 Next-action SFT samples
 
 Episodes are converted into SFT-style samples by
 `build_next_action_sft_samples` in `openadapt_ml/datasets/next_action.py`.
@@ -272,21 +291,20 @@ and its invariants, see `docs/design.md` §7.4.
 
 ---
 
-## 5. Training
+## 6. Training
 
-Training is driven by `openadapt_ml/scripts/train.py` and YAML configs under
-`configs/`.
+Training uses **TRL (Transformer Reinforcement Learning)** with **Unsloth** optimizations
+for efficient VLM fine-tuning. This provides 2x faster training with 50% less VRAM compared
+to standard approaches.
 
-The training script:
+The training pipeline:
 
-1. Loads a config file (YAML).
-2. Generates synthetic sessions.
-3. Flattens to episodes and builds SFT samples.
-4. Wraps them in a `NextActionDataset`.
-5. Instantiates a VLM adapter (e.g. `QwenVLAdapter`).
-6. Runs `train_supervised` over the dataset.
+1. Loads episodes from synthetic data or real recordings.
+2. Converts to TRL-compatible SFT format with images and chat messages.
+3. Fine-tunes using SFTTrainer with LoRA adapters.
+4. Generates checkpoints and training logs for visualization.
 
-### 4.1 Qwen3-VL synthetic training
+### 6.1 Qwen3-VL synthetic training
 
 Config: `configs/qwen3vl_synthetic.yaml`
 
@@ -313,7 +331,7 @@ This will:
 - Run a single-epoch supervised fine-tuning loop.
 - Print loss values as training progresses.
 
-### 4.2 Qwen2.5-VL synthetic training
+### 6.2 Qwen2.5-VL synthetic training
 
 Config: `configs/qwen2_5vl_synthetic.yaml`
 
@@ -338,7 +356,7 @@ format expected by the Qwen2.5-VL processor.
 > Note: Both configs are sized for **small synthetic smoke runs**, not
 > large-scale production training.
 
-### 4.3 Qwen3-VL synthetic login benchmark (hero example)
+### 6.3 Qwen3-VL synthetic login benchmark (hero example)
 
 OpenAdapt-ML ships a **synthetic login** benchmark backed by Qwen3-VL,
 used to compare **base vs LoRA-fine-tuned** models on a hardened synthetic
@@ -373,7 +391,7 @@ It exposes step-level performance metrics, which let us visually answer the ques
 3. **Precision matters**: Fine-tuned models have excellent click precision (85-100% hit rate, <0.05 coord error) while API models struggle with the action format
 4. **Size vs specialization**: The fine-tuned 2B model outperforms the general-purpose Claude Sonnet 4.5, showing that domain-specific fine-tuning trumps raw model size
 
-### 4.4 Set-of-Marks (SoM) Mode: 100% Accuracy
+### 6.4 Set-of-Marks (SoM) Mode: 100% Accuracy
 
 With **Set-of-Marks** visual prompting, fine-tuned Qwen3-VL-2B achieves **100% accuracy** on both login (6-step) and registration (12-step) scenarios:
 
@@ -412,11 +430,11 @@ For the full SoM investigation report, see [`experiments/qwen_login/SOM_INVESTIG
 
 ---
 
-## 6. Grounding Module
+## 7. Grounding Module
 
 OpenAdapt-ML includes a **grounding module** for locating UI elements on screenshots using natural language descriptions. This enables policy/grounding separation where the policy decides *what* to do and the grounder finds *where* to do it.
 
-### 6.1 GeminiGrounder Demo
+### 7.1 GeminiGrounder Demo
 
 The `GeminiGrounder` uses Google's Gemini vision API to locate UI elements:
 
@@ -435,7 +453,7 @@ if candidates:
     print(f"Found at {best.centroid} with {best.confidence:.0%} confidence")
 ```
 
-### 6.2 Set-of-Marks (SoM) Support
+### 7.2 Set-of-Marks (SoM) Support
 
 The grounding module includes functions for extracting all UI elements and overlaying numbered labels (Set-of-Marks):
 
@@ -457,7 +475,7 @@ This enables element-based actions using indices instead of coordinates:
 
 See `docs/gemini_grounding.md` for full documentation and `examples/test_gemini_grounding.py` for a complete example.
 
-### 6.3 Available Grounders
+### 7.3 Available Grounders
 
 | Grounder | Description | Latency | Use Case |
 |----------|-------------|---------|----------|
@@ -465,7 +483,7 @@ See `docs/gemini_grounding.md` for full documentation and `examples/test_gemini_
 | `OracleGrounder` | Ground-truth bboxes | ~0ms | Evaluation |
 | `DetectorGrounder` | Generic wrapper with backend selection | varies | Flexible |
 
-### 6.4 Grounding Evaluation
+### 7.4 Grounding Evaluation
 
 The `openadapt_ml.evals.grounding` module provides metrics for evaluating grounding accuracy:
 
@@ -483,7 +501,7 @@ print(metrics)
 
 ---
 
-## 7. VLM Adapters
+## 8. VLM Adapters
 
 All VLM backends implement the shared `BaseVLMAdapter` interface in
 `openadapt_ml/models/base_adapter.py` (prepare inputs, compute loss, generate
@@ -502,7 +520,7 @@ Current adapters include:
 For full adapter internals and training-time vs runtime behavior, see
 `docs/design.md` §8.
 
-### 7.1 API-backed adapters
+### 8.1 API-backed adapters
 
 To use the API-backed adapter from Python, you can configure API keys via `.env`
 file, environment variables, or pass them explicitly:
@@ -525,12 +543,12 @@ The existing CLI scripts `scripts/demo_policy.py` and
 
 ---
 
-## 8. Runtime Policy & Demos
+## 9. Runtime Policy & Demos
 
 The runtime policy is implemented in `openadapt_ml/runtime/policy.py` as
 `AgentPolicy`.
 
-### 8.1 AgentPolicy
+### 9.1 AgentPolicy
 
 `AgentPolicy` is initialized with a VLM adapter (dummy or real). Given an
 SFT-style sample, it:
@@ -541,7 +559,7 @@ SFT-style sample, it:
    - `DONE()`
 3. Returns a structured `Action` plus an optional free-form `thought`.
 
-### 8.2 Demo script
+### 9.2 Demo script
 
 `openadapt_ml/scripts/demo_policy.py` demonstrates how to use
 `AgentPolicy` with different backends.
@@ -573,7 +591,7 @@ Each invocation will:
 
 ---
 
-## 9. Testing
+## 10. Testing
 
 Basic tests are provided under `tests/`.
 
@@ -583,20 +601,20 @@ Run the test suite with:
 uv run pytest
 ```
 
-In particular:
+Key test files:
 
-- `tests/test_training_dummy.py` runs a smoke test over the training loop
-  using `DummyAdapter`.
+- `tests/test_training_dummy.py` - Tests TRL training configuration and sample conversion
+- `tests/test_local_cli.py` - Tests local training CLI commands (status, check, viewer)
 
 ---
 
-## 10. Training on Real Data
+## 11. Training on Real Data
 
 OpenAdapt-ML supports training on real GUI recordings from two sources:
 1. **openadapt-capture** - New lightweight recording format
 2. **OpenAdapt database** - Original OpenAdapt recordings (legacy)
 
-### 10.1 Training on openadapt-capture recordings
+### 11.1 Training on openadapt-capture recordings
 
 [openadapt-capture](https://github.com/OpenAdaptAI/openadapt-capture) is a lightweight GUI recording tool.
 
@@ -616,7 +634,7 @@ uv run python -m openadapt_ml.scripts.train \
 
 The goal is automatically derived from the directory name (e.g., `"Turn off nightshift"`).
 
-### 10.2 Compare human vs AI predictions
+### 11.2 Compare human vs AI predictions
 
 ```bash
 uv run python -m openadapt_ml.scripts.compare \
@@ -633,11 +651,11 @@ The comparison viewer shows:
 
 ---
 
-## 11. Local Training (CUDA / Apple Silicon)
+## 12. Local Training (CUDA / Apple Silicon)
 
 Train locally on your own GPU. Auto-detects CUDA or Apple Silicon (MPS).
 
-### 11.1 Quick start
+### 12.1 Quick start
 
 ```bash
 # Train on a capture (auto-detects device and config)
@@ -646,7 +664,7 @@ uv run python -m openadapt_ml.cloud.local train \
   --open  # Opens dashboard in browser
 ```
 
-### 11.2 Training workflow
+### 12.2 Training workflow
 
 ```bash
 # Check device and training status
@@ -673,11 +691,11 @@ uv run python -m openadapt_ml.cloud.local compare \
 
 ---
 
-## 12. Cloud GPU Training (Lambda Labs)
+## 13. Cloud GPU Training (Lambda Labs)
 
 For faster training on powerful GPUs, use Lambda Labs. Full documentation: [`docs/cloud_gpu_training.md`](docs/cloud_gpu_training.md).
 
-### 12.1 Quick start
+### 13.1 Quick start
 
 ```bash
 # Set API key
@@ -689,7 +707,7 @@ uv run python -m openadapt_ml.cloud.lambda_labs train \
   --goal "Turn off Night Shift in System Settings"
 ```
 
-### 12.2 Manual workflow
+### 13.2 Manual workflow
 
 ```bash
 # List available instances and pricing
@@ -711,7 +729,7 @@ uv run python -m openadapt_ml.cloud.lambda_labs download <instance_id>
 uv run python -m openadapt_ml.cloud.lambda_labs terminate <instance_id>
 ```
 
-### 12.3 Training visualization
+### 13.3 Training visualization
 
 The training process generates:
 - **`training_output/dashboard.html`** - Real-time training dashboard with loss curves
@@ -758,7 +776,7 @@ uv run python -m openadapt_ml.cloud.local serve --port 8080 --open
 
 ---
 
-## 13. Limitations & Notes
+## 14. Limitations & Notes
 
 - **Apple Silicon / bitsandbytes**:
   - Example configs are sized for CPU / Apple Silicon development runs; see
@@ -782,7 +800,7 @@ For deeper architectural details, see [`docs/design.md`](docs/design.md).
 
 ---
 
-## 14. Roadmap
+## 15. Roadmap
 
 For the up-to-date, prioritized roadmap (including concrete implementation
 targets and agent-executable acceptance criteria), see
