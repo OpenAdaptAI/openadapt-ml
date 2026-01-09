@@ -1,14 +1,27 @@
+"""Train a VLM using TRL SFTTrainer + Unsloth.
+
+This script provides the main training entry point for openadapt-ml.
+It uses TRL's SFTTrainer with optional Unsloth optimizations for
+efficient VLM fine-tuning.
+
+Usage:
+    # Train on synthetic data
+    python -m openadapt_ml.scripts.train --config configs/qwen3vl_synthetic_som.yaml
+
+    # Train on capture recording
+    python -m openadapt_ml.scripts.train --config configs/qwen3vl_capture.yaml \
+        --capture /path/to/capture --goal "Task description" --open
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import Dict, Any, Optional
 
 import yaml
 
-from openadapt_ml.datasets.next_action import NextActionDataset, build_next_action_sft_samples
-from openadapt_ml.ingest.synthetic import generate_synthetic_sessions
-from openadapt_ml.models.qwen_vl import QwenVLAdapter
-from openadapt_ml.training.trainer import TrainingConfig, TrainingLogger, train_supervised
+from openadapt_ml.ingest.synthetic import generate_synthetic_episodes
+from openadapt_ml.training.trl_trainer import TRLTrainingConfig, train_with_trl
 
 
 def _load_config(path: str | Path) -> dict:
@@ -31,22 +44,27 @@ def main(
     goal: str | None = None,
     output_dir: str | None = None,
     open_dashboard: bool = False,
+    use_unsloth: bool = True,
 ) -> None:
+    """Train a VLM using TRL SFTTrainer.
+
+    Args:
+        config_path: Path to YAML config file
+        capture_path: Optional path to openadapt-capture recording
+        goal: Task goal/description (overrides recording's task description)
+        output_dir: Output directory for logs and dashboard
+        open_dashboard: Open training dashboard in browser after training
+        use_unsloth: Enable Unsloth optimizations (default True)
+    """
     cfg = _load_config(config_path)
 
     model_name = cfg["model"]["name"]
     load_in_4bit = cfg["model"].get("load_in_4bit", False)
-    max_pixels = cfg["model"].get("max_pixels")  # For faster training with smaller images
-    min_pixels = cfg["model"].get("min_pixels")
 
-    # LoRA config may include an optional weights_path where the trained
-    # adapter should be saved. We pass a cleaned config (without
-    # weights_path) to the adapter loader.
+    # LoRA config
     raw_lora_cfg = cfg.get("lora")
-    lora_weights_path: Optional[str] = None
     lora_cfg: Optional[Dict[str, Any]] = None
     if isinstance(raw_lora_cfg, dict):
-        lora_weights_path = raw_lora_cfg.get("weights_path")
         lora_cfg = {k: v for k, v in raw_lora_cfg.items() if k != "weights_path"}
     else:
         lora_cfg = raw_lora_cfg
@@ -65,92 +83,61 @@ def main(
         num_sessions = synth_cfg.get("num_sessions", 10)
         seed = synth_cfg.get("seed")
         default_output_dir = str(Path("synthetic") / "train")
-        output_dir = synth_cfg.get("output_dir", default_output_dir)
+        synth_output = synth_cfg.get("output_dir", default_output_dir)
         use_som = synth_cfg.get("use_som", False)
         scenario = synth_cfg.get("scenario", "login")
 
-        sessions = generate_synthetic_sessions(
-            num_sessions=num_sessions,
+        episodes = generate_synthetic_episodes(
+            num_episodes=num_sessions,
             seed=seed,
-            output_dir=output_dir,
+            output_dir=synth_output,
             use_som=use_som,
             scenario=scenario,
         )
-        episodes = [ep for sess in sessions for ep in sess.episodes]
         data_source = f"synthetic '{scenario}'"
 
-    samples = build_next_action_sft_samples(episodes, use_som=use_som)
-    dataset = NextActionDataset(samples)
-
-    # Adapter + model
-    adapter = QwenVLAdapter.from_pretrained(
-        model_name=model_name,
-        lora_config=lora_cfg,
-        load_in_4bit=load_in_4bit,
-        max_pixels=max_pixels,
-        min_pixels=min_pixels,
-    )
-
-    # Training config
-    train_cfg_raw = cfg.get("training", {})
     # Determine output directory
+    train_cfg_raw = cfg.get("training", {})
     if output_dir is None:
         output_dir = train_cfg_raw.get("output_dir", "training_output")
-    train_cfg = TrainingConfig(
-        num_train_epochs=train_cfg_raw.get("num_train_epochs", 1),
-        per_device_train_batch_size=train_cfg_raw.get("per_device_train_batch_size", 1),
-        gradient_accumulation_steps=train_cfg_raw.get("gradient_accumulation_steps", 1),
+
+    print(f"Using TRL trainer (Unsloth: {use_unsloth})")
+
+    # Build TRL config from YAML config
+    lora_dict = lora_cfg if isinstance(lora_cfg, dict) else {}
+    trl_config = TRLTrainingConfig(
+        model_name=model_name,
+        load_in_4bit=load_in_4bit,
+        max_seq_length=train_cfg_raw.get("max_seq_length", 4096),
+        lora_r=lora_dict.get("r", 16),
+        lora_alpha=lora_dict.get("lora_alpha", 32),
+        lora_dropout=lora_dict.get("lora_dropout", 0.0),
+        finetune_vision_layers=lora_dict.get("finetune_vision_layers", False),
+        num_epochs=train_cfg_raw.get("num_train_epochs", 3),
+        batch_size=train_cfg_raw.get("per_device_train_batch_size", 1),
+        gradient_accumulation_steps=train_cfg_raw.get("gradient_accumulation_steps", 4),
         learning_rate=train_cfg_raw.get("learning_rate", 2e-4),
         warmup_ratio=train_cfg_raw.get("warmup_ratio", 0.03),
-        weight_decay=train_cfg_raw.get("weight_decay", 0.0),
-        max_grad_norm=train_cfg_raw.get("max_grad_norm", 1.0),
-        logging_steps=train_cfg_raw.get("logging_steps", 10),
-        lr_scheduler_type=train_cfg_raw.get("lr_scheduler_type", "linear"),
-        early_stop_loss=train_cfg_raw.get("early_stop_loss", 1e-4),
-        early_stop_patience=train_cfg_raw.get("early_stop_patience", 10),
         output_dir=output_dir,
-        # Evaluation settings
-        eval_every_epoch=train_cfg_raw.get("eval_every_epoch", True),
-        eval_samples=train_cfg_raw.get("eval_samples", 3),
+        logging_steps=train_cfg_raw.get("logging_steps", 10),
+        save_strategy=train_cfg_raw.get("save_strategy", "epoch"),
     )
 
-    som_label = " (SoM mode)" if use_som else " (coordinate mode)"
-    print(f"Loaded {len(episodes)} episodes and {len(samples)} SFT samples{som_label} from {data_source}.")
-    print("Starting training...")
+    # Disable Unsloth if requested
+    if not use_unsloth:
+        import os
+        os.environ["OPENADAPT_DISABLE_UNSLOTH"] = "1"
 
-    # Get goal from episodes (for logging/viewer)
-    episode_goal = episodes[0].goal if episodes else ""
+    base_path = Path(capture_path).parent if capture_path else None
+    print(f"Training on {len(episodes)} episodes from {data_source}")
 
-    # Extract LoRA parameters for dashboard display
-    lora_r = lora_cfg.get("r", 0) if lora_cfg else 0
-    lora_alpha = lora_cfg.get("lora_alpha", 0) if lora_cfg else 0
-
-    # Create logger with metadata for dashboard
-    logger = TrainingLogger(
-        output_dir=train_cfg.output_dir,
-        config=train_cfg,
-        capture_path=str(capture_path) if capture_path else "",
-        config_path=str(config_path),
-        goal=goal or episode_goal,  # Use explicit goal or episode goal
-        model_name=model_name,
-        lora_r=lora_r,
-        lora_alpha=lora_alpha,
-        load_in_4bit=load_in_4bit,
+    checkpoint_path = train_with_trl(
+        episodes=episodes,
+        config=trl_config,
+        use_som=use_som,
+        base_path=base_path,
     )
-
-    # Pass the first episode for periodic evaluation (if available)
-    eval_episode = episodes[0] if episodes else None
-    training_success = train_supervised(adapter, dataset, train_cfg, logger=logger, episode=eval_episode)
-
-    # Persist the trained adapter if a weights_path was provided and training succeeded.
-    if lora_weights_path:
-        if training_success:
-            save_path = Path(lora_weights_path)
-            save_path.mkdir(parents=True, exist_ok=True)
-            adapter.model.save_pretrained(save_path)  # type: ignore[arg-type]
-            print(f"Saved LoRA adapter to {save_path}")
-        else:
-            print("Training aborted due to invalid loss. Skipping checkpoint save to avoid corrupted weights.")
+    print(f"Training complete. Checkpoint saved to: {checkpoint_path}")
 
     # Open dashboard in browser if requested
     if open_dashboard:
@@ -171,7 +158,22 @@ if __name__ == "__main__":
     parser.add_argument("--goal", type=str, help="Task goal/description (overrides recording's task description).")
     parser.add_argument("--output-dir", type=str, help="Output directory for logs and dashboard.")
     parser.add_argument("--open", action="store_true", help="Open training dashboard in browser.")
+
+    parser.add_argument(
+        "--use-unsloth",
+        action="store_true",
+        default=True,
+        help="Enable Unsloth optimizations (default)."
+    )
+    parser.add_argument(
+        "--no-unsloth",
+        action="store_true",
+        help="Disable Unsloth optimizations."
+    )
     args = parser.parse_args()
+
+    # Determine effective flags
+    use_unsloth = args.use_unsloth and not args.no_unsloth
 
     main(
         args.config,
@@ -179,4 +181,5 @@ if __name__ == "__main__":
         goal=args.goal,
         output_dir=args.output_dir,
         open_dashboard=args.open,
+        use_unsloth=use_unsloth,
     )
