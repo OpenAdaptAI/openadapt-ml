@@ -4,7 +4,14 @@
 [![Python Version](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 
 OpenAdapt-ML is a **model-agnostic, domain-agnostic ML engine** for GUI
-automation agents.
+automation agents. It sits above TRL + Unsloth (which we use directly for training performance) and provides the GUI-specific layer:
+
+- **Episode semantics**: Step/action/observation alignment, screenshot-action coupling, termination handling
+- **Demo-conditioned inference**: Retrieval-augmented prompting (validated: 33% → 100% first-action accuracy)
+- **Benchmark adapters**: WAA today, OSWorld/WebArena planned
+- **VLM adapters**: Updated with leading GUI-agent SOTA open-source models
+
+OpenAdapt-ML is **not** a training framework, optimizer, hardware orchestrator, or experiment manager. We use TRL/Unsloth, Lambda Labs/Azure, and W&B/MLflow for those.
 
 It provides:
 
@@ -595,7 +602,7 @@ OpenAdapt-ML supports training on real GUI recordings from two sources:
 
 ```bash
 # Install openadapt-capture
-uv pip install openadapt-capture
+uv add openadapt-capture
 
 # Record a workflow (e.g., turning off Night Shift)
 openadapt-capture record --output ~/captures/turn-off-nightshift

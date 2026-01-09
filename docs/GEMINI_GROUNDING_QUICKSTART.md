@@ -6,7 +6,7 @@
 
 ### Install Dependencies
 ```bash
-uv pip install google-generativeai
+uv add google-generativeai
 ```
 
 ### Get API Key
@@ -262,7 +262,7 @@ for c in candidates[:3]:
 | Issue | Solution |
 |-------|----------|
 | API key not found | Add `GOOGLE_API_KEY` to `.env` file |
-| Import error | Run `uv pip install google-generativeai` |
+| Import error | Run `uv add google-generativeai` |
 | No elements found | Screenshot may be too blurry or small |
 | Wrong elements detected | Try different model or provide better screenshot |
 | Rate limit hit | Wait 60 seconds or use batch processing |

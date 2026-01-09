@@ -58,7 +58,7 @@ ssh ubuntu@<instance_ip>
 # Clone and set up the repo
 git clone https://github.com/OpenAdaptAI/openadapt-ml.git
 cd openadapt-ml
-pip install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync
 
 # Run training
@@ -66,6 +66,65 @@ uv run python -m openadapt_ml.scripts.train \
   --config configs/qwen3vl_capture.yaml \
   --capture /path/to/capture
 ```
+
+### Direct TRL Trainer Usage
+
+For more control, use the TRL trainer directly:
+
+**CLI:**
+```bash
+# Train from Parquet (recommended for cloud)
+python -m openadapt_ml.training.trl_trainer \
+  --parquet /path/to/episodes.parquet \
+  --output checkpoints/my_model \
+  --model unsloth/Qwen2.5-VL-7B-Instruct \
+  --epochs 3
+
+# With Set-of-Marks DSL
+python -m openadapt_ml.training.trl_trainer \
+  --parquet /path/to/episodes.parquet \
+  --output checkpoints/my_model \
+  --use-som
+```
+
+**Python API:**
+```python
+from openadapt_ml.training.trl_trainer import (
+    train_with_trl,
+    train_from_parquet,
+    TRLTrainingConfig,
+)
+
+# Configure training
+config = TRLTrainingConfig(
+    model_name="unsloth/Qwen2.5-VL-7B-Instruct",
+    output_dir="checkpoints/my_model",
+    num_epochs=3,
+    batch_size=1,
+    gradient_accumulation_steps=4,
+    learning_rate=2e-4,
+    # LoRA settings
+    lora_r=16,
+    lora_alpha=32,
+)
+
+# Train from Parquet (simpler for cloud workflows)
+checkpoint = train_from_parquet(
+    parquet_path="/path/to/episodes.parquet",
+    config=config,
+    use_som=False,
+)
+
+# Or train from Episode objects
+from openadapt_ml.ingest import load_episodes
+episodes = load_episodes("/path/to/workflow_exports/")
+checkpoint = train_with_trl(episodes=episodes, config=config)
+```
+
+**Key benefits of TRL + Unsloth:**
+- 2x training speed, 50% less VRAM
+- SFTTrainer for production-grade training
+- Automatic fallback to standard transformers if Unsloth unavailable
 
 ## Azure
 

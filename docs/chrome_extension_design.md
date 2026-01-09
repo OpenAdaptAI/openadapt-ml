@@ -30,7 +30,7 @@ The existing Chrome extension in OpenAdaptAI/OpenAdapt has several constraints:
 |---------|-------------|
 | **Unified event stream** | Browser events merge seamlessly with OS-level capture |
 | **SemanticElementRef support** | Rich element identification for SoM mode |
-| **Lightweight dependency** | `pip install openadapt-capture` includes browser bridge |
+| **Lightweight dependency** | `uv add openadapt-capture` includes browser bridge |
 | **Single recording session** | No separate browser recording process |
 | **Cross-platform consistency** | Same WebSocket protocol on macOS, Windows, Linux |
 | **Modern architecture** | Manifest V3, asyncio WebSocket server, Pydantic schemas |
