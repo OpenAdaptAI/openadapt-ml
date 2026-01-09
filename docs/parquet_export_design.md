@@ -158,6 +158,30 @@ from openadapt_ml.export import from_parquet
 episodes = from_parquet("episodes.parquet")
 ```
 
+### TRL Trainer Compatibility
+
+Parquet exports are fully compatible with the TRL trainer backend:
+
+```python
+from openadapt_ml.training.trl_trainer import train_from_parquet, TRLTrainingConfig
+
+# Train directly from Parquet
+checkpoint = train_from_parquet(
+    parquet_path="episodes.parquet",
+    config=TRLTrainingConfig(
+        model_name="unsloth/Qwen2.5-VL-7B-Instruct",
+        output_dir="checkpoints/my_model",
+    ),
+)
+```
+
+The `train_from_parquet()` function:
+1. Reconstructs Episodes from Parquet using `from_parquet()`
+2. Converts to TRL-compatible format (PIL images, chat messages)
+3. Trains with SFTTrainer + Unsloth optimizations
+
+**Note**: Image paths in Parquet are resolved relative to the Parquet file's directory.
+
 ### CLI
 
 ```bash
@@ -185,7 +209,7 @@ uv run python -m openadapt_ml.export parquet \
 parquet = ["pyarrow>=14.0.0"]
 ```
 
-Users install with: `pip install openadapt-ml[parquet]`
+Users install with: `uv add openadapt-ml[parquet]`
 
 ### Metadata Handling
 

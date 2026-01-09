@@ -8,7 +8,9 @@ This guide explains how to export workflow recordings from your enterprise autom
 
 ## What is openadapt-ml?
 
-openadapt-ml is a collection of composable utilities for working with trajectory-structured GUI interaction data.
+openadapt-ml is a GUI-agent ML substrate that sits above TRL + Unsloth (which it uses directly for training). It provides the GUI-specific layer: episode schemas, demo-conditioned inference (validated 33%→100% first-action accuracy), and benchmark adapters.
+
+It is a collection of composable utilities for working with trajectory-structured GUI interaction data.
 
 **You can use:**
 - Schema + validation only

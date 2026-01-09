@@ -18,9 +18,7 @@ The Gemini grounding module uses Google's Gemini vision API to detect and locate
 ### 1. Install Dependencies
 
 ```bash
-pip install google-generativeai
-# or
-uv pip install google-generativeai
+uv add google-generativeai
 ```
 
 ### 2. Get API Key
@@ -278,7 +276,7 @@ if candidates:
 
 Install the package:
 ```bash
-pip install google-generativeai
+uv add google-generativeai
 ```
 
 ### "ValueError: GOOGLE_API_KEY not set"

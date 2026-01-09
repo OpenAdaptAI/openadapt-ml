@@ -5,8 +5,6 @@ Canonical format for GUI trajectory data. Enables interoperability across traini
 ## Installation
 
 ```bash
-pip install openadapt-ml
-# or
 uv add openadapt-ml
 ```
 

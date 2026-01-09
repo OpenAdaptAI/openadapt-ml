@@ -82,9 +82,7 @@ python -m openadapt_ml.benchmarks.cli run-azure --waa-path /path/to/WAA
 
 3. **Python packages**:
    ```bash
-   pip install azure-ai-ml azure-identity
-   # Or with uv:
-   uv add --optional azure azure-ai-ml azure-identity
+   uv add azure-ai-ml azure-identity
    ```
 
 ## Automated Setup

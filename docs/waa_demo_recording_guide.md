@@ -17,13 +17,13 @@ We need 3 recorded demos for tasks with complex UI interactions that are difficu
 ### 1. Install openadapt-capture
 
 ```powershell
-# Option A: pip install (if published)
-pip install openadapt-capture
+# Option A: uv add (recommended)
+uv add openadapt-capture
 
 # Option B: Clone and install from source
 git clone https://github.com/OpenAdaptAI/openadapt-capture.git
 cd openadapt-capture
-pip install -e .
+uv sync
 ```
 
 ### 2. Install LibreOffice (for tasks #4 and #5)

@@ -3,22 +3,105 @@
 This file helps maintain context across sessions.
 
 ---
-## ⚠️ MANDATORY: START DASHBOARD FIRST ⚠️
+## ⚠️⚠️⚠️ MANDATORY: START DASHBOARD FIRST ⚠️⚠️⚠️
 
-**BEFORE doing ANYTHING with Azure VMs, ALWAYS run:**
+### STOP. READ THIS BEFORE DOING ANYTHING.
+
+**If ANY of these are true, you MUST run the dashboard command IMMEDIATELY:**
+- Session just started or was compacted
+- User mentions VMs, Azure, WAA, benchmark, or Windows
+- You're about to run ANY `vm` subcommand (probe, diag, logs, run-waa, etc.)
+- You want to check benchmark status
+
+**THE COMMAND (run this FIRST, not after other commands):**
 ```bash
 uv run python -m openadapt_ml.benchmarks.cli vm monitor
 ```
 
-This is NON-NEGOTIABLE. The dashboard provides:
-- Live VM status with SSH tunnels (VNC only accessible via localhost:8006)
-- Real-time WAA probe checks
-- SSE-enabled live refresh
-- Background task monitoring
+**WHY THIS MATTERS:**
+- VNC is ONLY accessible via SSH tunnel at `localhost:8006` (NOT the public IP)
+- The dashboard auto-manages SSH tunnels
+- Without it, you cannot see what Windows is doing
+- The user WILL be frustrated if you keep forgetting this
 
-**VNC is NOT accessible at public IP** - only via SSH tunnel at `localhost:8006`
+**WRONG (what you keep doing):**
+```bash
+# DON'T do this - checking probe/diag/logs WITHOUT dashboard running
+uv run python -m openadapt_ml.benchmarks.cli vm probe
+uv run python -m openadapt_ml.benchmarks.cli vm diag
+# Then telling user to "run vm monitor" - NO! YOU run it FIRST!
+```
 
-**After every /compact or session restart, your FIRST action must be starting this dashboard.**
+**RIGHT (what you should do):**
+```bash
+# ALWAYS start dashboard FIRST, then it handles everything
+uv run python -m openadapt_ml.benchmarks.cli vm monitor
+```
+
+**After every /compact or session restart, your LITERAL FIRST ACTION must be starting this dashboard if VMs are involved.**
+
+---
+## 🚨🚨🚨 STOP! READ THIS BEFORE EVERY COMMAND 🚨🚨🚨
+
+### ABSOLUTELY NEVER USE RAW SSH COMMANDS
+
+**This is the #1 rule. You have been told this MANY times. STOP IGNORING IT.**
+
+❌ **BANNED** (never type these):
+- `ssh azureuser@IP "anything"`
+- `ssh $SSH_OPTS ...`
+- Any command starting with `ssh` to the VM
+
+✅ **REQUIRED** (always use these instead):
+- `uv run python -m openadapt_ml.benchmarks.cli vm exec --cmd "your command"`
+- `uv run python -m openadapt_ml.benchmarks.cli vm diag`
+- `uv run python -m openadapt_ml.benchmarks.cli vm logs`
+
+**If a CLI command doesn't exist, ADD IT TO THE CLI FIRST, then use it.**
+
+**Before running ANY command involving the VM, ask yourself:**
+1. Does this start with `ssh`? → STOP, use CLI instead
+2. Is this a raw shell command to the VM? → STOP, use CLI instead
+3. Can I use `vm exec --cmd`? → YES, use it
+
+This has been explained to you repeatedly. FOLLOW IT.
+
+---
+## 🔧 DOCKERFILE/VM CHANGES: TEST INSIDE CONTAINER FIRST
+
+**Problem**: Each Dockerfile change triggers: rebuild (10 min) → Windows boot (15 min) → test → repeat. Hours wasted on tiny changes.
+
+**Solution**: Test fixes INSIDE a running container BEFORE rebuilding:
+
+```bash
+# 1. Start a test container with bash entrypoint (seconds)
+uv run python -m openadapt_ml.benchmarks.cli vm host-exec --cmd \
+  'docker run -d --name test-fix --entrypoint /bin/bash waa-auto:latest -c "sleep 3600"'
+
+# 2. Apply your fix manually INSIDE the container (seconds)
+uv run python -m openadapt_ml.benchmarks.cli vm host-exec --cmd \
+  "docker exec test-fix sed -i 's/old/new/' /some/file.sh"
+
+# 3. Verify the fix works (seconds)
+uv run python -m openadapt_ml.benchmarks.cli vm host-exec --cmd \
+  "docker exec test-fix cat /some/file.sh"
+
+# 4. Test the actual behavior (seconds)
+uv run python -m openadapt_ml.benchmarks.cli vm host-exec --cmd \
+  "docker exec test-fix /some/script.sh && ls /expected/output"
+
+# 5. Cleanup
+uv run python -m openadapt_ml.benchmarks.cli vm host-exec --cmd 'docker rm -f test-fix'
+
+# 6. ONLY AFTER fix is verified: Update Dockerfile and rebuild ONCE
+```
+
+**Why this matters**:
+- Testing a fix takes SECONDS instead of 30+ minutes
+- Iterate 10x on the fix before committing to a rebuild
+- Don't lose context waiting for long builds
+- Each rebuild should be the LAST rebuild, not a guess
+
 ---
 
 ## Project Overview
@@ -381,15 +464,52 @@ See the ⚠️ MANDATORY section at the TOP of this file. Use:
 uv run python -m openadapt_ml.benchmarks.cli vm monitor
 ```
 
+## ⚠️ SAFE PROCESS MANAGEMENT ⚠️
+
+**NEVER use broad pkill patterns** - they can kill unrelated applications!
+
+**WRONG (DANGEROUS):**
+```bash
+# These patterns are TOO BROAD and will kill unrelated apps:
+pkill -f "openadapt"      # Kills anything with "openadapt" in path
+pkill -f "python"         # Kills ALL Python processes
+pkill -9 -f "openadapt_ml"  # Killed Claude Code, Windsurf, Signal, Chrome tabs!
+```
+
+**RIGHT (SAFE):**
+```bash
+# Use specific PID-based killing:
+lsof -i :8765 | grep python | awk '{print $2}' | xargs kill 2>/dev/null
+
+# Or use specific process names with full path matching:
+pkill -f "python.*-m openadapt_ml.cloud.local serve"
+
+# Or kill only the specific port listener:
+kill $(lsof -t -i :8765) 2>/dev/null
+
+# Check what would be killed FIRST:
+pgrep -f "openadapt" -l  # Lists matching processes before killing
+```
+
+**Before any pkill command:**
+1. Run `pgrep -f "pattern" -l` to see what matches
+2. Verify only intended processes are listed
+3. Use the most specific pattern possible
+4. Prefer port-based or PID-based killing
+
 ## Don't Do
 
 - Don't add timelines/estimates to plans
 - Don't mention specific clients by name in public docs
 - Don't over-engineer - keep solutions minimal
 - Don't use `os.environ` directly - use `config.settings` instead
-- Don't use `pip install` - always use `uv pip install` or `uv add` for consistency
+- Don't use `pip install` - always use `uv add` for dependencies or `uv sync` for the project
 - **Don't run Azure/VM operations without starting the dashboard first**
+  - ❌ WRONG: `vm probe` then `vm diag` then telling user to run `vm monitor`
+  - ✅ RIGHT: `vm monitor` FIRST (it does probe, tunnels, everything)
+  - This is the #1 mistake you keep making. STOP IT.
 - **Don't use raw SSH/shell commands** - always use or create CLI commands instead (see below)
+- **Don't tell user to run commands** - YOU run them. The CLI exists so YOU can use it.
 
 ## CLI-First Development (IMPORTANT)
 
@@ -407,16 +527,23 @@ uv run python -m openadapt_ml.benchmarks.cli vm monitor
 
 **Available VM CLI commands**:
 ```bash
-vm monitor     # THE GO-TO COMMAND: Start dashboard, open browser, show probe status
-               # Options: --auto-shutdown-hours N (deallocate after N hours)
-vm setup-waa   # Full VM setup with Docker and waa-auto image
-vm run-waa     # Run benchmark (requires waa-auto image)
-vm diag        # Check disk, Docker, containers, WAA probe status
-vm logs        # View container logs (--lines N, --follow)
-vm probe       # Check WAA server status (--wait to poll)
-vm status      # Azure VM status
-vm ssh         # Interactive SSH
-vm delete      # Delete VM
+vm monitor       # THE GO-TO COMMAND: Start dashboard, open browser, show probe status
+                 # Options: --auto-shutdown-hours N (deallocate after N hours)
+vm setup-waa     # Full VM setup with Docker and waa-auto image
+vm run-waa       # Run benchmark (requires waa-auto image, --rebuild to force image rebuild)
+vm diag          # Check disk, Docker, containers, WAA probe status
+vm logs          # View container logs (--lines N, --follow)
+vm probe         # Check WAA server status (--wait to poll)
+vm exec          # Run command in container (--cmd 'your command')
+vm fix-oem       # Copy OEM files to Samba share (for manual install.bat)
+vm docker-prune  # Clean Docker images, containers, build cache (free disk space)
+vm docker-move   # Move Docker/containerd to /mnt via symlinks (147GB space)
+vm stop-build    # Stop running Docker build and clean build cache
+vm status        # Azure VM status
+vm ssh           # Interactive SSH
+vm deallocate    # Stop VM billing (preserves disk), use -y to skip confirmation
+vm start         # Start a deallocated VM
+vm delete        # Delete VM (use -y to skip confirmation)
 ```
 
 ## TODO / Known Issues
