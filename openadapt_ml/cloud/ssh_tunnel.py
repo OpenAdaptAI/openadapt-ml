@@ -86,6 +86,11 @@ class SSHTunnelManager:
     Provides automatic setup and teardown of SSH tunnels for services
     running inside Azure VMs that are not exposed via NSG.
 
+    Features:
+    - Auto-reconnect: Automatically restarts dead tunnels
+    - Health monitoring: Periodic checks to verify tunnels are working
+    - Graceful handling of network interruptions
+
     Attributes:
         tunnels: Dict of tunnel name -> (TunnelConfig, process)
         ssh_key_path: Path to SSH private key
@@ -97,22 +102,30 @@ class SSHTunnelManager:
         TunnelConfig(name="waa", local_port=5000, remote_port=5000),
     ]
 
+    # Auto-reconnect settings
+    MAX_RECONNECT_ATTEMPTS = 3
+    RECONNECT_DELAY_SECONDS = 2
+
     def __init__(
         self,
         ssh_key_path: str | Path | None = None,
         tunnels: list[TunnelConfig] | None = None,
+        auto_reconnect: bool = True,
     ):
         """Initialize tunnel manager.
 
         Args:
             ssh_key_path: Path to SSH private key. Defaults to ~/.ssh/id_rsa.
             tunnels: List of tunnel configurations. Defaults to VNC + WAA.
+            auto_reconnect: If True, automatically restart dead tunnels.
         """
         self.ssh_key_path = Path(ssh_key_path or Path.home() / ".ssh" / "id_rsa")
         self.tunnel_configs = tunnels or self.DEFAULT_TUNNELS
         self._active_tunnels: dict[str, tuple[TunnelConfig, subprocess.Popen]] = {}
         self._current_vm_ip: str | None = None
         self._current_ssh_user: str | None = None
+        self._auto_reconnect = auto_reconnect
+        self._reconnect_attempts: dict[str, int] = {}  # Track reconnect attempts per tunnel
 
     def start_tunnels_for_vm(
         self,
@@ -194,14 +207,18 @@ class SSHTunnelManager:
                     error=f"Port {config.local_port} in use by another process",
                 )
 
-        # Build SSH command
+        # Build SSH command with keepalive settings to prevent timeout during long runs
+        # ServerAliveInterval=60: Send keepalive every 60 seconds
+        # ServerAliveCountMax=10: Disconnect after 10 missed keepalives (10 min tolerance)
+        # TCPKeepAlive=yes: Enable TCP-level keepalive as additional safeguard
         ssh_cmd = [
             "ssh",
             "-o", "StrictHostKeyChecking=no",
             "-o", "UserKnownHostsFile=/dev/null",
             "-o", "LogLevel=ERROR",
             "-o", "ServerAliveInterval=60",
-            "-o", "ServerAliveCountMax=3",
+            "-o", "ServerAliveCountMax=10",
+            "-o", "TCPKeepAlive=yes",
             "-o", "ExitOnForwardFailure=yes",
             "-i", str(self.ssh_key_path),
             "-N",  # Don't execute remote command
@@ -294,22 +311,31 @@ class SSHTunnelManager:
         self._current_vm_ip = None
         self._current_ssh_user = None
 
-    def get_tunnel_status(self) -> dict[str, TunnelStatus]:
+    def get_tunnel_status(self, auto_restart: bool = True) -> dict[str, TunnelStatus]:
         """Get status of all configured tunnels.
 
         This method checks the actual port status, not just internal state.
         This correctly reports tunnels as active even if they were started
         by a different process or if the tunnel manager was restarted.
 
+        If auto_reconnect is enabled and a tunnel is found dead, this method
+        will attempt to restart it automatically.
+
+        Args:
+            auto_restart: If True and auto_reconnect is enabled, restart dead tunnels.
+
         Returns:
             Dict of tunnel name -> TunnelStatus.
         """
         results = {}
+        tunnels_to_restart = []
 
         for config in self.tunnel_configs:
             if config.name in self._active_tunnels:
                 _, proc = self._active_tunnels[config.name]
                 if proc.poll() is None:  # Still running
+                    # Reset reconnect attempts on successful check
+                    self._reconnect_attempts[config.name] = 0
                     results[config.name] = TunnelStatus(
                         name=config.name,
                         active=True,
@@ -330,6 +356,9 @@ class SSHTunnelManager:
                             pid=None,  # External tunnel, PID unknown
                         )
                     else:
+                        # Tunnel is dead - mark for restart if auto_reconnect enabled
+                        if self._auto_reconnect and auto_restart and self._current_vm_ip:
+                            tunnels_to_restart.append(config)
                         results[config.name] = TunnelStatus(
                             name=config.name,
                             active=False,
@@ -357,6 +386,28 @@ class SSHTunnelManager:
                         remote_endpoint="",
                     )
 
+        # Auto-restart dead tunnels
+        for config in tunnels_to_restart:
+            attempts = self._reconnect_attempts.get(config.name, 0)
+            if attempts < self.MAX_RECONNECT_ATTEMPTS:
+                logger.info(f"Auto-reconnecting tunnel {config.name} (attempt {attempts + 1}/{self.MAX_RECONNECT_ATTEMPTS})")
+                time.sleep(self.RECONNECT_DELAY_SECONDS)
+                self._reconnect_attempts[config.name] = attempts + 1
+                status = self._start_tunnel(config, self._current_vm_ip, self._current_ssh_user or "azureuser")
+                results[config.name] = status
+                if status.active:
+                    logger.info(f"Successfully reconnected tunnel {config.name}")
+                    self._reconnect_attempts[config.name] = 0  # Reset on success
+            else:
+                logger.warning(f"Tunnel {config.name} exceeded max reconnect attempts ({self.MAX_RECONNECT_ATTEMPTS})")
+                results[config.name] = TunnelStatus(
+                    name=config.name,
+                    active=False,
+                    local_port=config.local_port,
+                    remote_endpoint="",
+                    error=f"Max reconnect attempts ({self.MAX_RECONNECT_ATTEMPTS}) exceeded",
+                )
+
         return results
 
     def is_tunnel_active(self, name: str) -> bool:
@@ -370,6 +421,21 @@ class SSHTunnelManager:
         """
         status = self.get_tunnel_status()
         return name in status and status[name].active
+
+    def reset_reconnect_attempts(self, name: str | None = None) -> None:
+        """Reset reconnect attempt counter for tunnels.
+
+        Call this after manually fixing connectivity issues or when
+        VM is known to be healthy again.
+
+        Args:
+            name: Tunnel name to reset, or None to reset all.
+        """
+        if name:
+            self._reconnect_attempts[name] = 0
+        else:
+            self._reconnect_attempts.clear()
+        logger.info(f"Reset reconnect attempts for {name or 'all tunnels'}")
 
     def ensure_tunnels_for_vm(
         self,
@@ -387,19 +453,22 @@ class SSHTunnelManager:
         Returns:
             Dict of tunnel name -> TunnelStatus.
         """
-        # If VM changed, stop old tunnels
+        # If VM changed, stop old tunnels and reset reconnect attempts
         if self._current_vm_ip and self._current_vm_ip != vm_ip:
             logger.info(f"VM IP changed from {self._current_vm_ip} to {vm_ip}, restarting tunnels")
             self.stop_all_tunnels()
+            self.reset_reconnect_attempts()  # Fresh start for new VM
 
         # Check current status and start any missing tunnels
+        # get_tunnel_status will auto-restart dead tunnels if enabled
         current_status = self.get_tunnel_status()
         all_active = all(s.active for s in current_status.values())
 
         if all_active and self._current_vm_ip == vm_ip:
             return current_status
 
-        # Start tunnels
+        # Start tunnels (also resets reconnect attempts for this VM)
+        self.reset_reconnect_attempts()
         return self.start_tunnels_for_vm(vm_ip, ssh_user)
 
     def _is_port_in_use(self, port: int) -> bool:
