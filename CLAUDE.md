@@ -179,15 +179,34 @@ openadapt-ml is a model-agnostic, domain-agnostic ML engine for GUI automation a
 3. **Element-based actions** - `Click [8]` instead of coordinates, similar to SoM
 4. **Larger base models** - They used Gemma3 27B; current 2B/8B might be too small
 
-## Benchmark Integration (Implemented)
+## Benchmark Integration (MIGRATED TO openadapt-evals)
 
-The benchmark integration module is implemented in `openadapt_ml/benchmarks/`:
-- `base.py` - BenchmarkAdapter interface, data classes
-- `agent.py` - BenchmarkAgent, PolicyAgent, APIBenchmarkAgent, ScriptedAgent, RandomAgent
-- `runner.py` - evaluate_agent_on_benchmark(), compute_metrics()
-- `waa.py` - WAAAdapter (requires WAA repo), WAAMockAdapter (for testing)
-- `azure.py` - AzureWAAOrchestrator for parallel VM execution
-- `cli.py` - Command-line interface for WAA evaluation
+> **IMPORTANT**: Benchmark code has been consolidated into the `openadapt-evals` package.
+> The `openadapt_ml/benchmarks/` directory now contains deprecation stubs that re-export from `openadapt-evals`.
+>
+> **Use the new package:**
+> ```python
+> # NEW (preferred)
+> from openadapt_evals import ApiAgent, WAAMockAdapter, evaluate_agent_on_benchmark
+>
+> # Also works (backward compat)
+> from openadapt_ml.benchmarks import APIBenchmarkAgent, WAAMockAdapter
+> ```
+>
+> **CLI (now in openadapt-evals):**
+> ```bash
+> # NEW (preferred)
+> uv run python -m openadapt_evals.benchmarks.cli mock --tasks 10
+> uv run python -m openadapt_evals.benchmarks.cli live --agent api-claude --server http://vm:5000
+>
+> # openadapt-ml CLI still works for VM management
+> uv run python -m openadapt_ml.benchmarks.cli vm monitor
+> ```
+
+The benchmark integration module is now in `openadapt-evals`:
+- `openadapt_evals/adapters/` - BenchmarkAdapter, WAAAdapter, WAALiveAdapter
+- `openadapt_evals/agents/` - BenchmarkAgent, ApiAgent (with P0 demo persistence fix), PolicyAgent
+- `openadapt_evals/benchmarks/` - runner, metrics, viewer, data_collection
 
 ### APIBenchmarkAgent
 

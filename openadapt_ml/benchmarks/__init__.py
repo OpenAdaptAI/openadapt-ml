@@ -1,5 +1,27 @@
 """Benchmark integration for openadapt-ml.
 
+DEPRECATION NOTICE:
+    The canonical benchmark code is now in the `openadapt-evals` package.
+    For new projects, prefer importing from `openadapt_evals`:
+
+    ```python
+    # Preferred (standalone, no openadapt-ml dependency)
+    from openadapt_evals import ApiAgent, WAAMockAdapter, evaluate_agent_on_benchmark
+
+    # Still supported (uses openadapt-ml internals)
+    from openadapt_ml.benchmarks import PolicyAgent, APIBenchmarkAgent
+    ```
+
+    The following are ONLY available in openadapt-ml (they wrap openadapt-ml internals):
+    - PolicyAgent (wraps openadapt_ml.runtime.policy.AgentPolicy)
+    - APIBenchmarkAgent (wraps openadapt_ml.models.api_adapter.ApiVLMAdapter)
+
+    The following should be imported from openadapt-evals:
+    - ApiAgent (standalone, P0 demo persistence fix)
+    - All adapter classes (WAAAdapter, WAALiveAdapter, etc.)
+    - Base classes (BenchmarkAdapter, BenchmarkTask, etc.)
+    - Evaluation utilities (evaluate_agent_on_benchmark, compute_metrics)
+
 This module provides interfaces and utilities for evaluating GUI agents
 on standardized benchmarks like Windows Agent Arena (WAA), OSWorld,
 WebArena, and others.
@@ -11,7 +33,7 @@ Core classes:
 
 Agent implementations:
     - PolicyAgent: Wraps openadapt-ml AgentPolicy
-    - APIBenchmarkAgent: Uses hosted VLM APIs (Claude, GPT-5.1)
+    - APIBenchmarkAgent: Uses hosted VLM APIs (Claude, GPT-5.1) via openadapt-ml adapters
     - ScriptedAgent: Follows predefined action sequence
     - RandomAgent: Takes random actions (baseline)
 
@@ -47,6 +69,17 @@ Example:
     print(f"Success rate: {metrics['success_rate']:.1%}")
     ```
 """
+
+import warnings
+
+# Emit deprecation warning on import
+warnings.warn(
+    "openadapt_ml.benchmarks is deprecated. "
+    "Please use openadapt_evals for standalone benchmark evaluation. "
+    "See CLAUDE.md for migration guide.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 from openadapt_ml.benchmarks.agent import (
     APIBenchmarkAgent,
