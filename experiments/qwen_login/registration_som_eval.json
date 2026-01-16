@@ -1,0 +1,20 @@
+{
+  "config_path": "configs/qwen3vl_synthetic_registration_som.yaml",
+  "backend": "qwen3",
+  "dsl_mode": "som",
+  "metrics": {
+    "num_episodes": 32,
+    "num_steps": 384,
+    "action_type_accuracy": 1.0,
+    "mean_coord_error": null,
+    "coord_error_count": 0,
+    "episode_success_rate": 1.0,
+    "click_hit_rate": null,
+    "bbox_hit_rate": null,
+    "mean_episode_progress": 1.0,
+    "mean_episode_step_score": 1.0,
+    "weak_episode_success_rate": 0.0,
+    "state_success_rate": null,
+    "element_accuracy": 1.0
+  }
+}
