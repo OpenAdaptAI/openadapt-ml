@@ -1,0 +1,96 @@
+{
+  "experiment": "representation_shootout_minimal",
+  "timestamp": "20260116_142335",
+  "config": {
+    "conditions": [
+      "raw_coords",
+      "marks"
+    ],
+    "drift_tests": [
+      "canonical",
+      "resolution_0.75x",
+      "resolution_1.5x"
+    ],
+    "decision_tolerance": 0.05
+  },
+  "results": [
+    {
+      "condition": "raw_coords",
+      "drift": "canonical",
+      "num_samples": 100,
+      "metrics": {
+        "click_hit_rate": 0.82,
+        "coord_distance": 0.02582905334089441
+      }
+    },
+    {
+      "condition": "raw_coords",
+      "drift": "resolution_0.75x",
+      "num_samples": 100,
+      "metrics": {
+        "click_hit_rate": 0.14,
+        "coord_distance": 0.09748618333388867
+      }
+    },
+    {
+      "condition": "raw_coords",
+      "drift": "resolution_1.5x",
+      "num_samples": 100,
+      "metrics": {
+        "click_hit_rate": 0.14,
+        "coord_distance": 0.10677949947519375
+      }
+    },
+    {
+      "condition": "marks",
+      "drift": "canonical",
+      "num_samples": 100,
+      "metrics": {
+        "click_hit_rate": 0.94,
+        "grounding_top1_accuracy": 0.94,
+        "coord_distance": 0.028576634615807617
+      }
+    },
+    {
+      "condition": "marks",
+      "drift": "resolution_0.75x",
+      "num_samples": 100,
+      "metrics": {
+        "click_hit_rate": 0.9,
+        "grounding_top1_accuracy": 0.9,
+        "coord_distance": 0.03215508643845832
+      }
+    },
+    {
+      "condition": "marks",
+      "drift": "resolution_1.5x",
+      "num_samples": 100,
+      "metrics": {
+        "click_hit_rate": 0.8,
+        "grounding_top1_accuracy": 0.8,
+        "coord_distance": 0.06494674156910295
+      }
+    }
+  ],
+  "recommendation": {
+    "recommended": "MARKS",
+    "reason": "Marks (88.0%) outperforms Coords+Cues (0.0%) by 88.0% (>5.0%) under drift. Element-based approach provides better robustness to UI changes.",
+    "coords_cues_avg": 0,
+    "marks_avg": 0.88,
+    "tolerance": 0.05,
+    "detailed_comparison": {
+      "canonical": {
+        "raw_coords": 0.82,
+        "marks": 0.94
+      },
+      "resolution_0.75x": {
+        "raw_coords": 0.14,
+        "marks": 0.9
+      },
+      "resolution_1.5x": {
+        "raw_coords": 0.14,
+        "marks": 0.8
+      }
+    }
+  }
+}
