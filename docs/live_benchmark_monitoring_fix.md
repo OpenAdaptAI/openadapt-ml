@@ -1,0 +1,265 @@
+# Live Benchmark Monitoring - Design & Fix Plan
+
+## Problem Statement
+
+The user wants to:
+1. Open the benchmark viewer FIRST
+2. See live detailed updates as the benchmark runs
+
+Currently this doesn't work because:
+1. `vm run-waa` runs the benchmark entirely on the Azure VM
+2. Results stay on the VM (`~/waa-results`) with no streaming to local
+3. The local viewer (`benchmark.html`) has no data source during execution
+4. `vm monitor` only shows WAA probe status in terminal, not benchmark progress
+
+## Current Architecture (Broken)
+
+```
+Local Machine                          Azure VM
+─────────────                          ─────────
+vm monitor
+  └── starts HTTP server
+  └── opens benchmark.html
+  └── polls /api/benchmark-live
+      (but file is never updated!)
+
+vm run-waa ─────SSH─────────────────►  docker run winarena
+                                          └── runs WAA client
+                                          └── saves to ~/waa-results
+                                          └── NO streaming back
+```
+
+**Gap**: No data flows from VM to local `benchmark_live.json`
+
+## Solution: Streaming Results via SSH
+
+### Approach A: Continuous rsync (Simplest)
+
+Poll VM results directory and sync to local:
+
+```python
+# In a background thread during run-waa:
+while benchmark_running:
+    subprocess.run(["rsync", "-avz", f"azureuser@{ip}:~/waa-results/",
+                    f"{local_output_dir}/waa_results/"])
+    update_benchmark_live_json(local_output_dir)
+    time.sleep(5)
+```
+
+**Pros**: Simple, works with existing WAA client
+**Cons**: 5-10 second delay, requires parsing WAA result format
+
+### Approach B: Local Agent with WAALiveAdapter (Better UX)
+
+Run the agent locally, connect to VM's WAA server via SSH tunnel:
+
+```
+Local Machine                          Azure VM
+─────────────                          ─────────
+vm monitor                             docker run winarena
+  └── HTTP server                        └── WAA Flask server (port 5000)
+  └── benchmark.html                     └── /probe, /execute, /screenshot
+
+Local agent (run-waa-local)
+  └── WAALiveAdapter ─────SSH tunnel────► WAA server
+  └── APIBenchmarkAgent (Claude/GPT)
+  └── LiveEvaluationTracker
+      └── writes benchmark_live.json
+      └── viewer updates in real-time!
+```
+
+**Pros**: Real-time updates, uses our infrastructure (LiveEvaluationTracker)
+**Cons**: Requires running agent locally (needs API keys)
+
+### Approach C: Hybrid - Stream Logs + Parse (Recommended)
+
+Keep benchmark on VM but stream Docker logs and parse progress:
+
+```python
+# SSH into VM and tail the WAA logs
+ssh_process = subprocess.Popen(
+    ["ssh", f"azureuser@{ip}", "docker logs -f winarena"],
+    stdout=subprocess.PIPE
+)
+
+for line in ssh_process.stdout:
+    # Parse WAA log lines like "Task notepad_1: PASS" or "Step 3/10: click(100, 200)"
+    progress = parse_waa_log_line(line)
+    if progress:
+        update_benchmark_live_json(progress)
+```
+
+**Pros**: Works with existing VM setup, near real-time
+**Cons**: Depends on WAA log format (may need parsing updates)
+
+## Recommended Implementation: Approach C
+
+### Phase 1: Setup Progress Tracking (5-10 min gap)
+
+During Docker build and Windows download, show progress:
+
+```python
+# In vm run-waa, before benchmark starts:
+def stream_setup_progress(ip):
+    """Stream setup phase to benchmark_live.json"""
+    phases = [
+        ("docker_build", "Building waa-auto Docker image"),
+        ("windows_download", "Downloading Windows 11 ISO"),
+        ("windows_install", "Installing Windows 11"),
+        ("waa_server", "Starting WAA server"),
+    ]
+
+    for phase_id, description in phases:
+        write_benchmark_live({
+            "status": "setup",
+            "phase": phase_id,
+            "description": description,
+        })
+        # Wait for phase completion...
+```
+
+### Phase 2: Benchmark Progress Tracking
+
+Stream WAA logs and parse into benchmark_live.json:
+
+```python
+def stream_benchmark_progress(ip, output_dir):
+    """Stream benchmark execution to benchmark_live.json"""
+    tracker = LiveEvaluationTracker(
+        output_file=output_dir / "benchmark_live.json",
+        total_tasks=num_tasks
+    )
+
+    # Start log streaming
+    log_process = subprocess.Popen(
+        ["ssh", f"azureuser@{ip}", "docker logs -f winarena 2>&1"],
+        stdout=subprocess.PIPE, text=True
+    )
+
+    for line in log_process.stdout:
+        # Parse WAA output format
+        if "Starting task:" in line:
+            task_id = extract_task_id(line)
+            tracker.start_task(BenchmarkTask(task_id=task_id, ...))
+        elif "Step" in line and ":" in line:
+            step_info = parse_step(line)
+            tracker.record_step(...)
+        elif "Task result:" in line:
+            result = parse_result(line)
+            tracker.finish_task(result)
+```
+
+### Phase 3: Viewer Integration
+
+Add polling/SSE to benchmark.html:
+
+```javascript
+// In benchmark.html generated by viewer.py
+const eventSource = new EventSource('/api/benchmark-sse');
+
+eventSource.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    if (data.status === 'setup') {
+        showSetupProgress(data.phase, data.description);
+    } else if (data.status === 'running') {
+        updateTaskList(data.current_task);
+        updateProgressBar(data.tasks_completed, data.total_tasks);
+    }
+};
+
+// Fallback polling for non-SSE
+setInterval(async () => {
+    const response = await fetch('/api/benchmark-live');
+    const data = await response.json();
+    updateUI(data);
+}, 3000);
+```
+
+## Implementation Steps
+
+### Step 1: Add setup phase tracking to `vm run-waa`
+
+```python
+# cli.py, in run-waa action, before starting Docker:
+def write_setup_status(phase: str, detail: str):
+    live_file = output_dir / "benchmark_live.json"
+    live_file.write_text(json.dumps({
+        "status": "setup",
+        "phase": phase,
+        "detail": detail,
+        "timestamp": datetime.now().isoformat()
+    }))
+```
+
+### Step 2: Add log streaming during benchmark
+
+```python
+# Start Docker and stream logs
+docker_proc = subprocess.Popen(
+    ["ssh", f"azureuser@{ip}", docker_cmd],
+    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+)
+
+# Parse output in real-time
+for line in docker_proc.stdout:
+    print(line, end='')  # Still show in terminal
+    progress = parse_waa_progress(line)
+    if progress:
+        update_live_json(progress)
+```
+
+### Step 3: Add JavaScript polling to viewer.py
+
+Add to `generate_benchmark_viewer()`:
+
+```javascript
+// Live update polling
+let lastUpdate = 0;
+async function pollLiveUpdates() {
+    try {
+        const response = await fetch('/api/benchmark-live?since=' + lastUpdate);
+        const data = await response.json();
+        if (data.status !== 'idle') {
+            updateLiveStatus(data);
+            lastUpdate = Date.now();
+        }
+    } catch (e) {
+        console.log('Polling error:', e);
+    }
+}
+setInterval(pollLiveUpdates, 2000);
+```
+
+## Files to Modify
+
+| File | Changes |
+|------|---------|
+| `openadapt_ml/benchmarks/cli.py` | Add setup phase tracking, log streaming in `run-waa` |
+| `openadapt_ml/benchmarks/viewer.py` | Add JavaScript polling/SSE to generated HTML |
+| `openadapt_ml/benchmarks/live_tracker.py` | Add setup phase support |
+| `openadapt_ml/cloud/local.py` | Ensure `/api/benchmark-live` works during setup |
+
+## Single Command Workflow (Goal)
+
+After implementation, this should work:
+
+```bash
+# Single command that:
+# 1. Opens viewer in browser immediately
+# 2. Shows "Initializing..." status
+# 3. Streams Docker build progress
+# 4. Streams Windows download/install progress
+# 5. Streams benchmark task progress in real-time
+# 6. Shows final results when complete
+
+uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 154
+```
+
+## Success Criteria
+
+- [ ] Viewer opens BEFORE benchmark starts
+- [ ] User sees "Initializing Docker..." phase (not blank screen)
+- [ ] User sees "Downloading Windows 11..." with progress
+- [ ] Each task shows live in viewer as it starts/completes
+- [ ] Screenshots appear as they're captured
+- [ ] Final results automatically displayed when done
