@@ -1,6 +1,7 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
+*.pyc
 build/
 dist/
 wheels/
@@ -17,6 +18,7 @@ local_context_openadapt_ml_internal.md
 synthetic/
 synthetic_train/
 synthetic_train_dev/
+synthetic_*/
 
 # Local OS cruft
 .DS_Store
@@ -36,7 +38,27 @@ checkpoints_*/
 eval_*.json
 benchmark_results/
 debug_*/
+training_output*/
+
+# JSONL data files (generated during experiments)
+*.jsonl
+
+# Live benchmark tracking
+benchmark_live.json
+
+# Experiment results directories
+p0_results/
+p1_results/
+
+# External dependencies (cloned repos, vendored code)
+external/
+
+# Demo recordings
+demos/
+
+# Pytest cache
+.pytest_cache/
 
 # Internal documentation (not for public repo)
 docs/internal/
-docs/internal/
+docs/private/
