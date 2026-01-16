@@ -82,6 +82,13 @@ from openadapt_ml.schema.episode import (
     export_json_schema,
 )
 
+# Perception integration (requires openadapt-grounding)
+try:
+    from openadapt_ml.perception.integration import UIElementGraph
+except ImportError:
+    # openadapt-grounding not installed, UIElementGraph unavailable
+    UIElementGraph = None  # type: ignore
+
 __all__ = [
     # Version
     "SCHEMA_VERSION",
@@ -96,6 +103,8 @@ __all__ = [
     "Coordinates",
     "BoundingBox",
     "UIElement",
+    # Perception integration
+    "UIElementGraph",
     # Utilities
     "validate_episode",
     "load_episode",
