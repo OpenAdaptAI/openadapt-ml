@@ -4956,51 +4956,113 @@ ls -lh /mnt/waa-storage/
             get_vm_uptime_hours,
             detect_vm_activity,
             get_evaluation_history,
+            VMActivity,
+            AzureMLJob,
+            EvaluationRun,
         )
 
         port = getattr(args, "port", 8765)
         auto_shutdown_hours = getattr(args, "auto_shutdown_hours", 0)
         show_details = getattr(args, "details", False)
+        use_mock = getattr(args, "mock", False)
 
         print("\n" + "=" * 70)
         print(" VM MONITOR DASHBOARD ".center(70))
+        if use_mock:
+            print(" [MOCK DATA MODE - No VM Required] ".center(70))
         print("=" * 70 + "\n")
+
+        # ===== MOCK DATA GENERATION =====
+        if use_mock:
+            # Generate realistic mock data for screenshots/testing
+            ip = "172.171.112.41"
+            vm_size = "Standard_D4ds_v5"
+            power_state = "VM running"
+            uptime_hours = 2.5
+
+            activity = VMActivity(
+                is_active=True,
+                activity_type="benchmark_running",
+                description="WAA benchmark ready (154 tasks)",
+            )
+
+            jobs = [
+                AzureMLJob(
+                    job_id="abc123def456",
+                    display_name="waa-eval-20-tasks",
+                    status="completed",
+                    created_at="2026-01-15T10:30:00Z",
+                ),
+                AzureMLJob(
+                    job_id="ghi789jkl012",
+                    display_name="waa-eval-50-tasks",
+                    status="running",
+                    created_at="2026-01-17T08:15:00Z",
+                ),
+            ]
+
+            history = [
+                EvaluationRun(
+                    run_id="20260115_103045",
+                    started_at="2026-01-15T10:30:45Z",
+                    completed_at="2026-01-15T12:15:30Z",
+                    num_tasks=20,
+                    success_rate=0.65,
+                    agent_type="api-claude",
+                    status="completed",
+                ),
+                EvaluationRun(
+                    run_id="20260110_145530",
+                    started_at="2026-01-10T14:55:30Z",
+                    completed_at="2026-01-10T16:20:15Z",
+                    num_tasks=10,
+                    success_rate=0.80,
+                    agent_type="navi",
+                    status="completed",
+                ),
+            ]
+
+            costs = calculate_vm_costs(vm_size, uptime_hours)
 
         # ===== VM STATUS =====
         print("1. VM STATUS")
         print("-" * 70)
-        ip = get_vm_ip(resource_group, vm_name)
+
+        if not use_mock:
+            ip = get_vm_ip(resource_group, vm_name)
+
         if ip:
             print(f"  Name:       {vm_name}")
             print(f"  IP Address: {ip}")
             print(f"  Resource:   {resource_group}")
 
             # Get VM size for cost calculation
-            vm_info_result = subprocess.run(
-                [
-                    "az",
-                    "vm",
-                    "show",
-                    "-d",
-                    "-g",
-                    resource_group,
-                    "-n",
-                    vm_name,
-                    "--query",
-                    "{size:hardwareProfile.vmSize,powerState:powerState}",
-                    "-o",
-                    "json",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            vm_size = "Standard_D4ds_v5"  # default
-            power_state = "unknown"
-            if vm_info_result.returncode == 0:
-                vm_info = json.loads(vm_info_result.stdout)
-                vm_size = vm_info.get("size", vm_size)
-                power_state = vm_info.get("powerState", "unknown")
+            if not use_mock:
+                vm_info_result = subprocess.run(
+                    [
+                        "az",
+                        "vm",
+                        "show",
+                        "-d",
+                        "-g",
+                        resource_group,
+                        "-n",
+                        vm_name,
+                        "--query",
+                        "{size:hardwareProfile.vmSize,powerState:powerState}",
+                        "-o",
+                        "json",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                vm_size = "Standard_D4ds_v5"  # default
+                power_state = "unknown"
+                if vm_info_result.returncode == 0:
+                    vm_info = json.loads(vm_info_result.stdout)
+                    vm_size = vm_info.get("size", vm_size)
+                    power_state = vm_info.get("powerState", "unknown")
 
             print(f"  VM Size:    {vm_size}")
             print(f"  State:      {power_state}")
@@ -5012,7 +5074,8 @@ ls -lh /mnt/waa-storage/
         # ===== VM ACTIVITY =====
         print(f"\n2. CURRENT ACTIVITY")
         print("-" * 70)
-        activity = detect_vm_activity(ip, "azureuser", "winarena", "172.30.0.2")
+        if not use_mock:
+            activity = detect_vm_activity(ip, "azureuser", "winarena", "172.30.0.2")
         activity_icon = "⚙" if activity.is_active else "💤"
         print(f"  Status:     {activity_icon} {activity.activity_type.upper()}")
         print(f"  Details:    {activity.description}")
@@ -5020,8 +5083,9 @@ ls -lh /mnt/waa-storage/
         # ===== COST TRACKING =====
         print(f"\n3. COST TRACKING")
         print("-" * 70)
-        uptime_hours = get_vm_uptime_hours(resource_group, vm_name)
-        costs = calculate_vm_costs(vm_size, uptime_hours)
+        if not use_mock:
+            uptime_hours = get_vm_uptime_hours(resource_group, vm_name)
+            costs = calculate_vm_costs(vm_size, uptime_hours)
         print(f"  Uptime:     {uptime_hours:.2f} hours")
         print(f"  Rate:       ${costs.hourly_rate_usd:.3f}/hour")
         print(f"  Cost:       ${costs.cost_usd:.2f} (current session)")
@@ -5032,7 +5096,8 @@ ls -lh /mnt/waa-storage/
         # ===== AZURE ML JOBS =====
         print(f"\n4. RECENT AZURE ML JOBS (Last 7 Days)")
         print("-" * 70)
-        jobs = fetch_azure_ml_jobs(resource_group=resource_group, days=7, max_results=5)
+        if not use_mock:
+            jobs = fetch_azure_ml_jobs(resource_group=resource_group, days=7, max_results=5)
         if jobs:
             for job in jobs[:5]:  # Show top 5
                 status_icon = {
@@ -5053,7 +5118,8 @@ ls -lh /mnt/waa-storage/
         if show_details:
             print(f"\n5. EVALUATION HISTORY")
             print("-" * 70)
-            history = get_evaluation_history(max_runs=5)
+            if not use_mock:
+                history = get_evaluation_history(max_runs=5)
             if history:
                 for run in history[:5]:
                     success_pct = f"{run.success_rate*100:.1f}%" if run.success_rate else "N/A"
@@ -5065,6 +5131,15 @@ ls -lh /mnt/waa-storage/
         # ===== DASHBOARD & TUNNELS =====
         print(f"\n6. DASHBOARD & ACCESS")
         print("-" * 70)
+
+        # In mock mode, skip dashboard and exit cleanly
+        if use_mock:
+            print("  Dashboard:  (Skipped in mock mode)")
+            print("  VNC:        (Skipped in mock mode)")
+            print(f"\n{'=' * 70}")
+            print("  Mock data displayed successfully!")
+            print("=" * 70 + "\n")
+            return  # Exit early for mock mode
 
         # Check if server is already running on port
         def is_port_in_use(port: int) -> bool:
@@ -6421,6 +6496,13 @@ Quick Start:
     )
     # Exec command option
     p_vm.add_argument("--cmd", help="Command to execute in container (for exec action)")
+    # Mock data option (for screenshots/testing)
+    p_vm.add_argument(
+        "--mock",
+        action="store_true",
+        default=False,
+        help="Use mock data for monitor command (no VM required, for documentation/testing)",
+    )
 
     # Benchmark viewer subcommand - for monitoring already-running benchmarks
     p_viewer = subparsers.add_parser(

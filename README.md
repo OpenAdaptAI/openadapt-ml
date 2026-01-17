@@ -776,6 +776,52 @@ uv run python -m openadapt_ml.cloud.local serve --port 8080 --open
 
 *View benchmark evaluation results with task-level filtering, success/failure status, and run comparison. Shows Claude achieving 30% on mock evaluation tasks (simulated environment for testing the pipeline - real WAA evaluation requires Windows VMs).*
 
+### 13.4 VM Monitoring Dashboard
+
+For managing Azure VMs used in benchmark evaluations, the `vm monitor` command provides a comprehensive dashboard:
+
+```bash
+# Start VM monitoring dashboard (auto-opens browser)
+uv run python -m openadapt_ml.benchmarks.cli vm monitor
+
+# Show detailed information (evaluation history, daily/weekly costs)
+uv run python -m openadapt_ml.benchmarks.cli vm monitor --details
+```
+
+**VM Monitor Dashboard (Full View):**
+
+![VM Monitor Dashboard](docs/screenshots/vm_monitor_dashboard_full.png)
+
+*The VM monitor dashboard shows: (1) VM status (name, IP, size, state), (2) Current activity (idle/benchmark running), (3) Cost tracking (uptime, hourly rate, total cost), (4) Recent Azure ML jobs from last 7 days, and (6) Dashboard & access URLs.*
+
+**VM Monitor Dashboard (With --details Flag):**
+
+![VM Monitor Dashboard Details](docs/screenshots/vm_monitor_details.png)
+
+*The --details flag adds: (5) Evaluation history with success rates and agent types, plus extended cost information (daily/weekly projections).*
+
+**Features:**
+- **Real-time VM status** - Shows VM size, power state, and IP address
+- **Activity detection** - Identifies if VM is idle, running benchmarks, or in setup
+- **Cost tracking** - Displays uptime hours, hourly rate, and total cost for current session
+- **Azure ML jobs** - Lists recent jobs from last 7 days with status indicators
+- **Evaluation history** - Shows past benchmark runs with success rates (with --details flag)
+- **Dashboard & tunnels** - Auto-starts web dashboard and SSH/VNC tunnels for accessing Windows VM
+
+**Mock mode for testing:**
+```bash
+# Generate screenshots or test dashboard without a VM running
+uv run python -m openadapt_ml.benchmarks.cli vm monitor --mock
+```
+
+**Auto-shutdown option:**
+```bash
+# Automatically deallocate VM after 2 hours to prevent runaway costs
+uv run python -m openadapt_ml.benchmarks.cli vm monitor --auto-shutdown-hours 2
+```
+
+For complete VM management commands and Azure setup instructions, see [`CLAUDE.md`](CLAUDE.md) and [`docs/azure_waa_setup.md`](docs/azure_waa_setup.md).
+
 ---
 
 ## 14. Limitations & Notes
