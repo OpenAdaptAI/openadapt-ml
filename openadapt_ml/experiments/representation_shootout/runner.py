@@ -25,13 +25,10 @@ import argparse
 import json
 import logging
 import sys
-from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from openadapt_ml.experiments.representation_shootout.conditions import (
-    ActionHistory,
     ConditionBase,
     Observation,
     UIElement,
@@ -39,7 +36,6 @@ from openadapt_ml.experiments.representation_shootout.conditions import (
     create_condition,
 )
 from openadapt_ml.experiments.representation_shootout.config import (
-    ConditionConfig,
     ConditionName,
     DriftConfig,
     ExperimentConfig,
@@ -264,7 +260,9 @@ class ExperimentRunner:
         # Scaffolding: Generate plausible mock predictions
         import random
 
-        random.seed(self.config.seed + hash(condition.name.value) + hash(drift_config.name))
+        random.seed(
+            self.config.seed + hash(condition.name.value) + hash(drift_config.name)
+        )
 
         predictions = []
         for sample in samples:
@@ -277,7 +275,9 @@ class ExperimentRunner:
                 if random.random() < error_rate:
                     # Make an error - pick wrong element
                     if sample.observation.ui_elements:
-                        wrong_el = random.choice(sample.observation.ui_elements.elements)
+                        wrong_el = random.choice(
+                            sample.observation.ui_elements.elements
+                        )
                         predictions.append(f"ACTION: CLICK([{wrong_el.element_id}])")
                     else:
                         predictions.append("ACTION: CLICK([e1])")
@@ -490,7 +490,9 @@ class ExperimentRunner:
             for r in results:
                 hit_rate = r.metrics.get(MetricName.CLICK_HIT_RATE.value, 0)
                 distance = r.metrics.get(MetricName.COORD_DISTANCE.value, 0)
-                print(f"{condition:<15} {r.drift:<25} {hit_rate:>10.1%} {distance:>10.4f}")
+                print(
+                    f"{condition:<15} {r.drift:<25} {hit_rate:>10.1%} {distance:>10.4f}"
+                )
             print()
 
         print("-" * 70)
@@ -588,13 +590,16 @@ Examples:
         help="Random seed for reproducibility",
     )
     run_parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Verbose output",
     )
 
     # Recommend command (analyze existing results)
-    rec_parser = subparsers.add_parser("recommend", help="Generate recommendation from results")
+    rec_parser = subparsers.add_parser(
+        "recommend", help="Generate recommendation from results"
+    )
     rec_parser.add_argument(
         "--results",
         required=True,
@@ -631,7 +636,7 @@ Examples:
         try:
             runner = ExperimentRunner(config)
             if args.data:
-                samples = runner.load_samples(args.data)
+                runner.load_samples(args.data)
             recommendation = runner.run()
             runner.print_summary(recommendation)
             return 0
@@ -639,6 +644,7 @@ Examples:
             logger.error(f"Experiment failed: {e}")
             if args.verbose:
                 import traceback
+
                 traceback.print_exc()
             return 1
 

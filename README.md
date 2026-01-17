@@ -1,6 +1,6 @@
 # OpenAdapt-ML
 
-[![Build Status](https://github.com/OpenAdaptAI/openadapt-ml/workflows/Publish%20to%20PyPI/badge.svg?branch=main)](https://github.com/OpenAdaptAI/openadapt-ml/actions)
+[![Build Status](https://github.com/OpenAdaptAI/openadapt-ml/actions/workflows/publish.yml/badge.svg)](https://github.com/OpenAdaptAI/openadapt-ml/actions/workflows/publish.yml)
 [![PyPI version](https://img.shields.io/pypi/v/openadapt-ml.svg)](https://pypi.org/project/openadapt-ml/)
 [![Downloads](https://img.shields.io/pypi/dm/openadapt-ml.svg)](https://pypi.org/project/openadapt-ml/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -10,9 +10,9 @@ OpenAdapt-ML is a **model-agnostic, domain-agnostic ML engine** for GUI
 automation agents. It sits above **TRL + Unsloth** (which we use directly for training performance) and provides the GUI-specific layer:
 
 - **Episode semantics**: Step/action/observation alignment, screenshot-action coupling, termination handling
-- **Demo-conditioned inference**: Retrieval-augmented prompting (validated: 33% → 100% first-action accuracy)
+- **Demo-conditioned inference**: Retrieval-augmented prompting (in early experiments: 46.7% -> 100% first-action accuracy on a controlled macOS benchmark where all 45 tasks share the same navigation entry point - see [publication roadmap](https://github.com/OpenAdaptAI/OpenAdapt/blob/main/docs/publication-roadmap.md) for methodology and limitations)
 - **Benchmark adapters**: WAA today, OSWorld/WebArena planned
-- **VLM adapters**: Updated with leading GUI-agent SOTA open-source models
+- **VLM adapters**: Supports open-source GUI-agent models (Qwen3-VL, Qwen2.5-VL)
 - **Training pipeline**: TRL + Unsloth integration for 2x faster training with 50% less VRAM
 
 OpenAdapt-ML is **not** a training framework, optimizer, hardware orchestrator, or experiment manager. We use TRL/Unsloth, Lambda Labs/Azure, and W&B/MLflow for those.
@@ -204,7 +204,9 @@ simple login flow.
 ### 5.1 Synthetic scenarios
 
 OpenAdapt-ML includes synthetic UI generators for structured GUI automation benchmarks.
-Currently two scenarios are supported:
+Currently two scenarios are supported.
+
+> **Note:** These are **synthetic, controlled benchmarks** designed for rapid iteration and debugging, not real-world evaluation. The 100% accuracy results below demonstrate that fine-tuning works on simple scenarios with known ground truth - they do not represent performance on production UIs or standard benchmarks like WAA. See section 14 (Limitations) for details.
 
 #### Login Scenario (6 steps, 3 elements)
 
@@ -387,15 +389,18 @@ It exposes step-level performance metrics, which let us visually answer the ques
 | Claude Sonnet 4.5   | API          | 0.121           | 0.757       | 0.000          |
 | GPT-5.1             | API          | 0.183           | 0.057       | 0.600          |
 
-**Key findings:**
-1. **Fine-tuning delivers massive gains**: Both 2B and 8B models show 2-3x improvement in action accuracy after fine-tuning
-2. **Small fine-tuned models beat large APIs**: Qwen3-VL-2B FT (469% base) outperforms both Claude Sonnet 4.5 (121%) and GPT-5.1 (183%)
-3. **Precision matters**: Fine-tuned models have excellent click precision (85-100% hit rate, <0.05 coord error) while API models struggle with the action format
-4. **Size vs specialization**: The fine-tuned 2B model outperforms the general-purpose Claude Sonnet 4.5, showing that domain-specific fine-tuning trumps raw model size
+**Observations on synthetic login benchmark:**
 
-### 6.4 Set-of-Marks (SoM) Mode: 100% Accuracy
+> **Important:** These findings are from a synthetic benchmark with ~3 UI elements and a fixed action sequence. They demonstrate the training pipeline works, but should not be extrapolated to real-world GUI automation performance. Evaluation on standard benchmarks (WAA, WebArena) is ongoing.
 
-With **Set-of-Marks** visual prompting, fine-tuned Qwen3-VL-2B achieves **100% accuracy** on both login (6-step) and registration (12-step) scenarios:
+1. **Fine-tuning improves synthetic task performance**: Both 2B and 8B models show 2-3x improvement in action accuracy after fine-tuning on this specific task
+2. **On this synthetic benchmark, fine-tuned models outperform zero-shot API calls**: This is expected since the task is simple and the models are trained on it directly
+3. **Coordinate precision is learnable**: Fine-tuned models achieve low coordinate error on training distribution
+4. **API models struggle with custom action format**: Without fine-tuning on the specific DSL (CLICK/TYPE/DONE), API models have high format-error rates
+
+### 6.4 Set-of-Marks (SoM) Mode: 100% Accuracy on Synthetic Benchmarks
+
+With **Set-of-Marks** visual prompting, fine-tuned Qwen3-VL-2B achieves **100% accuracy** on both login (6-step) and registration (12-step) synthetic scenarios. Note that these are controlled, toy benchmarks with a small number of UI elements:
 
 | Scenario | Steps | Elements | Action Acc | Element Acc | Episode Success |
 |----------|-------|----------|------------|-------------|-----------------|

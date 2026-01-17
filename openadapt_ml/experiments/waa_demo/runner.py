@@ -26,7 +26,6 @@ import sys
 from typing import TYPE_CHECKING, Any
 
 from openadapt_ml.experiments.waa_demo.demos import (
-    DEMOS,
     format_demo_for_prompt,
     get_complete_demos,
     get_demo,
@@ -34,14 +33,16 @@ from openadapt_ml.experiments.waa_demo.demos import (
 )
 from openadapt_ml.experiments.waa_demo.tasks import (
     TASKS,
-    WATask,
-    get_manual_tasks,
     get_recorded_tasks,
     get_task,
 )
 
 if TYPE_CHECKING:
-    from openadapt_ml.benchmarks.base import BenchmarkAction, BenchmarkObservation, BenchmarkTask
+    from openadapt_ml.benchmarks.base import (
+        BenchmarkAction,
+        BenchmarkObservation,
+        BenchmarkTask,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,9 @@ def cmd_list(args: argparse.Namespace) -> int:
     print()
     print("Tasks needing recorded demos on Windows:")
     for task in get_recorded_tasks():
-        print(f"  - #{list(TASKS.keys())[list(TASKS.values()).index(task)]}: {task.instruction}")
+        print(
+            f"  - #{list(TASKS.keys())[list(TASKS.values()).index(task)]}: {task.instruction}"
+        )
 
     return 0
 
@@ -122,7 +125,9 @@ def cmd_prompt(args: argparse.Namespace) -> int:
     else:
         print(f"Task: {task.instruction}")
         print()
-        print("Analyze the screenshot and provide the next action to complete this task.")
+        print(
+            "Analyze the screenshot and provide the next action to complete this task."
+        )
         if demo and "[PLACEHOLDER" in demo:
             print()
             print("[Note: Demo not available - this would be zero-shot]")
@@ -208,6 +213,7 @@ Think step by step, then output the action on a new line starting with "ACTION:"
         """Lazily initialize the API adapter."""
         if self._adapter is None:
             from openadapt_ml.models.api_adapter import ApiVLMAdapter
+
             self._adapter = ApiVLMAdapter(
                 provider=self.provider,
                 api_key=self.api_key,
@@ -325,7 +331,9 @@ Think step by step, then output the action on a new line starting with "ACTION:"
             history_str = self._format_history(history)
             content_parts.append(f"Previous actions:\n{history_str}")
 
-        content_parts.append("\nAnalyze the current screenshot and provide the next action.")
+        content_parts.append(
+            "\nAnalyze the current screenshot and provide the next action."
+        )
 
         sample: dict[str, Any] = {
             "messages": [
@@ -457,7 +465,9 @@ Think step by step, then output the action on a new line starting with "ACTION:"
             r"TYPE\s*\(\s*[\"'](.+?)[\"']\s*\)", action_line, re.IGNORECASE
         )
         if type_match:
-            return BenchmarkAction(type="type", text=type_match.group(1), raw_action=raw_action)
+            return BenchmarkAction(
+                type="type", text=type_match.group(1), raw_action=raw_action
+            )
 
         # Parse KEY
         key_match = re.match(r"KEY\s*\(\s*(.+?)\s*\)", action_line, re.IGNORECASE)
@@ -506,7 +516,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         WAAMockAdapter,
         compute_metrics,
     )
-    from openadapt_ml.benchmarks.runner import EvaluationConfig, evaluate_agent_on_benchmark
+    from openadapt_ml.benchmarks.runner import (
+        EvaluationConfig,
+        evaluate_agent_on_benchmark,
+    )
 
     print("WAA Demo-Conditioned Experiment Runner")
     print("=" * 80)
@@ -539,7 +552,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"Running {len(task_ids)} tasks with complete demos")
 
     # Check for mock mode or real WAA
-    use_mock = getattr(args, 'mock', False)
+    use_mock = getattr(args, "mock", False)
 
     if use_mock:
         print("Using mock adapter (no Windows required)")
@@ -599,7 +612,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     except Exception as e:
         print(f"Error during evaluation: {e}")
         if "API key" in str(e) or "api_key" in str(e).lower():
-            key_name = "ANTHROPIC_API_KEY" if args.provider == "anthropic" else "OPENAI_API_KEY"
+            key_name = (
+                "ANTHROPIC_API_KEY"
+                if args.provider == "anthropic"
+                else "OPENAI_API_KEY"
+            )
             print(f"\nMake sure {key_name} is set in your environment or .env file.")
         return 1
 

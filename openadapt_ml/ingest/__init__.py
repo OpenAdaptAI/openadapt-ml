@@ -27,16 +27,18 @@ __all__ = [
 
 # Conditionally export capture functions if openadapt-capture is installed
 try:
-    from openadapt_ml.ingest.capture import (
+    from openadapt_ml.ingest.capture import (  # noqa: F401
         capture_to_episode,
         capture_to_session,
         load_captures_as_sessions,
     )
 
-    __all__.extend([
-        "capture_to_episode",
-        "capture_to_session",
-        "load_captures_as_sessions",
-    ])
+    __all__.extend(
+        [
+            "capture_to_episode",
+            "capture_to_session",
+            "load_captures_as_sessions",
+        ]
+    )
 except ImportError:
     pass

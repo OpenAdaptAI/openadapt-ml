@@ -144,7 +144,7 @@ class AzureInferenceQueue:
         blob_name = f"checkpoints/epoch_{epoch}/{checkpoint_path.name}"
         logger.info(f"Uploading checkpoint to {blob_name}...")
 
-        checkpoint_blob_client = self.blob_service.get_blob_client(
+        self.blob_service.get_blob_client(
             container=self.checkpoints_container, blob=blob_name
         )
 
@@ -378,9 +378,7 @@ def main():
     submit_parser.add_argument(
         "--checkpoint", "-c", required=True, help="Path to checkpoint directory"
     )
-    submit_parser.add_argument(
-        "--capture", required=True, help="Path to capture data"
-    )
+    submit_parser.add_argument("--capture", required=True, help="Path to capture data")
     submit_parser.add_argument(
         "--epoch", "-e", type=int, default=0, help="Epoch number"
     )
@@ -415,7 +413,7 @@ def main():
 
     if args.command == "inference-submit":
         # Submit checkpoint for inference
-        print(f"Submitting checkpoint for inference...")
+        print("Submitting checkpoint for inference...")
         job = queue.submit_checkpoint(
             checkpoint_path=args.checkpoint,
             capture_path=args.capture,

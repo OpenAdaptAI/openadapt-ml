@@ -22,7 +22,6 @@ Example:
 
 from __future__ import annotations
 
-import json
 import re
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
@@ -36,7 +35,7 @@ from openadapt_ml.benchmarks.base import (
 if TYPE_CHECKING:
     from openadapt_ml.models.api_adapter import ApiVLMAdapter
     from openadapt_ml.runtime.policy import AgentPolicy
-    from openadapt_ml.schema import Action, ActionType
+    from openadapt_ml.schema import Action
 
 
 class BenchmarkAgent(ABC):
@@ -270,7 +269,9 @@ class PolicyAgent(BenchmarkAgent):
             end_x, end_y = action.normalized_end
 
         # Extract action type value (enum -> string)
-        action_type = action.type.value if hasattr(action.type, 'value') else action.type
+        action_type = (
+            action.type.value if hasattr(action.type, "value") else action.type
+        )
 
         # Extract element info if available
         target_node_id = None
@@ -860,9 +861,18 @@ Then output the action on a new line starting with "ACTION:"
             end_y = float(drag_match.group(4))
 
             # Normalize coordinates if they appear to be pixel values
-            if observation and observation.viewport and (x > 1.0 or y > 1.0 or end_x > 1.0 or end_y > 1.0):
+            if (
+                observation
+                and observation.viewport
+                and (x > 1.0 or y > 1.0 or end_x > 1.0 or end_y > 1.0)
+            ):
                 width, height = observation.viewport
-                raw_action["original_coords"] = {"x": x, "y": y, "end_x": end_x, "end_y": end_y}
+                raw_action["original_coords"] = {
+                    "x": x,
+                    "y": y,
+                    "end_x": end_x,
+                    "end_y": end_y,
+                }
                 raw_action["normalized"] = True
                 x = x / width
                 y = y / height
@@ -902,3 +912,276 @@ Then output the action on a new line starting with "ACTION:"
         """Reset agent state."""
         # APIBenchmarkAgent is stateless, nothing to reset
         pass
+
+
+class UnifiedBaselineAgent(BenchmarkAgent):
+    """Agent that uses the UnifiedBaselineAdapter for benchmark evaluation.
+
+    This agent provides a unified interface for comparing Claude, GPT, and Gemini
+    models across multiple evaluation tracks (coordinates, ReAct, SoM).
+
+    Compared to APIBenchmarkAgent, this agent:
+    - Uses the new provider abstraction (models/providers/)
+    - Supports multiple tracks (A, B, C) with track-specific prompts
+    - Uses the unified response parser
+    - Supports model aliases for easy switching
+
+    Args:
+        model_alias: Model alias (e.g., 'claude-opus-4.5', 'gpt-5.2', 'gemini-3-pro').
+        track: Track type ('A', 'B', or 'C'). Defaults to 'A'.
+        api_key: Optional API key override. If not provided, uses env vars.
+        temperature: Sampling temperature. Defaults to 0.1.
+        max_tokens: Maximum tokens for response. Defaults to 1024.
+        demo: Optional demo text to include in prompts.
+        verbose: Whether to print verbose debug output.
+
+    Example:
+        # Claude baseline with Track C (Set-of-Mark)
+        agent = UnifiedBaselineAgent(
+            model_alias="claude-opus-4.5",
+            track="C",
+        )
+        results = evaluate_agent_on_benchmark(agent, waa_adapter)
+
+        # GPT baseline with Track A (direct coordinates)
+        agent = UnifiedBaselineAgent(
+            model_alias="gpt-5.2",
+            track="A",
+        )
+        results = evaluate_agent_on_benchmark(agent, waa_adapter)
+
+        # Gemini baseline with Track B (ReAct reasoning)
+        agent = UnifiedBaselineAgent(
+            model_alias="gemini-3-pro",
+            track="B",
+        )
+        results = evaluate_agent_on_benchmark(agent, waa_adapter)
+    """
+
+    def __init__(
+        self,
+        model_alias: str = "claude-opus-4.5",
+        track: str = "A",
+        api_key: str | None = None,
+        temperature: float = 0.1,
+        max_tokens: int = 1024,
+        demo: str | None = None,
+        verbose: bool = False,
+    ):
+        self.model_alias = model_alias
+        self.track = track.upper()
+        self.api_key = api_key
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.demo = demo
+        self.verbose = verbose
+        self._adapter = None
+
+    def _get_adapter(self):
+        """Lazily initialize the UnifiedBaselineAdapter."""
+        if self._adapter is None:
+            from openadapt_ml.baselines import (
+                TrackConfig,
+                UnifiedBaselineAdapter,
+            )
+
+            # Select track config
+            track_configs = {
+                "A": TrackConfig.track_a(),
+                "B": TrackConfig.track_b(),
+                "C": TrackConfig.track_c(),
+            }
+            track_config = track_configs.get(self.track, TrackConfig.track_a())
+
+            # Create adapter from alias
+            self._adapter = UnifiedBaselineAdapter.from_alias(
+                self.model_alias,
+                track=track_config,
+                api_key=self.api_key,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                demo=self.demo,
+                verbose=self.verbose,
+            )
+        return self._adapter
+
+    def act(
+        self,
+        observation: BenchmarkObservation,
+        task: BenchmarkTask,
+        history: list[tuple[BenchmarkObservation, BenchmarkAction]] | None = None,
+    ) -> BenchmarkAction:
+        """Use UnifiedBaselineAdapter to determine next action.
+
+        Args:
+            observation: Current observation with screenshot.
+            task: Task being performed.
+            history: Previous observations and actions.
+
+        Returns:
+            BenchmarkAction parsed from adapter response.
+        """
+        from PIL import Image
+
+        adapter = self._get_adapter()
+
+        # Load screenshot if available
+        screenshot = None
+        if observation.screenshot_path:
+            try:
+                screenshot = Image.open(observation.screenshot_path)
+            except Exception as e:
+                if self.verbose:
+                    print(f"[UnifiedBaselineAgent] Failed to load screenshot: {e}")
+
+        # Build accessibility tree string
+        a11y_tree = None
+        if observation.accessibility_tree:
+            a11y_tree = observation.accessibility_tree
+
+        # Build history for adapter
+        adapter_history = None
+        if history:
+            adapter_history = []
+            for obs, action in history[-5:]:  # Last 5 actions
+                adapter_history.append(self._benchmark_action_to_dict(action))
+
+        # Call adapter
+        try:
+            parsed_action = adapter.predict(
+                screenshot=screenshot,
+                goal=task.instruction,
+                a11y_tree=a11y_tree,
+                history=adapter_history,
+            )
+        except Exception as e:
+            if self.verbose:
+                print(f"[UnifiedBaselineAgent] Adapter error: {e}")
+            return BenchmarkAction(
+                type="done",
+                raw_action={"error": str(e)},
+            )
+
+        # Convert ParsedAction to BenchmarkAction
+        return self._parsed_to_benchmark_action(parsed_action, observation)
+
+    def _benchmark_action_to_dict(self, action: BenchmarkAction) -> dict[str, Any]:
+        """Convert BenchmarkAction to dict for history."""
+        result = {"type": action.type}
+
+        if action.x is not None:
+            result["x"] = action.x
+        if action.y is not None:
+            result["y"] = action.y
+        if action.text:
+            result["text"] = action.text
+        if action.key:
+            result["key"] = action.key
+        if action.target_node_id:
+            result["element_id"] = action.target_node_id
+        if action.scroll_direction:
+            result["direction"] = action.scroll_direction
+
+        return result
+
+    def _parsed_to_benchmark_action(
+        self,
+        parsed_action,
+        observation: BenchmarkObservation | None = None,
+    ) -> BenchmarkAction:
+        """Convert ParsedAction to BenchmarkAction.
+
+        Args:
+            parsed_action: ParsedAction from adapter.
+            observation: Current observation (for coordinate normalization).
+
+        Returns:
+            BenchmarkAction.
+        """
+        raw_action = {
+            "raw_response": parsed_action.raw_response,
+            "thought": parsed_action.thought,
+        }
+
+        if not parsed_action.is_valid:
+            raw_action["parse_error"] = parsed_action.parse_error
+            return BenchmarkAction(type="done", raw_action=raw_action)
+
+        action_type = parsed_action.action_type
+
+        if action_type == "click":
+            if parsed_action.element_id is not None:
+                return BenchmarkAction(
+                    type="click",
+                    target_node_id=str(parsed_action.element_id),
+                    raw_action=raw_action,
+                )
+            elif parsed_action.x is not None and parsed_action.y is not None:
+                x = parsed_action.x
+                y = parsed_action.y
+
+                # Normalize coordinates if they appear to be pixel values
+                if observation and observation.viewport and (x > 1.0 or y > 1.0):
+                    width, height = observation.viewport
+                    raw_action["original_coords"] = {"x": x, "y": y}
+                    raw_action["normalized"] = True
+                    x = x / width
+                    y = y / height
+
+                return BenchmarkAction(
+                    type="click",
+                    x=x,
+                    y=y,
+                    raw_action=raw_action,
+                )
+
+        elif action_type == "type":
+            return BenchmarkAction(
+                type="type",
+                text=parsed_action.text,
+                raw_action=raw_action,
+            )
+
+        elif action_type == "key":
+            return BenchmarkAction(
+                type="key",
+                key=parsed_action.key,
+                raw_action=raw_action,
+            )
+
+        elif action_type == "scroll":
+            return BenchmarkAction(
+                type="scroll",
+                scroll_direction=parsed_action.direction,
+                raw_action=raw_action,
+            )
+
+        elif action_type == "done":
+            return BenchmarkAction(type="done", raw_action=raw_action)
+
+        elif action_type == "drag":
+            x = parsed_action.x
+            y = parsed_action.y
+            end_x = getattr(parsed_action, "end_x", None)
+            end_y = getattr(parsed_action, "end_y", None)
+
+            return BenchmarkAction(
+                type="drag",
+                x=x,
+                y=y,
+                end_x=end_x,
+                end_y=end_y,
+                raw_action=raw_action,
+            )
+
+        # Unknown action type, return done
+        raw_action["unknown_action"] = action_type
+        return BenchmarkAction(type="done", raw_action=raw_action)
+
+    def reset(self) -> None:
+        """Reset agent state."""
+        # UnifiedBaselineAgent is stateless, nothing to reset
+        pass
+
+    def __repr__(self) -> str:
+        return f"UnifiedBaselineAgent(model={self.model_alias}, track={self.track})"

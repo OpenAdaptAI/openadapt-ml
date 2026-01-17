@@ -25,9 +25,9 @@ import logging
 import re
 from abc import ABC, abstractmethod
 from collections import Counter
-from math import log, sqrt
+from math import log
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +121,7 @@ class TFIDFEmbedder(BaseEmbedder):
         Returns:
             List of tokens.
         """
-        tokens = re.findall(r'\b\w+\b', text.lower())
+        tokens = re.findall(r"\b\w+\b", text.lower())
         return tokens
 
     def _compute_tf(self, tokens: List[str]) -> Dict[str, float]:
@@ -169,8 +169,7 @@ class TFIDFEmbedder(BaseEmbedder):
         # Compute IDF: log(N / df) + 1
         n_docs = max(len(documents), 1)
         self.idf = {
-            term: log(n_docs / doc_freq.get(term, 1)) + 1
-            for term in self.vocab
+            term: log(n_docs / doc_freq.get(term, 1)) + 1 for term in self.vocab
         }
 
         self._is_fitted = True
@@ -440,6 +439,7 @@ class OpenAIEmbedder(BaseEmbedder):
                     cached = json.load(f)
                     # Convert lists back to arrays
                     import numpy as np
+
                     for key, val in cached.items():
                         self._embedding_cache[key] = np.array(val, dtype=np.float32)
                 logger.debug(f"Loaded {len(self._embedding_cache)} cached embeddings")
@@ -455,8 +455,7 @@ class OpenAIEmbedder(BaseEmbedder):
         try:
             # Convert arrays to lists for JSON
             cache_data = {
-                key: val.tolist()
-                for key, val in self._embedding_cache.items()
+                key: val.tolist() for key, val in self._embedding_cache.items()
             }
             with open(cache_file, "w") as f:
                 json.dump(cache_data, f)
@@ -525,7 +524,9 @@ class OpenAIEmbedder(BaseEmbedder):
 
             # Process in batches
             for batch_start in range(0, len(uncached_texts), self.batch_size):
-                batch_texts = uncached_texts[batch_start:batch_start + self.batch_size]
+                batch_texts = uncached_texts[
+                    batch_start : batch_start + self.batch_size
+                ]
 
                 try:
                     response = client.embeddings.create(

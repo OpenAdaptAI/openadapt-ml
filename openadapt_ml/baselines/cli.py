@@ -8,11 +8,10 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 import click
 
-from openadapt_ml.baselines.config import MODELS, TrackConfig, TrackType
+from openadapt_ml.baselines.config import MODELS
 
 
 @click.group()
@@ -23,35 +22,41 @@ def baselines():
 
 @baselines.command()
 @click.option(
-    "--model", "-m",
+    "--model",
+    "-m",
     required=True,
     type=click.Choice(list(MODELS.keys())),
     help="Model alias to use",
 )
 @click.option(
-    "--track", "-t",
+    "--track",
+    "-t",
     type=click.Choice(["A", "B", "C"]),
     default="A",
     help="Evaluation track (A=coords, B=ReAct, C=SoM)",
 )
 @click.option(
-    "--image", "-i",
+    "--image",
+    "-i",
     type=click.Path(exists=True),
     required=True,
     help="Screenshot image path",
 )
 @click.option(
-    "--goal", "-g",
+    "--goal",
+    "-g",
     required=True,
     help="Task goal/instruction",
 )
 @click.option(
-    "--output", "-o",
+    "--output",
+    "-o",
     type=click.Path(),
     help="Output JSON file path",
 )
 @click.option(
-    "--verbose", "-v",
+    "--verbose",
+    "-v",
     is_flag=True,
     help="Enable verbose output",
 )
@@ -122,7 +127,9 @@ def run(
             click.echo(f"Thought: {action.thought}")
     else:
         click.echo(f"Parse Error: {action.parse_error}")
-        click.echo(f"Raw Response: {action.raw_response[:200] if action.raw_response else 'None'}...")
+        click.echo(
+            f"Raw Response: {action.raw_response[:200] if action.raw_response else 'None'}..."
+        )
 
     # Save output if requested
     if output:
@@ -140,29 +147,34 @@ def run(
 
 @baselines.command()
 @click.option(
-    "--models", "-m",
+    "--models",
+    "-m",
     required=True,
     help="Comma-separated model aliases",
 )
 @click.option(
-    "--track", "-t",
+    "--track",
+    "-t",
     type=click.Choice(["A", "B", "C"]),
     default="A",
     help="Evaluation track",
 )
 @click.option(
-    "--image", "-i",
+    "--image",
+    "-i",
     type=click.Path(exists=True),
     required=True,
     help="Screenshot image path",
 )
 @click.option(
-    "--goal", "-g",
+    "--goal",
+    "-g",
     required=True,
     help="Task goal/instruction",
 )
 @click.option(
-    "--output", "-o",
+    "--output",
+    "-o",
     type=click.Path(),
     help="Output JSON file path",
 )
@@ -221,23 +233,27 @@ def compare(
             adapter = UnifiedBaselineAdapter.from_alias(model, track=track_config)
             action = adapter.predict(screenshot, goal)
 
-            results.append({
-                "model": model,
-                "success": action.is_valid,
-                "action": action.to_dict(),
-                "error": action.parse_error,
-            })
+            results.append(
+                {
+                    "model": model,
+                    "success": action.is_valid,
+                    "action": action.to_dict(),
+                    "error": action.parse_error,
+                }
+            )
 
             status = "OK" if action.is_valid else "FAILED"
             click.echo(f"  {status}: {action.action_type}")
 
         except Exception as e:
-            results.append({
-                "model": model,
-                "success": False,
-                "action": None,
-                "error": str(e),
-            })
+            results.append(
+                {
+                    "model": model,
+                    "success": False,
+                    "action": None,
+                    "error": str(e),
+                }
+            )
             click.echo(f"  ERROR: {e}")
 
     # Summary table

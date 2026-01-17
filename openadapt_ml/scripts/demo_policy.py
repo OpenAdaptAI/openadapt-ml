@@ -20,7 +20,9 @@ def main() -> None:
     args = parser.parse_args()
 
     # Use synthetic data to build one SFT-style sample
-    sessions = generate_synthetic_sessions(num_sessions=1, seed=99, output_dir="synthetic/demo")
+    sessions = generate_synthetic_sessions(
+        num_sessions=1, seed=99, output_dir="synthetic/demo"
+    )
     episodes = [ep for sess in sessions for ep in sess.episodes]
     samples = build_next_action_sft_samples(episodes)
 
@@ -57,6 +59,7 @@ def main() -> None:
     print("Thought:", thought)
     print("State:", state)
     print("Raw output:", raw_text)
+
 
 if __name__ == "__main__":
     main()

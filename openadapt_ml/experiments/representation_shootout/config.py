@@ -32,7 +32,9 @@ class MetricName(str, Enum):
     """Metrics computed during evaluation."""
 
     CLICK_HIT_RATE = "click_hit_rate"  # Clicks within target bbox
-    GROUNDING_TOP1_ACCURACY = "grounding_top1_accuracy"  # Correct element ID (marks only)
+    GROUNDING_TOP1_ACCURACY = (
+        "grounding_top1_accuracy"  # Correct element ID (marks only)
+    )
     EPISODE_SUCCESS_RATE = "episode_success_rate"  # Episodes reaching goal
     COORD_DISTANCE = "coord_distance"  # L2 distance to target (normalized)
     ROBUSTNESS_SCORE = "robustness_score"  # Performance ratio: drift / canonical
@@ -85,12 +87,19 @@ class MarksConfig:
 
     overlay_enabled: bool = True
     font_size: int = 12
-    label_background: tuple[int, int, int, int] = (0, 0, 255, 200)  # Blue, semi-transparent
+    label_background: tuple[int, int, int, int] = (
+        0,
+        0,
+        255,
+        200,
+    )  # Blue, semi-transparent
     label_text_color: tuple[int, int, int] = (255, 255, 255)  # White
 
     max_elements: int = 50
     include_roles: list[str] | None = None  # None = include all
-    exclude_roles: list[str] = field(default_factory=lambda: ["group", "generic", "static_text"])
+    exclude_roles: list[str] = field(
+        default_factory=lambda: ["group", "generic", "static_text"]
+    )
 
 
 @dataclass
@@ -117,7 +126,9 @@ class ConditionConfig:
     marks: MarksConfig | None = None
 
     # Training config
-    loss_type: str = "mse"  # "mse" for coordinate regression, "cross_entropy" for classification
+    loss_type: str = (
+        "mse"  # "mse" for coordinate regression, "cross_entropy" for classification
+    )
 
     @classmethod
     def raw_coords(cls, **kwargs: Any) -> ConditionConfig:
@@ -142,13 +153,13 @@ class ConditionConfig:
         )
 
     @classmethod
-    def marks(cls, **kwargs: Any) -> ConditionConfig:
+    def marks(cls, **kwargs: Any) -> ConditionConfig:  # noqa: F811
         """Create Condition C (Marks/Element IDs) config."""
-        marks = kwargs.pop("marks", None) or MarksConfig()
+        marks_config = kwargs.pop("marks", None) or MarksConfig()
         return cls(
             name=ConditionName.MARKS,
             output_format=OutputFormat.ELEMENT_ID,
-            marks=marks,
+            marks=marks_config,
             loss_type="cross_entropy",
             **kwargs,
         )
@@ -196,7 +207,12 @@ class DriftConfig:
 
     name: str
     drift_type: DriftType
-    params: ResolutionDriftParams | TranslationDriftParams | ThemeDriftParams | ScrollDriftParams
+    params: (
+        ResolutionDriftParams
+        | TranslationDriftParams
+        | ThemeDriftParams
+        | ScrollDriftParams
+    )
     is_canonical: bool = False
 
     @classmethod
@@ -369,8 +385,6 @@ class ExperimentConfig:
         if MetricName.GROUNDING_TOP1_ACCURACY in self.metrics:
             has_marks = any(c.name == ConditionName.MARKS for c in self.conditions)
             if not has_marks:
-                issues.append(
-                    "GROUNDING_TOP1_ACCURACY metric requires MARKS condition"
-                )
+                issues.append("GROUNDING_TOP1_ACCURACY metric requires MARKS condition")
 
         return issues

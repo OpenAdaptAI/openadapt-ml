@@ -126,6 +126,7 @@ def main(
     # Disable Unsloth if requested
     if not use_unsloth:
         import os
+
         os.environ["OPENADAPT_DISABLE_UNSLOTH"] = "1"
 
     base_path = Path(capture_path).parent if capture_path else None
@@ -142,6 +143,7 @@ def main(
     # Open dashboard in browser if requested
     if open_dashboard:
         import webbrowser
+
         dashboard_path = Path(output_dir) / "dashboard.html"
         if dashboard_path.exists():
             webbrowser.open(f"file://{dashboard_path.absolute()}")
@@ -153,22 +155,32 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Train Qwen-VL adapter on synthetic data or openadapt-capture recordings."
     )
-    parser.add_argument("--config", type=str, required=True, help="Path to YAML config file.")
-    parser.add_argument("--capture", type=str, help="Path to openadapt-capture recording directory.")
-    parser.add_argument("--goal", type=str, help="Task goal/description (overrides recording's task description).")
-    parser.add_argument("--output-dir", type=str, help="Output directory for logs and dashboard.")
-    parser.add_argument("--open", action="store_true", help="Open training dashboard in browser.")
+    parser.add_argument(
+        "--config", type=str, required=True, help="Path to YAML config file."
+    )
+    parser.add_argument(
+        "--capture", type=str, help="Path to openadapt-capture recording directory."
+    )
+    parser.add_argument(
+        "--goal",
+        type=str,
+        help="Task goal/description (overrides recording's task description).",
+    )
+    parser.add_argument(
+        "--output-dir", type=str, help="Output directory for logs and dashboard."
+    )
+    parser.add_argument(
+        "--open", action="store_true", help="Open training dashboard in browser."
+    )
 
     parser.add_argument(
         "--use-unsloth",
         action="store_true",
         default=True,
-        help="Enable Unsloth optimizations (default)."
+        help="Enable Unsloth optimizations (default).",
     )
     parser.add_argument(
-        "--no-unsloth",
-        action="store_true",
-        help="Disable Unsloth optimizations."
+        "--no-unsloth", action="store_true", help="Disable Unsloth optimizations."
     )
     args = parser.parse_args()
 
