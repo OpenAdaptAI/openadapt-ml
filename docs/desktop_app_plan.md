@@ -4,9 +4,95 @@
 
 This document outlines the strategy for distributing OpenAdapt as a downloadable desktop application. The goal is to provide a seamless installation experience where users can download, install, and start recording their first automation within minutes.
 
-## 1. Current State Analysis
+**Key insight**: The "end user app" doesn't need PyInstaller if uv can install Python, manage dependencies, and openadapt is published to PyPI. The question is whether we can make installing uv itself seamless enough for non-technical users.
 
-### 1.1 OpenAdapt.web Repository
+## 1. Installation Tiers (Priority Order)
+
+### Tier 1: Developer Install (uv-based) - PRIMARY
+
+This is the recommended installation method for most users.
+
+**macOS/Linux:**
+```bash
+# Install uv (one-liner)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install openadapt as CLI tool
+uv tool install openadapt
+
+# Run
+openadapt record
+```
+
+**Windows:**
+```powershell
+# Install uv (one-liner)
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Install openadapt as CLI tool
+uv tool install openadapt
+
+# Run
+openadapt record
+```
+
+**Why uv-first?**
+1. **uv can install Python automatically**: `uv python install 3.12` - no manual Python installation needed
+2. **uv can install tools globally**: `uv tool install openadapt` creates a managed virtual environment
+3. **Single command install**: No need for complex installers or bundled runtimes
+4. **Already using uv**: All new packages (openadapt-ml, evals, viewer, retrieval) use uv
+5. **Standardization**: One tool for everything (development and end-user installation)
+6. **Cross-platform**: Works on Windows, macOS, and Linux with identical commands
+7. **Automatic updates**: `uv tool upgrade openadapt` handles updates cleanly
+
+### Tier 2: End-User Install (uv bundled)
+
+For users who want a "click to install" experience without running terminal commands.
+
+**Option A: Installer Script**
+Small installer that:
+1. Downloads and installs uv
+2. Runs `uv tool install openadapt`
+3. Creates desktop shortcut
+
+**macOS/Linux:**
+```bash
+#!/bin/bash
+# install-openadapt.sh
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source ~/.bashrc  # or ~/.zshrc
+uv tool install openadapt
+echo "OpenAdapt installed! Run 'openadapt' to start."
+```
+
+**Windows:**
+```powershell
+# install-openadapt.ps1
+irm https://astral.sh/uv/install.ps1 | iex
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","User")
+uv tool install openadapt
+Write-Host "OpenAdapt installed! Run 'openadapt' to start."
+```
+
+**Option B: Lightweight Native Installer**
+- Small native installer (MSI/DMG) that:
+  - Bundles uv binary (~15MB)
+  - Runs post-install to `uv tool install openadapt`
+  - Creates Start Menu / Applications entry
+- Much smaller than PyInstaller bundle (~15MB vs ~200MB+)
+
+### Tier 3: Full Bundle (PyInstaller) - DEFERRED
+
+Only pursue if Tier 1/2 don't meet user needs:
+- Enterprise deployments with strict requirements
+- Air-gapped environments without internet access
+- Environments where users cannot install any software
+
+**Note**: This tier is deferred to Phase 2 and should only be implemented if there's demonstrated user demand.
+
+## 2. Current State Analysis
+
+### 2.1 OpenAdapt.web Repository
 
 **Repository**: https://github.com/openadaptai/openadapt.web
 
@@ -16,534 +102,288 @@ This document outlines the strategy for distributing OpenAdapt as a downloadable
 - JavaScript (87.6%), CSS (7.4%), TypeScript (4.7%)
 
 **Current Download Strategy**:
-- **No download button exists**. The website currently has:
+- **Download buttons exist** (dynamically generated via JavaScript showing download counts):
+  - Platform-specific download buttons with counts from GitHub releases API
+  - Version info: "Current Version: v0.46.0" with release date
+- Additional elements:
   - "Learn How" button -> scrolls to #industries section
   - "Get Started" button -> scrolls to #start section
   - Links to GitHub, Discord, X (Twitter), LinkedIn
-  - Email signup form
-  - Download statistics graph (fetches from GitHub releases API)
+  - Email signup form (collecting leads - KEEP)
+  - Industry use case sections (HR, Law, Insurance, etc.)
+  - Bounties section (REMOVE - no longer active)
+  - Gitbook documentation links (UPDATE or HIDE)
 
-**Key Components Analyzed**:
-- `MastHead.js`: Hero section with CTAs, no download functionality
-- `Footer.js`: Social links, legal pages, no app distribution
-- `DownloadGraph.js`: Visualizes GitHub release download counts
-- `pages/index.js`: Homepage layout with sections but no download page
-
-### 1.2 Current OpenAdapt Distribution
+### 2.2 Current OpenAdapt Distribution
 
 **Repository**: https://github.com/OpenAdaptAI/OpenAdapt
 
-**Current Installation Methods**:
-1. **Scripted Installation** (recommended):
-   - Windows: PowerShell script with admin elevation
-   - macOS: Bash script via curl requiring Git and Python 3.10
-2. **Manual Installation**: Python 3.10, Git, Tesseract, nvm, Poetry
+**Current Installation Methods** (to be replaced):
+1. ~~Scripted Installation~~: PowerShell/Bash scripts requiring Git, Python, Poetry
+2. ~~Manual Installation~~: Python 3.10, Git, Tesseract, nvm, Poetry
 
-**GitHub Releases**:
-- Semantic versioning (v0.46.0, v0.45.0, etc.)
-- 6 assets per release (source archives + zip files)
-- No pre-built binaries or platform-specific installers
-
-**Dependencies** (from pyproject.toml):
-- Python >=3.10,<3.12
-- Heavy ML dependencies: torch, transformers, openai, anthropic
-- GUI: pywebview, fastapi, uvicorn
-- Vision: pytesseract, easyocr, segment-anything, ultralytics
-
-### 1.3 Related Package Ecosystem
-
-| Package | Purpose | Status |
-|---------|---------|--------|
-| `openadapt` | Core recording/replay engine | Production |
-| `openadapt-ml` | ML training and inference | Active development |
-| `openadapt-capture` | Screen recording library | Published on PyPI |
-| `openadapt-retrieval` | Demo retrieval system | Active development |
-| `openadapt-evals` | Benchmark evaluation | Active development |
-
-## 2. Proposed App Architecture
-
-### 2.1 Recommended Approach: pywebview + PyInstaller
-
-**Rationale**:
-- OpenAdapt already uses `pywebview` for its GUI
-- Python-native approach aligns with existing codebase
-- Lighter weight than Electron (no bundled Chromium)
-- Uses native WebView (WinForms on Windows, Cocoa on macOS, GTK/QT on Linux)
-
-**Architecture**:
-```
-OpenAdapt Desktop App
-├── Python Runtime (bundled via PyInstaller)
-├── openadapt (core)
-├── openadapt-ml (ML engine)
-├── openadapt-capture (recording)
-├── FastAPI backend (local server)
-└── pywebview frontend (native WebView)
+**Target Installation Method** (uv-based):
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh  # Install uv
+uv tool install openadapt                         # Install openadapt
+openadapt record                                  # Run
 ```
 
-### 2.2 Alternative Approaches Considered
+### 2.3 Related Package Ecosystem
 
-| Approach | Pros | Cons | Recommendation |
-|----------|------|------|----------------|
-| **Electron** | Cross-platform, rich ecosystem, auto-updates | Heavy (~200MB), requires rewrite, duplicate bundling | Not recommended |
-| **Nuitka** | Better code protection, slight performance gains | Slower builds, less mature ecosystem | Consider for production |
-| **BeeWare/Briefcase** | Native look, Python-native | Less mature, requires specific project structure | Future consideration |
-| **Flet** | Modern Flutter UI, fast packaging | Different UI paradigm, learning curve | Not recommended |
+| Package | Purpose | Package Manager | Status |
+|---------|---------|-----------------|--------|
+| `openadapt` | Core recording/replay engine | uv (migration pending) | Production |
+| `openadapt-ml` | ML training and inference | uv | Active development |
+| `openadapt-capture` | Screen recording library | uv | Published on PyPI |
+| `openadapt-retrieval` | Demo retrieval system | uv | Active development |
+| `openadapt-evals` | Benchmark evaluation | uv | Active development |
 
-### 2.3 What to Include in the Download
+## 3. Architecture for uv-based Distribution
 
-**Core Bundle (Required)**:
-- Python 3.10+ runtime (embedded)
-- `openadapt` core package
-- `openadapt-capture` for screen recording
-- `pywebview` for GUI
-- `fastapi` + `uvicorn` for local API server
-- Tesseract OCR (bundled)
-- Database (SQLite, bundled)
-
-**Optional ML Components** (separate download or on-demand):
-- `openadapt-ml` (training, fine-tuning)
-- PyTorch (large, ~2GB)
-- Transformers
-- Cloud inference option (API-based, no local ML)
-
-**Recommended Bundle Strategy**:
-1. **Lite Bundle** (~200-300MB): Core recording/replay, cloud inference
-2. **Full Bundle** (~2-3GB): Includes local ML capabilities
-
-## 3. Platform Support
-
-### 3.1 Windows
-
-**Installer Format**: MSI (recommended) or NSIS
-- MSI: Better for enterprise deployment, silent install, Group Policy
-- NSIS: More customizable, smaller installer
-
-**Requirements**:
-- Windows 10/11 (64-bit)
-- Code signing certificate (EV recommended for SmartScreen reputation)
-- Elevated permissions for initial install
-
-**Build Tool**: PyInstaller with `--onedir` mode
-
-### 3.2 macOS
-
-**Installer Format**: DMG with signed .app bundle
-
-**Requirements**:
-- macOS 10.15 (Catalina) or later
-- Apple Developer ID certificate
-- Notarization with Apple
-
-**Special Considerations**:
-- Accessibility permissions required for screen recording
-- Need to guide users through System Preferences permissions
-- Universal binary (arm64 + x86_64) for M1/M2/Intel support
-
-**Build Tool**: PyInstaller + `create-dmg`
-
-### 3.3 Linux
-
-**Installer Formats**:
-- AppImage (recommended for broad compatibility)
-- .deb for Debian/Ubuntu
-- .rpm for Fedora/RHEL (optional)
-
-**Requirements**:
-- GTK3 or QT for pywebview
-- Tesseract system package
-
-**Build Tool**: PyInstaller + `appimagetool`
-
-## 4. Build and Release Pipeline
-
-### 4.1 CI/CD Workflow (GitHub Actions)
-
-```yaml
-# .github/workflows/build-desktop.yml
-name: Build Desktop App
-
-on:
-  push:
-    tags: ['v*']
-  workflow_dispatch:
-
-jobs:
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-      - name: Install dependencies
-        run: |
-          pip install pyinstaller
-          pip install -e .[desktop]
-      - name: Build with PyInstaller
-        run: pyinstaller openadapt.spec --clean
-      - name: Sign executable
-        run: # Code signing with EV certificate
-      - name: Create MSI installer
-        run: # WiX toolset or Inno Setup
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-installer
-          path: dist/*.msi
-
-  build-macos:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-      - name: Build with PyInstaller
-        run: pyinstaller openadapt.spec --clean
-      - name: Sign and notarize
-        run: |
-          codesign --deep --force --sign "$DEVELOPER_ID" dist/OpenAdapt.app
-          xcrun notarytool submit dist/OpenAdapt.app --wait
-          xcrun stapler staple dist/OpenAdapt.app
-      - name: Create DMG
-        run: create-dmg dist/OpenAdapt.app --out dist/
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-installer
-          path: dist/*.dmg
-
-  build-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-      - name: Build with PyInstaller
-        run: pyinstaller openadapt.spec --clean
-      - name: Create AppImage
-        run: |
-          # Create AppDir structure
-          # Package with appimagetool
-      - uses: actions/upload-artifact@v4
-        with:
-          name: linux-installer
-          path: dist/*.AppImage
-
-  release:
-    needs: [build-windows, build-macos, build-linux]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            windows-installer/*.msi
-            macos-installer/*.dmg
-            linux-installer/*.AppImage
-```
-
-### 4.2 Version Management
-
-- Use semantic versioning (MAJOR.MINOR.PATCH)
-- Tag releases trigger automated builds
-- Pre-release builds for beta testing
-- Use `python-semantic-release` for automated changelog
-
-## 5. Auto-Update Mechanism
-
-### 5.1 Recommended: PyUpdater
-
-[PyUpdater](https://github.com/Digital-Sapphire/PyUpdater) is designed specifically for PyInstaller applications.
-
-**Features**:
-- Delta updates (only download changed files)
-- Code signing verification
-- Multiple release channels (stable, beta)
-- Self-contained update client
-
-**Integration**:
-```python
-from pyupdater.client import Client
-from openadapt.config import APP_NAME, APP_VERSION
-
-def check_for_updates():
-    client = Client(
-        ClientConfig(),
-        refresh=True,
-    )
-    client.add_progress_hook(print_status)
-
-    app_update = client.update_check(APP_NAME, APP_VERSION)
-    if app_update:
-        app_update.download()
-        if app_update.is_downloaded():
-            app_update.extract_restart()
-```
-
-### 5.2 Update Server
-
-**Options**:
-1. **GitHub Releases** (simplest): Host releases on GitHub
-2. **S3/CloudFront**: For large files and CDN distribution
-3. **Self-hosted**: Control over update server
-
-**Recommended**: Start with GitHub Releases, migrate to S3 if needed.
-
-### 5.3 Update Channels
-
-| Channel | Purpose | Auto-update |
-|---------|---------|-------------|
-| Stable | Production releases | Yes (with confirmation) |
-| Beta | Pre-release testing | Yes (opt-in) |
-| Nightly | Development builds | No (manual only) |
-
-## 6. Code Signing Requirements
-
-### 6.1 Windows Code Signing
-
-**Certificate Types**:
-1. **Standard Code Signing** (~$200-500/year): Basic signing, may show SmartScreen warning initially
-2. **EV Code Signing** (~$300-600/year): Instant SmartScreen reputation, hardware token required
-
-**Recommended**: Start with Standard, upgrade to EV when download volume increases.
-
-**Providers**: DigiCert, Sectigo, SSL.com
-
-### 6.2 macOS Code Signing & Notarization
-
-**Requirements**:
-1. Apple Developer Program membership ($99/year)
-2. Developer ID Application certificate
-3. Notarization through Apple
-
-**Process**:
-1. Sign app bundle with Developer ID
-2. Submit to Apple for notarization (automated malware scan)
-3. Staple notarization ticket to app
-4. Create DMG with signed app
-
-**Tools**: `codesign`, `xcrun notarytool`, `xcrun stapler`
-
-## 7. User Journey
-
-### 7.1 Discovery and Download
+### 3.1 Package Structure
 
 ```
-1. User visits openadapt.ai
-2. Clicks prominent "Download" button
-3. Auto-detects OS, offers correct installer
-4. Shows manual platform selection if needed
-5. Download starts (~200MB lite, ~2GB full)
+openadapt (PyPI package)
+├── openadapt/
+│   ├── __init__.py
+│   ├── __main__.py          # Entry point for `python -m openadapt`
+│   ├── cli.py               # CLI commands (record, replay, etc.)
+│   ├── core/                # Core functionality
+│   ├── capture/             # Recording (or depends on openadapt-capture)
+│   └── gui/                 # pywebview GUI
+├── pyproject.toml           # uv-compatible with entry points
+└── README.md
 ```
 
-**Website Changes Required**:
-- Add Download page/section to openadapt.web
-- Platform detection JavaScript
-- Download statistics tracking
-- Clear system requirements
+### 3.2 Entry Points (pyproject.toml)
 
-### 7.2 Installation
+```toml
+[project.scripts]
+openadapt = "openadapt.cli:main"
 
-**Windows**:
-```
-1. Run .msi installer
-2. UAC prompt for admin permissions
-3. Choose install location (default: Program Files)
-4. Optional: Create desktop shortcut
-5. Installation completes (~30 seconds)
+[project.gui-scripts]
+openadapt-gui = "openadapt.gui:main"
 ```
 
-**macOS**:
-```
-1. Open .dmg file
-2. Drag OpenAdapt.app to Applications
-3. First launch: Right-click -> Open (Gatekeeper)
-4. Grant accessibility permissions (guided)
-5. Grant screen recording permissions (guided)
+### 3.3 Dependencies
+
+**Core (always installed):**
+- `openadapt-capture` - Screen recording
+- `pywebview` - Native GUI
+- `fastapi` + `uvicorn` - Local API server
+- `sqlalchemy` - Database (SQLite bundled)
+
+**Optional ML (install on demand):**
+```bash
+uv tool install openadapt[ml]  # Includes torch, transformers, etc.
 ```
 
-**Linux**:
-```
-1. Download .AppImage
-2. chmod +x OpenAdapt.AppImage
-3. Run ./OpenAdapt.AppImage
-4. Optional: Integrate with desktop
-```
+## 4. Website Changes Required
 
-### 7.3 First Run Experience
-
-```
-1. Launch OpenAdapt
-2. Welcome screen with quick tour
-3. Permissions check (macOS: accessibility, screen recording)
-4. Optional: Sign in / create account (for cloud features)
-5. Tutorial: Record your first automation
-   a. Click "Record" button
-   b. Perform actions to automate
-   c. Click "Stop" button
-   d. Review recording in viewer
-6. Tutorial: Replay automation
-   a. Select recording
-   b. Click "Replay" button
-   c. Watch automation execute
-7. Prompt: Train AI model (optional, requires ML bundle)
-```
-
-### 7.4 Ongoing Use
-
-```
-- System tray icon for quick access
-- Hotkey to start/stop recording
-- Automatic updates (with user confirmation)
-- Cloud sync for recordings (optional)
-- Model training progress dashboard
-```
-
-## 8. OpenAdapt.web Changes Required
-
-### 8.1 New Components
+### 4.1 New Download Section
 
 ```javascript
 // components/DownloadSection.js
 const DownloadSection = () => {
-  const [detectedOS, setDetectedOS] = useState(null);
+  const [selectedOS, setSelectedOS] = useState('auto');
 
-  useEffect(() => {
-    // Detect user's OS
-    const platform = navigator.platform;
-    if (platform.includes('Win')) setDetectedOS('windows');
-    else if (platform.includes('Mac')) setDetectedOS('macos');
-    else if (platform.includes('Linux')) setDetectedOS('linux');
-  }, []);
+  const installCommands = {
+    macos: `curl -LsSf https://astral.sh/uv/install.sh | sh
+uv tool install openadapt
+openadapt`,
+    linux: `curl -LsSf https://astral.sh/uv/install.sh | sh
+uv tool install openadapt
+openadapt`,
+    windows: `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+uv tool install openadapt
+openadapt`,
+  };
 
   return (
     <section id="download">
-      <h2>Download OpenAdapt</h2>
-      <DownloadButton os={detectedOS} />
-      <PlatformSelector />
-      <SystemRequirements />
+      <h2>Install OpenAdapt</h2>
+      <p>Install in seconds with a single command.</p>
+
+      <PlatformTabs
+        selected={selectedOS}
+        onSelect={setSelectedOS}
+      />
+
+      <CodeBlock
+        code={installCommands[selectedOS]}
+        copyable
+      />
+
+      <p className="text-muted">
+        <a href="/install">Need help?</a> |
+        <a href="https://docs.astral.sh/uv/">What is uv?</a>
+      </p>
     </section>
   );
 };
 ```
 
-### 8.2 Download Button Component
+### 4.2 Pages to Add
 
-```javascript
-// components/DownloadButton.js
-const DOWNLOAD_URLS = {
-  windows: 'https://github.com/OpenAdaptAI/OpenAdapt/releases/latest/download/OpenAdapt-Setup.msi',
-  macos: 'https://github.com/OpenAdaptAI/OpenAdapt/releases/latest/download/OpenAdapt.dmg',
-  linux: 'https://github.com/OpenAdaptAI/OpenAdapt/releases/latest/download/OpenAdapt.AppImage',
-};
+1. `/install` - Step-by-step installation guide with troubleshooting
+2. `/getting-started` - First-run tutorial after installation
+3. `/update` - How to update (`uv tool upgrade openadapt`)
 
-const DownloadButton = ({ os }) => (
-  <a
-    href={DOWNLOAD_URLS[os]}
-    className="btn btn-primary btn-large"
-    download
-  >
-    Download for {getPlatformName(os)}
-  </a>
-);
+## 5. Implementation Phases
+
+### Phase 1: uv Migration (2-3 weeks)
+- [ ] Migrate openadapt core from Poetry to uv
+- [ ] Add proper entry points in pyproject.toml
+- [ ] Test `uv tool install openadapt` from PyPI
+- [ ] Update website with installation commands
+- [ ] Create install troubleshooting guide
+
+### Phase 2: User Experience Polish (2-3 weeks)
+- [ ] Create installer scripts for one-click setup
+- [ ] First-run onboarding wizard in app
+- [ ] System tray integration
+- [ ] Auto-update check (prompt user to run `uv tool upgrade`)
+
+### Phase 3: PyInstaller Fallback (DEFERRED - 4-6 weeks if needed)
+- [ ] Only if Tier 1/2 don't meet user needs
+- [ ] Create PyInstaller spec file
+- [ ] Build platform-specific installers
+- [ ] Set up GitHub Actions workflow
+- [ ] Code signing (Windows EV, macOS notarization)
+
+## 6. Platform Support
+
+### 6.1 All Platforms (via uv)
+
+uv supports:
+- **Windows**: 10/11 (64-bit)
+- **macOS**: 10.12+ (Intel and Apple Silicon)
+- **Linux**: glibc 2.17+ (most modern distros)
+
+uv automatically:
+- Downloads and manages Python versions
+- Creates isolated tool environments
+- Handles PATH configuration
+
+### 6.2 Platform-Specific Considerations
+
+**macOS:**
+- Accessibility permissions required for screen recording
+- First launch may require right-click -> Open (Gatekeeper)
+- Guide users through System Preferences permissions
+
+**Windows:**
+- May need to allow PowerShell script execution
+- Windows Defender SmartScreen warning (can be bypassed)
+- UAC prompt if permissions needed
+
+**Linux:**
+- May need to install system packages for GUI (GTK/QT)
+- Some distros may need Tesseract installed separately
+
+## 7. User Journey
+
+### 7.1 Discovery and Install
+
+```
+1. User visits openadapt.ai
+2. Sees "Install in 30 seconds" section
+3. Copies installation command for their OS
+4. Pastes in terminal and runs
+5. OpenAdapt is ready to use
 ```
 
-### 8.3 Pages to Add
+### 7.2 First Run Experience
 
-1. `/download` - Dedicated download page with all platforms
-2. `/install` - Installation guide with troubleshooting
-3. `/getting-started` - First-run tutorial
+```
+1. Run `openadapt` command
+2. GUI launches with welcome screen
+3. Permissions check (macOS: accessibility, screen recording)
+4. Quick tutorial: Record your first automation
+5. User is productive in < 5 minutes
+```
 
-## 9. Implementation Phases
+### 7.3 Updates
 
-### Phase 1: MVP (4-6 weeks)
-- [ ] Create PyInstaller spec file
-- [ ] Build Windows MSI installer
-- [ ] Build macOS DMG (signed and notarized)
-- [ ] Build Linux AppImage
-- [ ] Set up GitHub Actions workflow
-- [ ] Add download section to website
-- [ ] Basic auto-update check (no delta updates)
+```bash
+# User runs:
+uv tool upgrade openadapt
 
-### Phase 2: Polish (2-4 weeks)
-- [ ] Implement PyUpdater for delta updates
-- [ ] Add update channels (stable/beta)
-- [ ] First-run onboarding wizard
-- [ ] System tray integration
-- [ ] Keyboard shortcuts
+# App can also prompt and run this for user
+```
 
-### Phase 3: Advanced (4-6 weeks)
-- [ ] Lite vs Full bundle options
-- [ ] On-demand ML model download
-- [ ] Cloud account integration
-- [ ] Usage analytics (opt-in)
-- [ ] Crash reporting
+## 8. Comparison: uv vs PyInstaller
 
-### Phase 4: App Store Distribution (Optional)
-- [ ] Microsoft Store submission
-- [ ] Mac App Store submission (requires sandbox)
-- [ ] Snap/Flatpak for Linux
+| Aspect | uv-based | PyInstaller |
+|--------|----------|-------------|
+| Download size | ~15MB (uv) + packages on demand | ~200MB-2GB bundle |
+| Installation | Single command | Download installer, run wizard |
+| Updates | `uv tool upgrade` | Download new installer |
+| Python version | Managed by uv | Bundled, static |
+| Dependencies | Resolved at install | Frozen at build time |
+| Build complexity | None (uses PyPI) | CI/CD pipeline, signing |
+| Cross-platform | Same commands | Separate builds per OS |
+| Maintenance | Low (PyPI handles distribution) | High (build infra, signing certs) |
 
-## 10. Cost Estimates
+**Conclusion**: uv-based installation is simpler, lighter, and easier to maintain.
 
-### One-Time Costs
+## 9. Cost Estimates
+
+### uv-based Approach (Tier 1/2)
+
 | Item | Cost |
 |------|------|
-| Windows Code Signing (EV, 3-year) | $1,000-1,500 |
-| Apple Developer Program (1 year) | $99 |
-| Build infrastructure setup | Internal time |
+| PyPI hosting | Free |
+| GitHub Actions (testing) | Free tier sufficient |
+| Website updates | Internal time |
+| **Total** | **$0/year** |
 
-### Ongoing Costs
+### PyInstaller Approach (Tier 3, if needed)
+
 | Item | Cost/Year |
 |------|-----------|
 | Apple Developer Program | $99 |
-| Windows Code Signing renewal | $300-500 |
-| GitHub Actions (free tier sufficient) | $0 |
-| S3/CloudFront (if used for updates) | ~$50-100 |
+| Windows Code Signing (EV) | $300-500 |
+| GitHub Actions (builds) | Free tier likely sufficient |
+| S3/CloudFront (updates) | ~$50-100 |
+| **Total** | **~$500-700/year** |
 
-## 11. Security Considerations
+## 10. Security Considerations
 
-1. **Code Signing**: All executables must be signed
-2. **Update Verification**: Cryptographic verification of updates
-3. **Sandbox Mode**: Consider for Mac App Store
-4. **Privacy**: No telemetry without explicit consent
-5. **API Keys**: Securely store user API keys (OS keychain)
-6. **Permissions**: Request minimum necessary permissions
+1. **Package Signing**: PyPI packages are signed via Trusted Publishing
+2. **Script Verification**: Installation scripts from astral.sh are signed
+3. **Dependency Pinning**: uv.lock ensures reproducible installs
+4. **Permissions**: Request minimum necessary OS permissions
+5. **API Keys**: Store in OS keychain (via keyring library)
 
-## 12. Success Metrics
+## 11. Success Metrics
 
 | Metric | Target |
 |--------|--------|
-| Download-to-first-recording time | < 5 minutes |
+| Install-to-first-recording time | < 5 minutes |
 | Installation success rate | > 95% |
-| Auto-update adoption rate | > 80% |
-| Crash-free sessions | > 99% |
-| User retention (7-day) | > 40% |
+| Command simplicity | 3 lines or less |
+| Support tickets per 100 installs | < 5 |
 
-## 13. References
+## 12. References
 
-### Python Desktop Packaging
-- [PyInstaller Documentation](https://pyinstaller.org/en/stable/)
-- [Nuitka User Manual](https://nuitka.net/doc/user-manual.html)
+### uv Documentation
+- [uv Installation](https://docs.astral.sh/uv/getting-started/installation/)
+- [uv Tool Management](https://docs.astral.sh/uv/guides/tools/)
+- [uv Python Management](https://docs.astral.sh/uv/guides/install-python/)
+
+### Python Packaging
+- [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/)
 - [pywebview Documentation](https://pywebview.flowrl.com/)
-- [BeeWare Briefcase](https://briefcase.beeware.org/)
 
-### Auto-Update Solutions
-- [PyUpdater](https://www.pyupdater.org/)
-- [Updater4pyi](https://updater4pyi.readthedocs.io/)
-
-### Code Signing
+### PyInstaller (for Tier 3 if needed)
+- [PyInstaller Documentation](https://pyinstaller.org/en/stable/)
 - [Apple Developer ID](https://developer.apple.com/developer-id/)
 - [Windows Code Signing](https://learn.microsoft.com/en-us/windows/win32/seccrypto/cryptography-tools)
-- [DigiCert Code Signing](https://comparecheapssl.com/digicert-code-signing-for-mac-developers-a-complete-guide/)
-
-### Build Automation
-- [GitHub Actions](https://docs.github.com/en/actions)
-- [electron-builder (for reference)](https://www.electron.build/)
 
 ---
 
-*Document Version: 1.0*
+*Document Version: 2.0*
 *Last Updated: January 2026*
+*Major revision: Shifted from PyInstaller-first to uv-first approach*
