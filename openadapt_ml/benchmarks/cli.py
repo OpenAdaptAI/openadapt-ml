@@ -89,6 +89,7 @@ import argparse
 import json
 import logging
 import sys
+import warnings
 from pathlib import Path
 
 from openadapt_ml.config import settings
@@ -104,7 +105,6 @@ logging.getLogger("msrest").setLevel(logging.WARNING)
 logging.getLogger("openadapt_ml.benchmarks.azure").setLevel(logging.WARNING)
 
 # Suppress Azure SDK experimental class warnings
-import warnings
 warnings.filterwarnings("ignore", message=".*experimental class.*")
 
 # SSH options to handle host key changes when VMs are recreated
@@ -198,20 +198,13 @@ def bypass_product_key_dialog(ip: str, max_attempts: int = 3) -> bool:
     # QEMU sendkey commands to navigate to "I don't have a product key" link
     # The link is at the bottom of the dialog - Tab navigates through UI elements
     # We need to Tab to the link and press Enter
-    qemu_commands = '''
-# Navigate to "I don't have a product key" link and click it
-# Tab through: text field -> Next button -> Back button -> link
-sendkey tab
-sendkey tab
-sendkey tab
-sendkey tab
-sendkey ret
-'''
+    # Navigate to "I don't have a product key" link and click it
+    # Tab through: text field -> Next button -> Back button -> link
 
     for attempt in range(max_attempts):
         try:
             # Send commands via QEMU monitor (port 7100 in container)
-            ssh_cmd = f'''
+            ssh_cmd = '''
 # Use telnet to send QEMU commands
 (
 echo "sendkey tab"
@@ -354,8 +347,8 @@ def cmd_az_status(args: argparse.Namespace) -> None:
         version = output.split("\n")[0] if output else "unknown"
         print(f"  Azure CLI:        ✓ {version}")
     else:
-        print(f"  Azure CLI:        ✗ Not installed")
-        print(f"                    Install: brew install azure-cli")
+        print("  Azure CLI:        ✗ Not installed")
+        print("                    Install: brew install azure-cli")
         return
 
     # Check login
@@ -363,7 +356,7 @@ def cmd_az_status(args: argparse.Namespace) -> None:
     if ok:
         print(f"  Logged in:        ✓ {output}")
     else:
-        print(f"  Logged in:        ✗ Run: az login")
+        print("  Logged in:        ✗ Run: az login")
         return
 
     # Check resource group
@@ -376,7 +369,7 @@ def cmd_az_status(args: argparse.Namespace) -> None:
         print(f"  Resource group:   ✓ {rg} ({output})")
     else:
         print(f"  Resource group:   ✗ {rg} not found")
-        print(f"                    Run: python scripts/setup_azure.py")
+        print("                    Run: python scripts/setup_azure.py")
         return
 
     # Check ML workspace
@@ -407,10 +400,10 @@ def cmd_az_status(args: argparse.Namespace) -> None:
         "WAA Docker image"
     )
     if ok:
-        print(f"  WAA Docker image:   ✓ winarena")
+        print("  WAA Docker image:   ✓ winarena")
     else:
-        print(f"  WAA Docker image:   ✗ Not imported")
-        print(f"                    Run: python scripts/setup_azure.py")
+        print("  WAA Docker image:   ✗ Not imported")
+        print("                    Run: python scripts/setup_azure.py")
 
     # Check .env file
     env_path = Path(".env")
@@ -419,7 +412,7 @@ def cmd_az_status(args: argparse.Namespace) -> None:
         has_azure = "AZURE_SUBSCRIPTION_ID" in env_content
         print(f"  .env file:        ✓ {'Azure credentials found' if has_azure else 'Missing Azure credentials'}")
     else:
-        print(f"  .env file:        ✗ Not found")
+        print("  .env file:        ✗ Not found")
 
     # Check WAA submodule
     waa_path = find_waa_path()
@@ -433,8 +426,8 @@ def cmd_az_status(args: argparse.Namespace) -> None:
         except Exception as e:
             print(f"  WAA submodule:    ⚠ Found but error: {e}")
     else:
-        print(f"  WAA submodule:    ✗ Not found")
-        print(f"                    Run: git submodule update --init --recursive")
+        print("  WAA submodule:    ✗ Not found")
+        print("                    Run: git submodule update --init --recursive")
 
     print()
     print("Ready for benchmark evaluation!" if ok else "Some resources missing - run setup_azure.py")
@@ -473,7 +466,7 @@ def cmd_run_local(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     # Run evaluation
-    print(f"\nRunning WAA evaluation...")
+    print("\nRunning WAA evaluation...")
     print(f"  WAA path: {waa_path}")
     print(f"  Tasks: {len(task_ids) if task_ids else 'all (154)'}")
     print(f"  Max steps: {args.max_steps}")
@@ -675,7 +668,7 @@ def cmd_run_azure(args: argparse.Namespace) -> None:
     num_tasks = len(task_ids) if task_ids else len(all_task_ids)
     estimate = estimate_cost(num_tasks=num_tasks, num_workers=args.workers)
 
-    print(f"\n=== Azure WAA Evaluation ===")
+    print("\n=== Azure WAA Evaluation ===")
     print(f"  Workers:          {args.workers}")
     print(f"  Tasks:            {num_tasks}")
     print(f"  Job timeout:      {args.timeout} hours")
@@ -816,7 +809,7 @@ def cmd_test_mock(args: argparse.Namespace) -> None:
         evaluate_agent_on_benchmark,
     )
 
-    print(f"\n=== Testing with Mock Adapter ===")
+    print("\n=== Testing with Mock Adapter ===")
     print(f"  Tasks:     {args.tasks}")
     print(f"  Max steps: {args.max_steps}")
     print()
@@ -860,7 +853,7 @@ def cmd_test_smart(args: argparse.Namespace) -> None:
         evaluate_agent_on_benchmark,
     )
 
-    print(f"\n=== Testing with SmartMockAgent ===")
+    print("\n=== Testing with SmartMockAgent ===")
     print(f"  Tasks:     {args.tasks}")
     print(f"  Max steps: {args.max_steps}")
     print()
@@ -902,7 +895,7 @@ def cmd_test_collection(args: argparse.Namespace) -> None:
     from openadapt_ml.benchmarks import RandomAgent, WAAMockAdapter
     from openadapt_ml.benchmarks.runner import EvaluationConfig, evaluate_agent_on_benchmark
 
-    print(f"\n=== Testing Benchmark Data Collection ===")
+    print("\n=== Testing Benchmark Data Collection ===")
     print(f"  Tasks:       {args.tasks}")
     print(f"  Max steps:   {args.max_steps}")
     print(f"  Output dir:  {args.output}")
@@ -937,7 +930,7 @@ def cmd_test_collection(args: argparse.Namespace) -> None:
     success_rate = success_count / len(results) if results else 0.0
     avg_steps = sum(r.num_steps for r in results) / len(results) if results else 0.0
 
-    print(f"\n=== Results ===")
+    print("\n=== Results ===")
     print(f"Total tasks:  {len(results)}")
     print(f"Success:      {success_count} ({success_rate:.1%})")
     print(f"Failure:      {len(results) - success_count}")
@@ -950,26 +943,25 @@ def cmd_test_collection(args: argparse.Namespace) -> None:
         run_dir = run_dirs[0].parent
         with open(run_dirs[0]) as f:
             metadata = json.load(f)
-        run_name = metadata.get("run_name", run_dir.name)
+        _ = metadata.get("run_name", run_dir.name)
     else:
         run_dir = output_dir
-        run_name = "unknown"
 
-    print(f"\n=== Output Directory ===")
+    print("\n=== Output Directory ===")
     print(f"Location:     {run_dir.absolute()}")
-    print(f"\nDirectory structure:")
+    print("\nDirectory structure:")
     print(f"  {run_dir.name}/")
-    print(f"  ├── metadata.json")
-    print(f"  ├── summary.json")
-    print(f"  └── tasks/")
-    print(f"      ├── task_001/")
-    print(f"      │   ├── task.json")
-    print(f"      │   ├── execution.json")
-    print(f"      │   └── screenshots/")
-    print(f"      │       ├── step_000.png")
-    print(f"      │       ├── step_001.png")
-    print(f"      │       └── ...")
-    print(f"      └── ...")
+    print("  ├── metadata.json")
+    print("  ├── summary.json")
+    print("  └── tasks/")
+    print("      ├── task_001/")
+    print("      │   ├── task.json")
+    print("      │   ├── execution.json")
+    print("      │   └── screenshots/")
+    print("      │       ├── step_000.png")
+    print("      │       ├── step_001.png")
+    print("      │       └── ...")
+    print("      └── ...")
     print(f"\nYou can inspect the results at: {run_dir.absolute()}")
     print()
 
@@ -985,7 +977,6 @@ def cmd_waa_demo(args: argparse.Namespace) -> None:
     """
     from openadapt_ml.experiments.waa_demo.runner import (
         DemoConditionedAgent,
-        TASKS,
         get_complete_demos,
         get_task,
     )
@@ -995,7 +986,7 @@ def cmd_waa_demo(args: argparse.Namespace) -> None:
     )
     from openadapt_ml.benchmarks.runner import EvaluationConfig, evaluate_agent_on_benchmark
 
-    print(f"\n=== WAA Demo-Conditioned Experiment ===")
+    print("\n=== WAA Demo-Conditioned Experiment ===")
     print(f"  Condition:   {args.condition}")
     print(f"  Provider:    {args.provider}")
     print(f"  Tasks:       {args.tasks or 'all with demos'}")
@@ -1126,7 +1117,7 @@ def cmd_run_api(args: argparse.Namespace) -> None:
         "openai": "GPT-5.1",
     }
 
-    print(f"\n=== API-Backed Benchmark Evaluation ===")
+    print("\n=== API-Backed Benchmark Evaluation ===")
     print(f"  Provider:    {args.provider} ({provider_names.get(args.provider, 'Unknown')})")
     print(f"  Tasks:       {args.tasks}")
     print(f"  Max steps:   {args.max_steps}")
@@ -1137,14 +1128,14 @@ def cmd_run_api(args: argparse.Namespace) -> None:
     key_name = "ANTHROPIC_API_KEY" if args.provider == "anthropic" else "OPENAI_API_KEY"
     if not os.getenv(key_name):
         print(f"WARNING: {key_name} environment variable not set!")
-        print(f"  Set it in your .env file or export it before running.")
+        print("  Set it in your .env file or export it before running.")
         print()
 
     # Determine which adapter to use
     task_ids = None
     if args.mock:
         # User explicitly requested mock adapter
-        print(f"  Adapter:     Mock (forced by --mock flag)")
+        print("  Adapter:     Mock (forced by --mock flag)")
         print()
         adapter = WAAMockAdapter(num_tasks=args.tasks, domains=["browser", "office"])
     else:
@@ -1246,7 +1237,7 @@ def cmd_run_api(args: argparse.Namespace) -> None:
     if run_dirs:
         run_dir = run_dirs[0].parent
         print(f"Results saved to: {run_dir.absolute()}")
-        print(f"View with: uv run python -m openadapt_ml.cloud.local serve --open")
+        print("View with: uv run python -m openadapt_ml.cloud.local serve --open")
     print()
 
 
@@ -1301,7 +1292,7 @@ def cmd_status(args: argparse.Namespace) -> None:
     try:
         client = AzureMLClient(config)
         computes = client.list_compute_instances(prefix="w")
-        print(f"Connection:      OK")
+        print("Connection:      OK")
 
         if computes:
             print(f"\nActive Compute Instances ({len(computes)}):")
@@ -1315,7 +1306,7 @@ def cmd_status(args: argparse.Namespace) -> None:
             print("\nNo active compute instances.")
 
     except Exception as e:
-        print(f"Connection:      FAILED")
+        print("Connection:      FAILED")
         print(f"  Error: {e}")
 
     print()
@@ -1458,7 +1449,7 @@ def cmd_list_jobs(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     # Filter out experimental warnings
-    lines = [l for l in result.stdout.split("\n") if "experimental" not in l.lower()]
+    lines = [line for line in result.stdout.split("\n") if "experimental" not in line.lower()]
     print("\n".join(lines[:args.limit + 3]))  # +3 for header rows
 
 
@@ -1583,7 +1574,6 @@ def capture_vm_screenshot(ip: str, output_path: Path | str = None) -> Path | Non
         Path to the saved screenshot, or None on failure
     """
     import subprocess
-    import tempfile
     import shlex
 
     if output_path is None:
@@ -1997,12 +1987,12 @@ def launch_benchmark_viewer(
     import os
     import sys
 
-    print(f"\n=== Launching Benchmark Viewer ===\n")
+    print("\n=== Launching Benchmark Viewer ===\n")
     print(f"  VM IP: {vm_ip}")
     print(f"  Internal IP: {internal_ip}")
     print(f"  Local port: {port}")
     print(f"  Dashboard: http://localhost:{port}/benchmark.html")
-    print(f"  VNC available via button in viewer when VM is ready")
+    print("  VNC available via button in viewer when VM is ready")
     print()
 
     # Set environment variables for the server to use
@@ -2019,7 +2009,7 @@ def launch_benchmark_viewer(
     if open_browser:
         serve_cmd.append("--open")
 
-    print(f"  Press Ctrl+C to stop\n")
+    print("  Press Ctrl+C to stop\n")
 
     try:
         # Run the server
@@ -2058,6 +2048,7 @@ def cmd_vm(args: argparse.Namespace) -> None:
     inside Docker/QEMU.
     """
     import subprocess
+    import time
 
     vm_name = args.name
     resource_group = args.resource_group
@@ -2086,7 +2077,7 @@ def cmd_vm(args: argparse.Namespace) -> None:
         print("  - Standard_D8s_v3  (8 vCPU, 32GB) ~$0.38/hr")
         print("  - Standard_D4ds_v5 (4 vCPU, 16GB) ~$0.19/hr")
         print("  - Standard_D8ds_v5 (8 vCPU, 32GB) ~$0.38/hr")
-        print(f"\nTry different locations if sizes are unavailable: westus2, centralus, westeurope")
+        print("\nTry different locations if sizes are unavailable: westus2, centralus, westeurope")
         return
 
     elif args.action == "create":
@@ -2094,7 +2085,7 @@ def cmd_vm(args: argparse.Namespace) -> None:
         print(f"  Resource Group: {resource_group}")
         print(f"  Location: {location}")
         print(f"  VM Size: {vm_size} (supports nested virtualization)")
-        print(f"  OS: Ubuntu 22.04 LTS")
+        print("  OS: Ubuntu 22.04 LTS")
         print()
 
         # Check if VM already exists
@@ -2131,13 +2122,13 @@ def cmd_vm(args: argparse.Namespace) -> None:
         vm_info = json.loads(result.stdout)
         public_ip = vm_info.get("publicIpAddress", "unknown")
 
-        print(f"\n✓ VM created successfully!")
+        print("\n✓ VM created successfully!")
         print(f"\n  Public IP: {public_ip}")
         print(f"  SSH command: ssh azureuser@{public_ip}")
-        print(f"\n  Next steps:")
-        print(f"    1. SSH into the VM: uv run python -m openadapt_ml.benchmarks.cli vm ssh")
-        print(f"    2. Verify nested virt: egrep -c '(vmx|svm)' /proc/cpuinfo")
-        print(f"    3. Install Docker and run WAA")
+        print("\n  Next steps:")
+        print("    1. SSH into the VM: uv run python -m openadapt_ml.benchmarks.cli vm ssh")
+        print("    2. Verify nested virt: egrep -c '(vmx|svm)' /proc/cpuinfo")
+        print("    3. Install Docker and run WAA")
 
     elif args.action == "status":
         print(f"\n=== WAA Eval VM Status: {vm_name} ===\n")
@@ -2151,7 +2142,7 @@ def cmd_vm(args: argparse.Namespace) -> None:
 
         if result.returncode != 0:
             print(f"✗ VM '{vm_name}' not found in resource group '{resource_group}'")
-            print(f"  Create it with: uv run python -m openadapt_ml.benchmarks.cli vm create")
+            print("  Create it with: uv run python -m openadapt_ml.benchmarks.cli vm create")
             sys.exit(1)
 
         import json
@@ -2216,9 +2207,9 @@ def cmd_vm(args: argparse.Namespace) -> None:
             sys.exit(1)
 
         print(f"✓ VM '{vm_name}' deallocation initiated")
-        print(f"\n  Cost savings: Deallocated VMs do not incur compute charges.")
-        print(f"  Storage costs still apply. Use 'vm delete' to stop all charges.")
-        print(f"  To restart: python -m openadapt_ml.benchmarks.cli vm start")
+        print("\n  Cost savings: Deallocated VMs do not incur compute charges.")
+        print("  Storage costs still apply. Use 'vm delete' to stop all charges.")
+        print("  To restart: python -m openadapt_ml.benchmarks.cli vm start")
 
     elif args.action == "start":
         print(f"\n=== Starting VM: {vm_name} ===\n")
@@ -2235,7 +2226,7 @@ def cmd_vm(args: argparse.Namespace) -> None:
         print(f"✓ VM '{vm_name}' start initiated")
 
         # Wait for VM to be running and recover Docker (temp disk is wiped on deallocate)
-        print(f"\n  Waiting for VM to be ready...")
+        print("\n  Waiting for VM to be ready...")
         ip = None
         for _ in range(30):  # Wait up to 60 seconds
             time.sleep(2)
@@ -2253,14 +2244,14 @@ def cmd_vm(args: argparse.Namespace) -> None:
             print(f"  ✓ VM is running (IP: {ip})")
 
             # Recover Docker - /mnt is wiped when VM is deallocated
-            print(f"  Checking Docker...")
+            print("  Checking Docker...")
             result = subprocess.run(
                 ["ssh", *SSH_OPTS, f"azureuser@{ip}", "sudo docker ps 2>&1"],
                 capture_output=True, text=True
             )
 
             if "Cannot connect to the Docker daemon" in result.stdout or result.returncode != 0:
-                print(f"  Docker not running. Recovering...")
+                print("  Docker not running. Recovering...")
                 # Create Docker directories (symlinked to /mnt which gets wiped)
                 # Kill any stale processes, create dirs, start services
                 recovery_cmd = '''
@@ -2286,15 +2277,15 @@ def cmd_vm(args: argparse.Namespace) -> None:
                     capture_output=True, text=True
                 )
                 if result.returncode == 0:
-                    print(f"  ✓ Docker recovered and running")
+                    print("  ✓ Docker recovered and running")
                 else:
-                    print(f"  ⚠ Docker may not be running. Check with 'vm diag'")
+                    print("  ⚠ Docker may not be running. Check with 'vm diag'")
             else:
-                print(f"  ✓ Docker is running")
+                print("  ✓ Docker is running")
         else:
-            print(f"\n  Use 'vm status' to check when the VM is running.")
+            print("\n  Use 'vm status' to check when the VM is running.")
 
-        print(f"  Use 'vm monitor' to start dashboard when VM is ready.")
+        print("  Use 'vm monitor' to start dashboard when VM is ready.")
 
     elif args.action == "setup":
         print(f"\n=== Setting up WAA Eval VM: {vm_name} ===\n")
@@ -2340,11 +2331,11 @@ def cmd_vm(args: argparse.Namespace) -> None:
         if cpu_count and int(cpu_count) > 0:
             print(f"  ✓ Nested virt supported ({cpu_count} CPUs with vmx/svm)")
         else:
-            print(f"  ⚠ Nested virt may not be supported")
+            print("  ⚠ Nested virt may not be supported")
 
         print("\n[3/3] Setup complete!")
-        print(f"\n  Next: Pull WAA image with 'vm pull-image'")
-        print(f"  Or SSH in: uv run python -m openadapt_ml.benchmarks.cli vm ssh")
+        print("\n  Next: Pull WAA image with 'vm pull-image'")
+        print("  Or SSH in: uv run python -m openadapt_ml.benchmarks.cli vm ssh")
 
     elif args.action == "pull-image":
         print(f"\n=== Pulling WAA Docker Image to VM: {vm_name} ===\n")
@@ -2388,12 +2379,12 @@ def cmd_vm(args: argparse.Namespace) -> None:
             capture_output=False  # Show output live
         )
         if result.returncode != 0:
-            print(f"\n✗ Error pulling image")
+            print("\n✗ Error pulling image")
             sys.exit(1)
 
-        print(f"\n✓ WAA image pulled successfully!")
+        print("\n✓ WAA image pulled successfully!")
         print(f"\n  Image ready: {image}")
-        print(f"  Run WAA with: uv run python -m openadapt_ml.benchmarks.cli vm ssh")
+        print("  Run WAA with: uv run python -m openadapt_ml.benchmarks.cli vm ssh")
 
     elif args.action == "setup-waa":
         from openadapt_ml.benchmarks.vm_monitor import VMPoolRegistry
@@ -2535,7 +2526,7 @@ EOF'''
                 print("✗ Could not create VM in any region")
                 sys.exit(1)
 
-            print(f"\n[2/6] Installing Docker with /mnt storage (147GB)...")
+            print("\n[2/6] Installing Docker with /mnt storage (147GB)...")
             docker_cmds = [
                 "sudo apt-get update -qq",
                 "sudo apt-get install -y -qq docker.io",
@@ -2558,7 +2549,7 @@ EOF'''
             else:
                 print("  ✓ Docker installed with /mnt storage")
 
-            print(f"\n[3/6] Verifying nested virtualization...")
+            print("\n[3/6] Verifying nested virtualization...")
             result = subprocess.run(
                 ["ssh", *SSH_OPTS, f"azureuser@{ip}",
                  "egrep -c '(vmx|svm)' /proc/cpuinfo"],
@@ -2571,7 +2562,7 @@ EOF'''
                 print("  ✗ Nested virtualization not supported - WAA won't work")
                 sys.exit(1)
 
-            print(f"\n[4/6] Pulling dockurr/windows image (for Windows VM)...")
+            print("\n[4/6] Pulling dockurr/windows image (for Windows VM)...")
             # Use dockurr/windows directly - the ACR winarena image has broken dockur
             result = subprocess.run(
                 ["ssh", *SSH_OPTS, f"azureuser@{ip}",
@@ -2582,7 +2573,7 @@ EOF'''
                 print(f"  ⚠ Image pull warning: {result.stderr[:100] if result.stderr else ''}")
             print("  ✓ Windows image pulled")
 
-            print(f"\n[5/6] Cloning WindowsAgentArena repository...")
+            print("\n[5/6] Cloning WindowsAgentArena repository...")
             result = subprocess.run(
                 ["ssh", *SSH_OPTS, f"azureuser@{ip}",
                  "cd ~ && git clone --depth 1 https://github.com/microsoft/WindowsAgentArena.git 2>/dev/null || echo 'Already cloned'"],
@@ -2590,7 +2581,7 @@ EOF'''
             )
             print("  ✓ WAA repo cloned")
 
-            print(f"\n[6/6] Creating WAA config file...")
+            print("\n[6/6] Creating WAA config file...")
             api_key = args.api_key or settings.openai_api_key or ""
             if not api_key:
                 print("  ⚠ No API key provided. Set with --api-key, OPENAI_API_KEY env var, or in .env file")
@@ -2613,10 +2604,10 @@ EOF'''
             print("  WAA Setup Complete!")
             print(f"{'='*60}")
             print(f"\n  VM IP: {ip}")
-            print(f"\n  Next step: Prepare Windows image (one-time, ~20 min):")
-            print(f"    uv run python -m openadapt_ml.benchmarks.cli vm prepare-windows")
-            print(f"\n  Or run WAA directly (will auto-prepare on first run):")
-            print(f"    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5")
+            print("\n  Next step: Prepare Windows image (one-time, ~20 min):")
+            print("    uv run python -m openadapt_ml.benchmarks.cli vm prepare-windows")
+            print("\n  Or run WAA directly (will auto-prepare on first run):")
+            print("    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5")
 
         else:
             # Multi-worker mode: create multiple VMs in parallel
@@ -2640,11 +2631,10 @@ EOF'''
                 sys.exit(1)
 
             # Wait for VMs to be ready and get IPs
-            print(f"\n[2/4] Waiting for VMs to get public IPs...")
+            print("\n[2/4] Waiting for VMs to get public IPs...")
             import time as time_mod
             workers_with_ips = []
             for _ in range(30):  # Wait up to 5 minutes
-                all_ready = True
                 for name in created_vms:
                     if any(n == name for n, _ in workers_with_ips):
                         continue  # Already got IP
@@ -2656,8 +2646,6 @@ EOF'''
                     if result.stdout.strip():
                         workers_with_ips.append((name, result.stdout.strip()))
                         print(f"  ✓ {name}: {result.stdout.strip()}")
-                    else:
-                        all_ready = False
 
                 if len(workers_with_ips) == len(created_vms):
                     break
@@ -2686,7 +2674,7 @@ EOF'''
                         print(f"  ✗ {name}: Setup failed")
 
             # Create pool registry
-            print(f"\n[4/4] Registering VM pool...")
+            print("\n[4/4] Registering VM pool...")
             registry = VMPoolRegistry()
             pool = registry.create_pool(
                 workers=workers_with_ips,
@@ -2702,16 +2690,16 @@ EOF'''
             print(f"\n  Workers: {len(workers_with_ips)}")
             for name, ip in workers_with_ips:
                 print(f"    - {name}: {ip}")
-            print(f"\n  Next steps:")
-            print(f"    1. Check pool status:")
-            print(f"       uv run python -m openadapt_ml.benchmarks.cli vm pool-status")
-            print(f"    2. Prepare Windows on all workers (in parallel):")
-            print(f"       # TODO: implement prepare-windows --pool")
-            print(f"    3. Run parallel benchmark:")
-            print(f"       uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 30")
+            print("\n  Next steps:")
+            print("    1. Check pool status:")
+            print("       uv run python -m openadapt_ml.benchmarks.cli vm pool-status")
+            print("    2. Prepare Windows on all workers (in parallel):")
+            print("       # TODO: implement prepare-windows --pool")
+            print("    3. Run parallel benchmark:")
+            print("       uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 30")
 
     elif args.action == "prepare-windows":
-        print(f"\n=== Preparing Windows 11 VM for WAA (Fully Automated) ===\n")
+        print("\n=== Preparing Windows 11 VM for WAA (Fully Automated) ===\n")
         print("This builds a custom WAA container with automatic setup scripts.")
         print("First run downloads Windows 11 (~7GB). Setup is fully automatic - no VNC needed.\n")
 
@@ -2866,12 +2854,12 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
                 probe_result = None
 
             if probe_result and probe_result.stdout.strip():
-                print(f"\n✓ WAA Server ready!")
+                print("\n✓ WAA Server ready!")
                 print(f"\n  Windows VNC: http://{ip}:8006")
                 print(f"  WAA Server: http://{ip}:5000 (internal via localhost:5000)")
                 print(f"  QMP Port: {ip}:7200")
-                print(f"\n  To run WAA benchmarks:")
-                print(f"    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5")
+                print("\n  To run WAA benchmarks:")
+                print("    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5")
                 break
 
             # Show progress from docker logs
@@ -2898,7 +2886,7 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
         # Ensure unbuffered output for real-time streaming
         os.environ['PYTHONUNBUFFERED'] = '1'
 
-        print(f"\n=== Running WAA Benchmark ===\n", flush=True)
+        print("\n=== Running WAA Benchmark ===\n", flush=True)
 
         # Helper function to write live status for the viewer
         def write_live_status(status: str, phase: str = None, detail: str = None,
@@ -2980,14 +2968,14 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
                 print("  Set ANTHROPIC_API_KEY env var or in .env file")
                 sys.exit(1)
             api_key = anthropic_key
-            print(f"  API Key: ANTHROPIC_API_KEY (set)")
+            print("  API Key: ANTHROPIC_API_KEY (set)")
         else:
             # navi and api-openai both use OpenAI
             if not openai_key:
                 print("✗ No OpenAI API key provided. Set with --api-key, OPENAI_API_KEY env var, or in .env file")
                 sys.exit(1)
             api_key = openai_key
-            print(f"  API Key: OPENAI_API_KEY (set)")
+            print("  API Key: OPENAI_API_KEY (set)")
 
         # Set environment variables for the server to use (for SSE endpoint)
         os.environ["WAA_VM_IP"] = ip
@@ -2995,7 +2983,6 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
 
         # Launch benchmark viewer in background if --open is set
         # Use the proper server from local.py that has /api/benchmark-live endpoint
-        server_process = None
         if open_viewer:
             print(f"\n  Launching benchmark viewer at http://localhost:{port}/benchmark.html")
 
@@ -3213,7 +3200,7 @@ ls -lh /mnt/waa-storage/
             sys.exit(1)
 
         # Start WAA container with full benchmark run
-        print(f"[5/5] Starting WAA benchmark (this will take a while)...")
+        print("[5/5] Starting WAA benchmark (this will take a while)...")
         print(f"      Agent will run {num_tasks} tasks using {model}")
         if open_viewer:
             print(f"      Viewer running at: http://localhost:{port}/benchmark.html")
@@ -3334,8 +3321,8 @@ ls -lh /mnt/waa-storage/
         if returncode == 0:
             write_live_status("complete", detail=f"Benchmark complete! {tasks_completed}/{num_tasks} tasks",
                              tasks_completed=tasks_completed, total_tasks=num_tasks)
-            print(f"\n✓ WAA evaluation complete!")
-            print(f"\n  Results saved to: ~/waa-results on the VM")
+            print("\n✓ WAA evaluation complete!")
+            print("\n  Results saved to: ~/waa-results on the VM")
             print(f"  To download: scp azureuser@{ip}:~/waa-results/* ./benchmark_results/")
         else:
             write_live_status("error", detail=f"Benchmark finished with errors (exit code: {returncode})",
@@ -3345,21 +3332,21 @@ ls -lh /mnt/waa-storage/
         # Auto-shutdown VM if --auto-shutdown flag is set
         auto_shutdown = getattr(args, 'auto_shutdown', False)
         if auto_shutdown:
-            print(f"\n=== Auto-shutdown: Deallocating VM to save costs ===\n")
+            print("\n=== Auto-shutdown: Deallocating VM to save costs ===\n")
             deallocate_result = subprocess.run(
                 ["az", "vm", "deallocate", "-g", resource_group, "-n", vm_name, "--no-wait"],
                 capture_output=True, text=True
             )
             if deallocate_result.returncode == 0:
                 print(f"✓ VM '{vm_name}' deallocation initiated")
-                print(f"\n  Cost savings: Deallocated VMs do not incur compute charges.")
-                print(f"  Note: Storage costs still apply. Delete VM with 'vm delete' to stop all charges.")
+                print("\n  Cost savings: Deallocated VMs do not incur compute charges.")
+                print("  Note: Storage costs still apply. Delete VM with 'vm delete' to stop all charges.")
                 print(f"  To restart: az vm start -g {resource_group} -n {vm_name}")
             else:
                 print(f"✗ Failed to deallocate VM: {deallocate_result.stderr}")
 
     elif args.action == "fix-storage":
-        print(f"\n=== Fix WAA Storage (Move to /mnt for More Space) ===\n")
+        print("\n=== Fix WAA Storage (Move to /mnt for More Space) ===\n")
         print("Moves WAA storage from root disk (~10GB free) to /mnt temp disk (~115GB free).\n")
 
         # Get VM IP
@@ -3451,13 +3438,13 @@ ls -lh /mnt/waa-storage/
         print(f"\n{'='*60}")
         print("  Storage Fixed!")
         print(f"{'='*60}")
-        print(f"\n  Storage now on /mnt: ~115GB available")
+        print("\n  Storage now on /mnt: ~115GB available")
         print(f"  VNC: http://{ip}:8006")
-        print(f"\n  If Windows was installing, it will resume automatically.")
-        print(f"  Monitor: uv run python -m openadapt_ml.benchmarks.cli vm status")
+        print("\n  If Windows was installing, it will resume automatically.")
+        print("  Monitor: uv run python -m openadapt_ml.benchmarks.cli vm status")
 
     elif args.action == "docker-prune":
-        print(f"\n=== Docker Cleanup (Free Disk Space) ===\n")
+        print("\n=== Docker Cleanup (Free Disk Space) ===\n")
 
         # Get VM IP
         ip = get_vm_ip(resource_group, vm_name)
@@ -3488,7 +3475,7 @@ ls -lh /mnt/waa-storage/
         if prune_result.returncode == 0:
             # Extract space reclaimed
             output = prune_result.stdout
-            print(f"  ✓ Docker cleanup complete")
+            print("  ✓ Docker cleanup complete")
             if "Total reclaimed space" in output:
                 for line in output.split('\n'):
                     if "Total reclaimed space" in line:
@@ -3504,10 +3491,10 @@ ls -lh /mnt/waa-storage/
             capture_output=True, text=True
         )
         print(f"  {df_result.stdout}")
-        print(f"\n  Retry build: uv run python -m openadapt_ml.benchmarks.cli vm run-waa --rebuild")
+        print("\n  Retry build: uv run python -m openadapt_ml.benchmarks.cli vm run-waa --rebuild")
 
     elif args.action == "docker-move":
-        print(f"\n=== Move Docker Data to /mnt (147GB) ===\n")
+        print("\n=== Move Docker Data to /mnt (147GB) ===\n")
         print("Reconfigures Docker to use /mnt/docker for all images and layers.")
         print("This solves 'no space left on device' errors during docker build.\n")
 
@@ -3611,12 +3598,12 @@ echo "configured"
         print(f"\n{'='*60}")
         print("  Docker Data Moved to /mnt!")
         print(f"{'='*60}")
-        print(f"\n  Root disk now has space for OS only.")
-        print(f"  Docker images will use /mnt/docker (147GB available).")
-        print(f"\n  Next: uv run python -m openadapt_ml.benchmarks.cli vm run-waa --rebuild")
+        print("\n  Root disk now has space for OS only.")
+        print("  Docker images will use /mnt/docker (147GB available).")
+        print("\n  Next: uv run python -m openadapt_ml.benchmarks.cli vm run-waa --rebuild")
 
     elif args.action == "reset-windows":
-        print(f"\n=== Reset Windows (Clean Install) ===\n")
+        print("\n=== Reset Windows (Clean Install) ===\n")
         print("Deletes existing Windows disk image and does a fresh install.\n")
 
         # Get VM IP
@@ -3708,10 +3695,10 @@ ls -lh /mnt/waa-storage/
                 probe_result = None
 
             if probe_result and probe_result.stdout.strip():
-                print(f"\n✓ WAA Server ready!")
+                print("\n✓ WAA Server ready!")
                 print(f"  Probe response: {probe_result.stdout.strip()[:100]}")
-                print(f"\n  To run benchmarks:")
-                print(f"    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5")
+                print("\n  To run benchmarks:")
+                print("    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5")
                 break
 
             # Show progress from docker logs
@@ -3727,7 +3714,7 @@ ls -lh /mnt/waa-storage/
             print("  Windows installation may still be in progress.")
 
     elif args.action == "screenshot":
-        print(f"\n=== Capturing VM Screenshot ===\n")
+        print("\n=== Capturing VM Screenshot ===\n")
 
         ip = get_vm_ip(resource_group, vm_name)
         if not ip:
@@ -3742,14 +3729,14 @@ ls -lh /mnt/waa-storage/
 
         if result_path:
             print(f"  ✓ Screenshot saved to: {result_path}")
-            print(f"\n  View at: http://localhost:8080/vm_screenshot.png (if server running)")
+            print("\n  View at: http://localhost:8080/vm_screenshot.png (if server running)")
         else:
             print("  ✗ Failed to capture screenshot")
             print("  Make sure the winarena container is running and QEMU monitor is accessible.")
             sys.exit(1)
 
     elif args.action == "probe":
-        print(f"\n=== Checking WAA /probe Endpoint ===\n")
+        print("\n=== Checking WAA /probe Endpoint ===\n")
 
         ip = get_vm_ip(resource_group, vm_name)
         if not ip:
@@ -3767,10 +3754,10 @@ ls -lh /mnt/waa-storage/
             max_attempts = getattr(args, 'max_attempts', 30)
             interval = getattr(args, 'interval', 20)
             if poll_waa_probe(ip, max_attempts=max_attempts, interval=interval, internal_ip=internal_ip):
-                print(f"\n  Ready to run benchmarks:")
-                print(f"    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5")
+                print("\n  Ready to run benchmarks:")
+                print("    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5")
             else:
-                print(f"\n  VNC (via SSH tunnel): http://localhost:8006")
+                print("\n  VNC (via SSH tunnel): http://localhost:8006")
                 print(f"  Start tunnel: ssh -L 8006:{ip}:8006 azureuser@{ip}")
                 sys.exit(1)
         else:
@@ -3780,20 +3767,20 @@ ls -lh /mnt/waa-storage/
             is_ready, response = check_waa_probe(ip, internal_ip=internal_ip)
 
             if is_ready:
-                print(f"  ✓ WAA server is READY")
+                print("  ✓ WAA server is READY")
                 print(f"  Response: {response[:100] if response else '(empty)'}")
-                print(f"\n  Ready to run benchmarks:")
-                print(f"    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5")
+                print("\n  Ready to run benchmarks:")
+                print("    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5")
             else:
                 print("  ✗ WAA server NOT responding")
-                print(f"\n  To poll until ready, use: vm probe --wait")
-                print(f"  VNC (via SSH tunnel): http://localhost:8006")
+                print("\n  To poll until ready, use: vm probe --wait")
+                print("  VNC (via SSH tunnel): http://localhost:8006")
                 print(f"  Start tunnel: ssh -L 8006:{ip}:8006 azureuser@{ip}")
 
     elif args.action == "pool-status":
         from openadapt_ml.benchmarks.vm_monitor import VMPoolRegistry, VMMonitor, VMConfig
 
-        print(f"\n=== VM Pool Status ===\n")
+        print("\n=== VM Pool Status ===\n")
 
         registry = VMPoolRegistry()
         pool = registry.get_pool()
@@ -3875,9 +3862,9 @@ ls -lh /mnt/waa-storage/
         from datetime import datetime, timezone
         import json
 
-        print(f"\n=== Cleanup Stale Azure Resources ===\n")
+        print("\n=== Cleanup Stale Azure Resources ===\n")
         print(f"  Resource Group: {resource_group}")
-        print(f"  Workspace: openadapt-ml")
+        print("  Workspace: openadapt-ml")
         print(f"  Job threshold: {args.max_hours} hours")
         print(f"  VM threshold: {args.vm_max_hours} hours")
         print()
@@ -3936,7 +3923,7 @@ ls -lh /mnt/waa-storage/
                         continue
 
             except json.JSONDecodeError:
-                print(f"  Warning: Could not parse job list")
+                print("  Warning: Could not parse job list")
         else:
             print(f"  Warning: Could not list jobs: {result.stderr[:100]}")
 
@@ -4008,7 +3995,7 @@ ls -lh /mnt/waa-storage/
                             pass
 
             except json.JSONDecodeError:
-                print(f"  Warning: Could not parse VM list")
+                print("  Warning: Could not parse VM list")
         else:
             print(f"  Warning: Could not list VMs: {result.stderr[:100]}")
 
@@ -4100,7 +4087,7 @@ ls -lh /mnt/waa-storage/
 
         port = getattr(args, 'port', 8765)
         auto_shutdown_hours = getattr(args, 'auto_shutdown_hours', 0)
-        print(f"\n=== VM Monitor Dashboard ===\n")
+        print("\n=== VM Monitor Dashboard ===\n")
 
         # Check if server is already running on port
         def is_port_in_use(port: int) -> bool:
@@ -4139,7 +4126,7 @@ ls -lh /mnt/waa-storage/
             server_thread = threading.Thread(target=start_server, daemon=True)
             server_thread.start()
             time.sleep(1)
-            print(f"  ✓ Dashboard started")
+            print("  ✓ Dashboard started")
 
         # Start SSH tunnels for VNC and WAA
         ip = get_vm_ip(resource_group, vm_name)
@@ -4159,11 +4146,11 @@ ls -lh /mnt/waa-storage/
         # Open browser
         url = f"http://localhost:{port}/benchmark.html"
         print(f"\n  Opening: {url}")
-        print(f"  VNC: http://localhost:8006")
+        print("  VNC: http://localhost:8006")
         if auto_shutdown_hours > 0:
             shutdown_time = datetime.now() + timedelta(hours=auto_shutdown_hours)
             print(f"  Auto-shutdown: {shutdown_time.strftime('%H:%M:%S')} ({auto_shutdown_hours}h)")
-        print(f"\n  Press Ctrl+C to stop monitoring.\n")
+        print("\n  Press Ctrl+C to stop monitoring.\n")
         webbrowser.open(url)
 
         # Track start time for auto-shutdown
@@ -4248,11 +4235,11 @@ ls -lh /mnt/waa-storage/
             print(f"✗ VM '{vm_name}' not found. Run 'vm setup-waa' first.")
             sys.exit(1)
 
-        print(f"\n=== Testing Docker Run Command ===\n")
+        print("\n=== Testing Docker Run Command ===\n")
         print(f"  VM IP: {ip}")
 
         # First check for port conflicts
-        print(f"\n[1/3] Checking for port conflicts...")
+        print("\n[1/3] Checking for port conflicts...")
         check_cmd = "docker ps -a --format '{{.Names}} {{.Ports}}' 2>/dev/null || echo 'No containers'"
         result = subprocess.run(
             ["ssh", *SSH_OPTS, f"azureuser@{ip}", check_cmd],
@@ -4261,7 +4248,7 @@ ls -lh /mnt/waa-storage/
         print(f"  Containers: {result.stdout.strip()}")
 
         # Clean up any conflicting containers
-        print(f"\n[2/3] Cleaning up old containers...")
+        print("\n[2/3] Cleaning up old containers...")
         cleanup_cmd = "docker rm -f winarena winarena-test 2>/dev/null || true"
         subprocess.run(["ssh", *SSH_OPTS, f"azureuser@{ip}", cleanup_cmd], capture_output=True)
 
@@ -4279,7 +4266,7 @@ ls -lh /mnt/waa-storage/
   waa-auto:latest \
   "/copy-oem.sh echo OEM_FILES_COPIED && ls -la /tmp/smb/"'''
 
-        print(f"\n[3/3] Testing docker run with copy-oem.sh...")
+        print("\n[3/3] Testing docker run with copy-oem.sh...")
         print(f"  Command: {docker_cmd[:100]}...")
 
         result = subprocess.run(
@@ -4294,9 +4281,9 @@ ls -lh /mnt/waa-storage/
             print(f"\n  STDERR:\n{result.stderr}")
 
         if "OEM_FILES_COPIED" in result.stdout and "install.bat" in result.stdout:
-            print(f"\n✓ Docker test PASSED - OEM files copied correctly")
+            print("\n✓ Docker test PASSED - OEM files copied correctly")
         else:
-            print(f"\n✗ Docker test FAILED - OEM files not copied")
+            print("\n✗ Docker test FAILED - OEM files not copied")
 
     elif args.action == "start-server":
         # Start WAA Flask server inside Windows (for existing installations)
@@ -4306,7 +4293,7 @@ ls -lh /mnt/waa-storage/
             print(f"✗ VM '{vm_name}' not found. Run 'vm setup-waa' first.")
             sys.exit(1)
 
-        print(f"\n=== Starting WAA Server ===\n")
+        print("\n=== Starting WAA Server ===\n")
         print(f"  VM IP: {ip}")
 
         # Step 1: Copy startup script to VM
@@ -4448,12 +4435,12 @@ except Exception as e:
             time.sleep(5)
             is_ready, response = check_waa_probe(ip, internal_ip='172.30.0.2')
             if is_ready:
-                print(f"\n✓ WAA server is running!")
+                print("\n✓ WAA server is running!")
                 print(f"  Response: {response}")
                 break
             print(f"      Attempt {i+1}/6: Not ready yet...")
         else:
-            print(f"\n⚠ Server may not have started. Check VNC at http://localhost:8006")
+            print("\n⚠ Server may not have started. Check VNC at http://localhost:8006")
             print("  You can manually run: \\\\host.lan\\Data\\start_waa_server.bat")
 
     elif args.action == "fix-oem":
@@ -4463,7 +4450,7 @@ except Exception as e:
             print(f"✗ VM '{vm_name}' not found. Run 'vm setup-waa' first.")
             sys.exit(1)
 
-        print(f"Copying OEM files to Samba share...")
+        print("Copying OEM files to Samba share...")
         result = subprocess.run(
             ["ssh", *SSH_OPTS, f"azureuser@{ip}",
              "docker exec winarena sh -c 'cp -r /oem/* /tmp/smb/ 2>&1 && ls -la /tmp/smb/'"],
@@ -4503,7 +4490,7 @@ except Exception as e:
                 print(f"Error: {result.stderr}")
 
     elif args.action == "stop-build":
-        print(f"\n=== Stop Docker Build on VM ===\n")
+        print("\n=== Stop Docker Build on VM ===\n")
 
         # Get VM IP
         ip = get_vm_ip(resource_group, vm_name)
@@ -4630,7 +4617,6 @@ def cmd_view(args: argparse.Namespace) -> None:
     """
     import http.server
     import socketserver
-    import threading
     import webbrowser
 
     from openadapt_ml.benchmarks.viewer import generate_benchmark_viewer
@@ -4649,10 +4635,10 @@ def cmd_view(args: argparse.Namespace) -> None:
             else:
                 print("  (no benchmark runs found)")
         else:
-            print(f"  (directory does not exist)")
+            print("  (directory does not exist)")
         sys.exit(1)
 
-    print(f"\n=== Benchmark Viewer ===\n")
+    print("\n=== Benchmark Viewer ===\n")
     print(f"  Run: {args.run_name}")
     print(f"  Directory: {benchmark_dir}")
 
@@ -4752,7 +4738,7 @@ def cmd_export_traces(args: argparse.Namespace) -> None:
             print("  (no runs found)")
         sys.exit(1)
 
-    print(f"\n=== Export WAA Traces as Training Data ===\n")
+    print("\n=== Export WAA Traces as Training Data ===\n")
     print(f"  Source:      {benchmark_dir}")
     print(f"  Output:      {args.output}")
     print(f"  Filter:      {args.status}")
@@ -4769,10 +4755,10 @@ def cmd_export_traces(args: argparse.Namespace) -> None:
             create_jsonl=not args.no_jsonl,
         )
 
-        print(f"\n=== Export Complete ===")
+        print("\n=== Export Complete ===")
         print(f"  Exported {len(episodes)} episodes")
         print(f"  Total steps: {sum(len(ep.steps) for ep in episodes)}")
-        print(f"\nOutput files:")
+        print("\nOutput files:")
         print(f"  Episodes:  {args.output}/episodes/")
         if not args.no_screenshots:
             print(f"  Screenshots: {args.output}/screenshots/")
