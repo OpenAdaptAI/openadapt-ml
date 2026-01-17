@@ -1,6 +1,6 @@
 # OpenAdapt-ML
 
-[![Build Status](https://github.com/OpenAdaptAI/openadapt-ml/workflows/Publish%20to%20PyPI/badge.svg?branch=main)](https://github.com/OpenAdaptAI/openadapt-ml/actions)
+[![Build Status](https://github.com/OpenAdaptAI/openadapt-ml/actions/workflows/publish.yml/badge.svg)](https://github.com/OpenAdaptAI/openadapt-ml/actions/workflows/publish.yml)
 [![PyPI version](https://img.shields.io/pypi/v/openadapt-ml.svg)](https://pypi.org/project/openadapt-ml/)
 [![Downloads](https://img.shields.io/pypi/dm/openadapt-ml.svg)](https://pypi.org/project/openadapt-ml/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
