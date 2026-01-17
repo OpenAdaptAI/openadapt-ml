@@ -6,13 +6,49 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/downloads/)
 
+**OpenAdapt-ML** is the **ML engine** of the [OpenAdapt](https://github.com/OpenAdaptAI/OpenAdapt) GUI automation ecosystem. It handles training, inference, and policy runtime for vision-language models (VLMs) that power GUI automation agents.
+
+## Part of the OpenAdapt Ecosystem
+
+OpenAdapt uses a modular meta-package architecture. Each package has a focused responsibility:
+
+| Package | Description | Status |
+|---------|-------------|--------|
+| [openadapt](https://github.com/OpenAdaptAI/OpenAdapt) | Meta-package with unified CLI | Published |
+| [openadapt-capture](https://github.com/OpenAdaptAI/openadapt-capture) | GUI demonstration recording | Published |
+| **openadapt-ml** | **ML training and inference (this package)** | **Published** |
+| [openadapt-evals](https://github.com/OpenAdaptAI/openadapt-evals) | Benchmark evaluation (WAA, WebArena) | Published |
+| [openadapt-viewer](https://github.com/OpenAdaptAI/openadapt-viewer) | HTML visualization | Published |
+| [openadapt-grounding](https://github.com/OpenAdaptAI/openadapt-grounding) | UI element localization | Published |
+| [openadapt-retrieval](https://github.com/OpenAdaptAI/openadapt-retrieval) | Multimodal demo retrieval | Published |
+| [openadapt-privacy](https://github.com/OpenAdaptAI/openadapt-privacy) | PII/PHI scrubbing | Published |
+| [openadapt-agent](https://github.com/OpenAdaptAI/openadapt-agent) | Production agent execution | In Development |
+| [openadapt-tray](https://github.com/OpenAdaptAI/openadapt-tray) | System tray application | In Development |
+| [openadapt-telemetry](https://github.com/OpenAdaptAI/openadapt-telemetry) | Error reporting and analytics | In Development |
+
+### How OpenAdapt-ML Fits In
+
+```
+openadapt-capture  ───────>  openadapt-ml  ───────>  openadapt-evals
+    (Record)                   (Train)                (Evaluate)
+        │                         │                        │
+        v                         v                        v
+ Human demonstrations    Fine-tuned VLM models    Benchmark metrics
+                                  │
+                                  v
+                          openadapt-agent (Deploy)
+```
+
+---
+
+## Overview
+
 OpenAdapt-ML is a **model-agnostic, domain-agnostic ML engine** for GUI
 automation agents. It sits above **TRL + Unsloth** (which we use directly for training performance) and provides the GUI-specific layer:
 
 - **Episode semantics**: Step/action/observation alignment, screenshot-action coupling, termination handling
-- **Demo-conditioned inference**: Retrieval-augmented prompting (validated: 33% → 100% first-action accuracy)
-- **Benchmark adapters**: WAA today, OSWorld/WebArena planned
-- **VLM adapters**: Updated with leading GUI-agent SOTA open-source models
+- **Demo-conditioned inference**: Retrieval-augmented prompting (validated: 33% -> 100% first-action accuracy)
+- **VLM adapters**: Qwen3-VL, Qwen2.5-VL, and API backends (Claude, GPT)
 - **Training pipeline**: TRL + Unsloth integration for 2x faster training with 50% less VRAM
 
 OpenAdapt-ML is **not** a training framework, optimizer, hardware orchestrator, or experiment manager. We use TRL/Unsloth, Lambda Labs/Azure, and W&B/MLflow for those.
@@ -26,7 +62,30 @@ It provides:
 - **SFT training via TRL** with Unsloth optimizations for efficient fine-tuning.
 - A simple **runtime policy** API that predicts the next GUI action.
 
+> **Note**: Benchmark evaluation (WAA, WebArena, OSWorld) has been consolidated into the [openadapt-evals](https://github.com/OpenAdaptAI/openadapt-evals) package. See the [relationship to openadapt-evals](#15-relationship-to-openadapt-evals) section.
+
 The design is described in detail in [`docs/design.md`](docs/design.md).
+
+---
+
+## Key Innovation: Demo-Conditioned Prompting
+
+OpenAdapt's key differentiator is **demonstration-conditioned automation**. Instead of writing complex prompts, users record a demonstration and the system learns from it.
+
+| Metric | Without Demo | With Demo | Improvement |
+|--------|-------------|-----------|-------------|
+| First-action accuracy | 33% | **100%** | +67pp |
+
+This validates the core hypothesis: showing is more effective than telling for GUI automation.
+
+**Why it works**: Demonstrations provide:
+- **Spatial priors**: Where to click based on UI layout
+- **Procedural templates**: Action sequences for common patterns
+- **Domain grounding**: Context-specific terminology and workflows
+
+Demo conditioning integrates with [openadapt-retrieval](https://github.com/OpenAdaptAI/openadapt-retrieval) for automatic demo selection based on task similarity.
+
+See [`docs/experiments/demo_conditioned_prompting_results.md`](docs/experiments/demo_conditioned_prompting_results.md) for detailed experiment results.
 
 ---
 
@@ -45,13 +104,27 @@ uv add openadapt-ml[training]
 uv add openadapt-ml[api]
 ```
 
-### 1.2 From source (development)
+### 1.2 Via the OpenAdapt meta-package
+
+If you're using the full OpenAdapt ecosystem:
+
+```bash
+# Install via meta-package (recommended for full workflow)
+pip install openadapt[ml]
+
+# Or install the complete ecosystem
+pip install openadapt[all]
+```
+
+### 1.3 From source (development)
 
 ```bash
 git clone https://github.com/OpenAdaptAI/openadapt-ml.git
 cd openadapt-ml
 uv sync
 ```
+
+> **Note**: openadapt-ml requires Python 3.12+. Other OpenAdapt packages support Python 3.10+.
 
 ---
 
@@ -802,9 +875,67 @@ For deeper architectural details, see [`docs/design.md`](docs/design.md).
 
 ---
 
-## 15. Roadmap
+## 15. Relationship to openadapt-evals
+
+Benchmark evaluation code has been consolidated into [openadapt-evals](https://github.com/OpenAdaptAI/openadapt-evals):
+
+| Responsibility | Package | Notes |
+|---------------|---------|-------|
+| **Training** | `openadapt-ml` | VLM adapters, SFT, policy runtime |
+| **Evaluation** | `openadapt-evals` | WAA, WebArena, OSWorld adapters, metrics |
+| **Demo retrieval** | `openadapt-retrieval` | Multimodal embeddings, FAISS index |
+
+**Backward compatibility**: The `openadapt_ml.benchmarks` module provides deprecation stubs that re-export from `openadapt-evals`:
+
+```python
+# OLD (deprecated, shows warning)
+from openadapt_ml.benchmarks import WAAMockAdapter  # DeprecationWarning
+
+# NEW (preferred)
+from openadapt_evals import WAAMockAdapter  # No warning
+```
+
+**For benchmark CLI commands**, use openadapt-evals:
+
+```bash
+# Mock evaluation (no Windows VM required)
+uv run python -m openadapt_evals.benchmarks.cli mock --tasks 10
+
+# Live evaluation against WAA server
+uv run python -m openadapt_evals.benchmarks.cli live --agent api-claude --server http://vm:5000
+
+# Generate benchmark viewer
+uv run python -m openadapt_evals.benchmarks.cli view --run-name my_eval
+```
+
+**VM management commands** remain in openadapt-ml for historical reasons:
+
+```bash
+# Start VM dashboard (SSH tunnels, VNC)
+uv run python -m openadapt_ml.benchmarks.cli vm monitor
+```
+
+---
+
+## 16. Related Projects
+
+| Package | Description |
+|---------|-------------|
+| [openadapt](https://github.com/OpenAdaptAI/OpenAdapt) | Meta-package with unified CLI |
+| [openadapt-capture](https://github.com/OpenAdaptAI/openadapt-capture) | GUI demonstration recording |
+| [openadapt-evals](https://github.com/OpenAdaptAI/openadapt-evals) | Benchmark evaluation infrastructure |
+| [openadapt-viewer](https://github.com/OpenAdaptAI/openadapt-viewer) | HTML visualization |
+| [openadapt-grounding](https://github.com/OpenAdaptAI/openadapt-grounding) | UI element localization |
+| [openadapt-retrieval](https://github.com/OpenAdaptAI/openadapt-retrieval) | Multimodal demo retrieval |
+| [openadapt-privacy](https://github.com/OpenAdaptAI/openadapt-privacy) | PII/PHI scrubbing |
+
+---
+
+## 17. Roadmap
 
 For the up-to-date, prioritized roadmap (including concrete implementation
 targets and agent-executable acceptance criteria), see
 [`docs/roadmap.md`](docs/roadmap.md).
+
+For ecosystem-wide priorities, see the main [OpenAdapt roadmap](https://github.com/OpenAdaptAI/OpenAdapt/blob/main/docs/roadmap-priorities.md).
 
