@@ -64,9 +64,9 @@ class GeminiBackend(VLMBackend):
     def _get_client(self):
         if self._client is None:
             import google.generativeai as genai
-            import os
+            from openadapt_ml.config import settings
 
-            api_key = self._api_key or os.environ.get("GOOGLE_API_KEY")
+            api_key = self._api_key or settings.google_api_key
             if not api_key:
                 raise ValueError("GOOGLE_API_KEY not set")
             genai.configure(api_key=api_key)
@@ -142,9 +142,9 @@ class ClaudeBackend(VLMBackend):
     def _get_client(self):
         if self._client is None:
             import anthropic
-            import os
+            from openadapt_ml.config import settings
 
-            api_key = self._api_key or os.environ.get("ANTHROPIC_API_KEY")
+            api_key = self._api_key or settings.anthropic_api_key
             self._client = anthropic.Anthropic(api_key=api_key)
         return self._client
 
@@ -250,9 +250,9 @@ class OpenAIBackend(VLMBackend):
     def _get_client(self):
         if self._client is None:
             import openai
-            import os
+            from openadapt_ml.config import settings
 
-            api_key = self._api_key or os.environ.get("OPENAI_API_KEY")
+            api_key = self._api_key or settings.openai_api_key
             self._client = openai.OpenAI(api_key=api_key)
         return self._client
 
