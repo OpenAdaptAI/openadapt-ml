@@ -43,7 +43,7 @@ import logging
 import os
 import re
 from io import BytesIO
-from typing import Any, Dict, List
+from typing import Dict, List
 
 from PIL import Image
 

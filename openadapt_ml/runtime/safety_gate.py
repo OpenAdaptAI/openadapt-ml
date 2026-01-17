@@ -37,7 +37,7 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Optional
 
 from openadapt_ml.schema import Action, ActionType, Observation, Step
 

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from openadapt_ml.schema import Action, ActionType, Episode, Step
+    from openadapt_ml.schema import Action, Episode, Step
 
 
 def format_action(action: "Action") -> str:

@@ -22,7 +22,6 @@ Example:
 
 from __future__ import annotations
 
-import json
 import re
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
@@ -36,7 +35,7 @@ from openadapt_ml.benchmarks.base import (
 if TYPE_CHECKING:
     from openadapt_ml.models.api_adapter import ApiVLMAdapter
     from openadapt_ml.runtime.policy import AgentPolicy
-    from openadapt_ml.schema import Action, ActionType
+    from openadapt_ml.schema import Action
 
 
 class BenchmarkAgent(ABC):
@@ -971,7 +970,6 @@ class UnifiedBaselineAgent(BenchmarkAgent):
         """Lazily initialize the UnifiedBaselineAdapter."""
         if self._adapter is None:
             from openadapt_ml.baselines import (
-                BaselineConfig,
                 TrackConfig,
                 UnifiedBaselineAdapter,
             )

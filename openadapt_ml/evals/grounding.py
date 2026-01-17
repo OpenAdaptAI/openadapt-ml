@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from PIL import Image
 
     from openadapt_ml.grounding.base import GroundingModule, RegionCandidate
+    from openadapt_ml.schemas.sessions import Episode
 
 
 @dataclass
@@ -212,7 +213,7 @@ def evaluate_grounder_on_episode(
     """
     from PIL import Image
 
-    from openadapt_ml.schema import Episode, ActionType
+    from openadapt_ml.schema import ActionType
 
     test_cases = []
 

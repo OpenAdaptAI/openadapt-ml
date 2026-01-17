@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Union
 
-from pydantic import ValidationError
 
 from openadapt_ml.schema import Action, ActionType, Episode, Observation, Step
 

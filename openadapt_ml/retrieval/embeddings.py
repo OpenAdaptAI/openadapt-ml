@@ -25,9 +25,9 @@ import logging
 import re
 from abc import ABC, abstractmethod
 from collections import Counter
-from math import log, sqrt
+from math import log
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

@@ -271,7 +271,7 @@ def train_with_trl(
             )
 
         print(f"\n{'='*50}")
-        print(f"Starting training:")
+        print("Starting training:")
         print(f"  Model: {config.model_name}")
         print(f"  Samples: {len(trl_samples)}")
         print(f"  Epochs: {config.num_epochs}")

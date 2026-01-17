@@ -233,7 +233,6 @@ def evaluate_episode(
 
         coord_error: Optional[float] = None
         click_hit = False
-        bbox_hit = False
         element_hit = False
 
         # Helper to get element index - check element.element_id or raw field
@@ -273,7 +272,6 @@ def evaluate_episode(
                 bbox_total += 1
                 if in_bbox:
                     bbox_hits += 1
-                    bbox_hit = True
 
         # Full step correctness: type matches AND element/coord match for relevant actions
         if type_match:

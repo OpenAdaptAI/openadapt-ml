@@ -3,11 +3,11 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import yaml
 
-from openadapt_ml.datasets.next_action import build_next_action_sft_samples, parse_action_som
+from openadapt_ml.datasets.next_action import build_next_action_sft_samples
 from openadapt_ml.evals.trajectory_matching import evaluate_policy_on_episodes
 from openadapt_ml.ingest.synthetic import generate_synthetic_episodes
 from openadapt_ml.models.dummy_adapter import DummyAdapter

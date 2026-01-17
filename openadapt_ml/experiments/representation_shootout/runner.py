@@ -25,13 +25,10 @@ import argparse
 import json
 import logging
 import sys
-from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from openadapt_ml.experiments.representation_shootout.conditions import (
-    ActionHistory,
     ConditionBase,
     Observation,
     UIElement,
@@ -39,7 +36,6 @@ from openadapt_ml.experiments.representation_shootout.conditions import (
     create_condition,
 )
 from openadapt_ml.experiments.representation_shootout.config import (
-    ConditionConfig,
     ConditionName,
     DriftConfig,
     ExperimentConfig,
@@ -631,7 +627,7 @@ Examples:
         try:
             runner = ExperimentRunner(config)
             if args.data:
-                samples = runner.load_samples(args.data)
+                runner.load_samples(args.data)
             recommendation = runner.run()
             runner.print_summary(recommendation)
             return 0

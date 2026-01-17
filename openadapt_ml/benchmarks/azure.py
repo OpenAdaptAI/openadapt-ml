@@ -30,13 +30,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 
 from openadapt_ml.benchmarks.agent import BenchmarkAgent
 from openadapt_ml.benchmarks.base import BenchmarkResult, BenchmarkTask
@@ -532,15 +530,15 @@ class AzureWAAOrchestrator:
             # Provision VMs in parallel
             print(f"[2/4] Provisioning {num_workers} Azure VM(s)... (this takes 3-5 minutes)")
             self._provision_workers(workers)
-            print(f"      VM(s) ready")
+            print("      VM(s) ready")
 
             # Submit jobs to workers
-            print(f"[3/4] Submitting evaluation jobs...")
+            print("[3/4] Submitting evaluation jobs...")
             self._submit_worker_jobs(workers, task_batches, agent, max_steps_per_task, timeout_hours)
-            print(f"      Jobs submitted")
+            print("      Jobs submitted")
 
             # Wait for completion and collect results
-            print(f"[4/4] Waiting for workers to complete...")
+            print("[4/4] Waiting for workers to complete...")
             results = self._wait_and_collect_results(workers, on_worker_complete)
 
             self._current_run.status = "completed"

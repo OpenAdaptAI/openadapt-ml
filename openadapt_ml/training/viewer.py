@@ -33,7 +33,7 @@ def _copy_transcript_and_audio(capture_path: Path | None, output_dir: Path) -> N
     transcript_dst = output_dir / "transcript.json"
     if transcript_src.exists() and not transcript_dst.exists():
         shutil.copy2(transcript_src, transcript_dst)
-        print(f"  Copied transcript.json from capture")
+        print("  Copied transcript.json from capture")
 
     # Convert audio to mp3 if it exists (ffmpeg required)
     audio_dst = output_dir / "audio.mp3"
@@ -221,7 +221,7 @@ def generate_unified_viewer_from_output_dir(output_dir: Path) -> Path | None:
                 has_predictions = any(p.get("predicted_action") for p in predictions)
                 if has_predictions and "Preview" not in predictions_by_checkpoint:
                     predictions_by_checkpoint["Preview"] = predictions
-                    print(f"  Loaded predictions from comparison_preview.html")
+                    print("  Loaded predictions from comparison_preview.html")
         except Exception as e:
             print(f"  Warning: Could not extract data from comparison_preview.html: {e}")
 
@@ -288,7 +288,7 @@ def _generate_unified_viewer_from_extracted_data(
     capture_modified_time_json = json.dumps(capture_modified_time)
 
     # Find first image to get dimensions (for display)
-    first_image_path = base_data[0].get("image_path", "") if base_data else ""
+    base_data[0].get("image_path", "") if base_data else ""
 
     html = f'''<!DOCTYPE html>
 <html lang="en">
@@ -2929,7 +2929,8 @@ def _add_static_nav_to_comparison(
 
     # Build nav links if not provided
     if nav_links is None:
-        nav_links = _build_nav_links()
+        # Default nav links (empty for now, can be customized by caller)
+        nav_links = []
 
     # Build nav HTML with active state for current file
     # NOTE: No "Dashboards:" label to match training dashboard nav

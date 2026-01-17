@@ -26,7 +26,6 @@ import sys
 from typing import TYPE_CHECKING, Any
 
 from openadapt_ml.experiments.waa_demo.demos import (
-    DEMOS,
     format_demo_for_prompt,
     get_complete_demos,
     get_demo,
@@ -34,8 +33,6 @@ from openadapt_ml.experiments.waa_demo.demos import (
 )
 from openadapt_ml.experiments.waa_demo.tasks import (
     TASKS,
-    WATask,
-    get_manual_tasks,
     get_recorded_tasks,
     get_task,
 )

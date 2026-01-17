@@ -11,11 +11,9 @@ from pathlib import Path
 
 from openadapt_viewer.builders import PageBuilder
 from openadapt_ml.training.viewer_components import (
-    screenshot_with_predictions,
     training_metrics,
     playback_controls,
     generate_comparison_summary,
-    correctness_badge,
 )
 
 
