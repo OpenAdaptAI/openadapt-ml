@@ -102,12 +102,12 @@ class EpisodeAnnotator:
         if self._client is not None:
             return self._client
 
-        import os
+        from openadapt_ml.config import settings
 
         if "gemini" in self.model.lower():
             import google.generativeai as genai
 
-            api_key = self._api_key or os.environ.get("GOOGLE_API_KEY")
+            api_key = self._api_key or settings.google_api_key
             if not api_key:
                 raise ValueError("GOOGLE_API_KEY not set")
             genai.configure(api_key=api_key)
@@ -115,12 +115,12 @@ class EpisodeAnnotator:
         elif "claude" in self.model.lower():
             import anthropic
 
-            api_key = self._api_key or os.environ.get("ANTHROPIC_API_KEY")
+            api_key = self._api_key or settings.anthropic_api_key
             self._client = anthropic.Anthropic(api_key=api_key)
         elif "gpt" in self.model.lower():
             import openai
 
-            api_key = self._api_key or os.environ.get("OPENAI_API_KEY")
+            api_key = self._api_key or settings.openai_api_key
             self._client = openai.OpenAI(api_key=api_key)
         else:
             raise ValueError(f"Unknown model: {self.model}")
