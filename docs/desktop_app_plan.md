@@ -92,9 +92,9 @@ Only pursue if Tier 1/2 don't meet user needs:
 
 ## 2. Current State Analysis
 
-### 2.1 OpenAdapt.web Repository
+### 2.1 openadapt-web Repository
 
-**Repository**: https://github.com/openadaptai/openadapt.web
+**Repository**: https://github.com/openadaptai/openadapt-web
 
 **Tech Stack**:
 - Next.js v12 with Tailwind CSS
