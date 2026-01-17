@@ -789,13 +789,15 @@ uv run python -m openadapt_ml.cloud.local serve --port 8080 --open
     simplicity when handling multimodal inputs. The training configs are
     sized accordingly.
 - **Evaluation**:
-  - v1 focuses on smoke tests and qualitative behavior on synthetic data.
-    More formal evaluation scripts and metrics are planned.
+  - Benchmark evaluation has been moved to the standalone [openadapt-evals](https://github.com/OpenAdaptAI/openadapt-evals) package (January 2026)
+  - Use `pip install openadapt-evals` for WAA, WebArena, and other benchmark integrations
+  - VM management CLI remains in openadapt-ml for infrastructure control
+  - Backward-compatible imports still work with deprecation warnings
 - **Windows Agent Arena (WAA) on Azure**:
   - WAA requires nested virtualization (Windows VM inside Docker via QEMU)
   - Azure ML managed compute does not support nested virtualization
   - For real WAA evaluation, use dedicated VMs with Dv3/Ev3 series or run locally
-  - Mock evaluation (`test-mock`) validates the pipeline without Windows VMs
+  - Mock evaluation (`WAAMockAdapter` in openadapt-evals) validates the pipeline without Windows VMs
   - See `CLAUDE.md` for detailed workarounds and infrastructure setup
 
 For deeper architectural details, see [`docs/design.md`](docs/design.md).
