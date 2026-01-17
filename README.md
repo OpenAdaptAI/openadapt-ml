@@ -1,8 +1,10 @@
 # OpenAdapt-ML
 
-[![PyPI version](https://badge.fury.io/py/openadapt-ml.svg)](https://badge.fury.io/py/openadapt-ml)
+[![Build Status](https://github.com/OpenAdaptAI/openadapt-ml/workflows/Publish%20to%20PyPI/badge.svg?branch=main)](https://github.com/OpenAdaptAI/openadapt-ml/actions)
+[![PyPI version](https://img.shields.io/pypi/v/openadapt-ml.svg)](https://pypi.org/project/openadapt-ml/)
+[![Downloads](https://img.shields.io/pypi/dm/openadapt-ml.svg)](https://pypi.org/project/openadapt-ml/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python Version](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/downloads/)
 
 OpenAdapt-ML is a **model-agnostic, domain-agnostic ML engine** for GUI
 automation agents. It sits above **TRL + Unsloth** (which we use directly for training performance) and provides the GUI-specific layer:
