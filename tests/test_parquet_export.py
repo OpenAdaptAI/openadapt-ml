@@ -75,13 +75,13 @@ class TestParquetExport:
         # Check expected columns exist
         expected_columns = [
             "episode_id",
-            "goal",
+            "instruction",  # Changed from "goal" to match new schema
             "step_index",
             "timestamp",
             "action_type",
             "x",
             "y",
-            "image_path",
+            "screenshot_path",  # Changed from "image_path" to match new schema
         ]
         for col in expected_columns:
             assert col in table.column_names, f"Missing column: {col}"
@@ -108,7 +108,7 @@ class TestParquetExport:
         # Check summary columns
         assert "episode_id" in summary_table.column_names
         assert "step_count" in summary_table.column_names
-        assert "goal" in summary_table.column_names
+        assert "instruction" in summary_table.column_names  # Changed from "goal"
 
     def test_from_parquet_roundtrip(self, sample_episodes, tmp_path):
         """Test Parquet roundtrip (lossy but reconstructable)."""
