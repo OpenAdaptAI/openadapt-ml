@@ -857,6 +857,131 @@ def cmd_serve(args: argparse.Namespace) -> int:
                     self.send_header("Access-Control-Allow-Origin", "*")
                     self.end_headers()
                     self.wfile.write(json.dumps({"error": str(e)}).encode())
+            elif self.path.startswith("/api/benchmark/status"):
+                # Return current benchmark job status with ETA
+                try:
+                    status = self._get_benchmark_status()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps(status).encode())
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": str(e), "status": "error"}).encode())
+            elif self.path.startswith("/api/benchmark/costs"):
+                # Return cost breakdown (Azure VM, API calls, GPU)
+                try:
+                    costs = self._get_benchmark_costs()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps(costs).encode())
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
+            elif self.path.startswith("/api/benchmark/metrics"):
+                # Return performance metrics (success rate, domain breakdown)
+                try:
+                    metrics = self._get_benchmark_metrics()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps(metrics).encode())
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
+            elif self.path.startswith("/api/benchmark/workers"):
+                # Return worker status and utilization
+                try:
+                    workers = self._get_benchmark_workers()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps(workers).encode())
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
+            elif self.path.startswith("/api/benchmark/runs"):
+                # Return list of all benchmark runs
+                try:
+                    runs = self._get_benchmark_runs()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps(runs).encode())
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
+            elif self.path.startswith("/api/benchmark/tasks/"):
+                # Return task execution details
+                # URL format: /api/benchmark/tasks/{run_name}/{task_id}
+                try:
+                    parts = self.path.split("/")
+                    if len(parts) >= 6:
+                        run_name = parts[4]
+                        task_id = parts[5]
+                        execution = self._get_task_execution(run_name, task_id)
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json")
+                        self.send_header("Access-Control-Allow-Origin", "*")
+                        self.end_headers()
+                        self.wfile.write(json.dumps(execution).encode())
+                    else:
+                        self.send_error(400, "Invalid path format")
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
+            elif self.path.startswith("/api/benchmark/screenshots/"):
+                # Serve screenshot files
+                # URL format: /api/benchmark/screenshots/{run_name}/{task_id}/screenshots/{filename}
+                try:
+                    # Remove /api/benchmark/screenshots/ prefix
+                    path_parts = self.path.replace("/api/benchmark/screenshots/", "").split("/")
+                    if len(path_parts) >= 4:
+                        run_name = path_parts[0]
+                        task_id = path_parts[1]
+                        # path_parts[2] should be 'screenshots'
+                        filename = path_parts[3]
+
+                        results_dir = Path("benchmark_results")
+                        screenshot_path = results_dir / run_name / "tasks" / task_id / "screenshots" / filename
+
+                        if screenshot_path.exists():
+                            self.send_response(200)
+                            self.send_header("Content-Type", "image/png")
+                            self.send_header("Access-Control-Allow-Origin", "*")
+                            self.end_headers()
+                            with open(screenshot_path, "rb") as f:
+                                self.wfile.write(f.read())
+                        else:
+                            self.send_error(404, f"Screenshot not found: {screenshot_path}")
+                    else:
+                        self.send_error(400, "Invalid screenshot path format")
+                except Exception as e:
+                    self.send_error(500, f"Error serving screenshot: {e}")
             else:
                 # Default file serving
                 super().do_GET()
@@ -1901,6 +2026,265 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 pass
 
             return result
+
+        def _get_benchmark_status(self) -> dict:
+            """Get current benchmark job status with ETA calculation.
+
+            Returns:
+                dict with job status, progress, ETA, and current task info
+            """
+            import time
+            from datetime import datetime
+
+            # Check for live evaluation state
+            live_file = Path("benchmark_live.json")
+            if live_file.exists():
+                try:
+                    live_state = json.loads(live_file.read_text())
+                    if live_state.get("status") == "running":
+                        total_tasks = live_state.get("total_tasks", 0)
+                        completed_tasks = live_state.get("tasks_completed", 0)
+                        current_task = live_state.get("current_task", {})
+
+                        # Calculate ETA based on completed tasks
+                        eta_seconds = None
+                        avg_task_seconds = None
+                        if completed_tasks > 0 and total_tasks > 0:
+                            # Estimate from live state timestamp or use fallback
+                            elapsed = time.time() - live_state.get("start_time", time.time())
+                            avg_task_seconds = elapsed / completed_tasks if completed_tasks > 0 else 30.0
+                            remaining_tasks = total_tasks - completed_tasks
+                            eta_seconds = remaining_tasks * avg_task_seconds
+
+                        return {
+                            "status": "running",
+                            "current_job": {
+                                "run_id": live_state.get("run_id", "unknown"),
+                                "model_id": live_state.get("model_id", "unknown"),
+                                "total_tasks": total_tasks,
+                                "completed_tasks": completed_tasks,
+                                "current_task": current_task,
+                                "eta_seconds": eta_seconds,
+                                "avg_task_seconds": avg_task_seconds,
+                            },
+                            "queue": [],  # TODO: implement queue tracking
+                        }
+                except Exception as e:
+                    return {"status": "error", "error": str(e)}
+
+            # Fallback to current_run check
+            current_run = self._get_current_run()
+            if current_run.get("running"):
+                return {
+                    "status": "running",
+                    "current_job": {
+                        "run_id": "unknown",
+                        "model_id": current_run.get("model", "unknown"),
+                        "total_tasks": current_run["progress"]["total_tasks"],
+                        "completed_tasks": current_run["progress"]["tasks_completed"],
+                        "current_task": {"task_id": current_run.get("current_task")},
+                    },
+                    "queue": [],
+                }
+
+            return {"status": "idle"}
+
+        def _get_benchmark_costs(self) -> dict:
+            """Get cost breakdown for current benchmark run.
+
+            Returns:
+                dict with Azure VM, API calls, and GPU costs
+            """
+            import time
+
+            # Check for cost tracking file
+            cost_file = Path("benchmark_costs.json")
+            if cost_file.exists():
+                try:
+                    return json.loads(cost_file.read_text())
+                except Exception:
+                    pass
+
+            # Return placeholder structure
+            return {
+                "azure_vm": {
+                    "instance_type": "Standard_D4ds_v5",
+                    "hourly_rate_usd": 0.192,
+                    "hours_elapsed": 0.0,
+                    "cost_usd": 0.0,
+                },
+                "api_calls": {
+                    "anthropic": {"cost_usd": 0.0},
+                    "openai": {"cost_usd": 0.0},
+                },
+                "gpu_time": {
+                    "lambda_labs": {"cost_usd": 0.0},
+                },
+                "total_cost_usd": 0.0,
+            }
+
+        def _get_benchmark_metrics(self) -> dict:
+            """Get performance metrics for current/completed benchmarks.
+
+            Returns:
+                dict with success rate trends, domain breakdown, episode metrics
+            """
+            # Check for metrics file
+            metrics_file = Path("benchmark_metrics.json")
+            if metrics_file.exists():
+                try:
+                    return json.loads(metrics_file.read_text())
+                except Exception:
+                    pass
+
+            # Load completed runs from benchmark_results/
+            benchmark_results_dir = Path("benchmark_results")
+            if not benchmark_results_dir.exists():
+                return {"error": "No benchmark results found"}
+
+            # Find most recent run
+            runs = sorted(benchmark_results_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
+            if not runs:
+                return {"error": "No benchmark runs found"}
+
+            recent_run = runs[0]
+            summary_path = recent_run / "summary.json"
+            if not summary_path.exists():
+                return {"error": f"No summary.json in {recent_run.name}"}
+
+            try:
+                summary = json.loads(summary_path.read_text())
+
+                # Build domain breakdown from tasks
+                domain_breakdown = {}
+                tasks_dir = recent_run / "tasks"
+                if tasks_dir.exists():
+                    for task_dir in tasks_dir.iterdir():
+                        if not task_dir.is_dir():
+                            continue
+
+                        task_json = task_dir / "task.json"
+                        execution_json = task_dir / "execution.json"
+                        if not (task_json.exists() and execution_json.exists()):
+                            continue
+
+                        try:
+                            task_def = json.loads(task_json.read_text())
+                            execution = json.loads(execution_json.read_text())
+
+                            domain = task_def.get("domain", "unknown")
+                            if domain not in domain_breakdown:
+                                domain_breakdown[domain] = {
+                                    "total": 0,
+                                    "success": 0,
+                                    "rate": 0.0,
+                                    "avg_steps": 0.0,
+                                    "total_steps": 0,
+                                }
+
+                            domain_breakdown[domain]["total"] += 1
+                            if execution.get("success"):
+                                domain_breakdown[domain]["success"] += 1
+                            domain_breakdown[domain]["total_steps"] += execution.get("num_steps", 0)
+
+                        except Exception:
+                            continue
+
+                # Calculate averages
+                for domain, stats in domain_breakdown.items():
+                    if stats["total"] > 0:
+                        stats["rate"] = stats["success"] / stats["total"]
+                        stats["avg_steps"] = stats["total_steps"] / stats["total"]
+
+                return {
+                    "success_rate_over_time": [],  # TODO: implement trend tracking
+                    "avg_steps_per_task": [],  # TODO: implement trend tracking
+                    "domain_breakdown": domain_breakdown,
+                    "episode_success_metrics": {
+                        "first_action_accuracy": summary.get("first_action_accuracy", 0.0),
+                        "episode_success_rate": summary.get("success_rate", 0.0),
+                        "avg_steps_to_success": summary.get("avg_steps", 0.0),
+                        "avg_steps_to_failure": 0.0,  # TODO: calculate from failed tasks
+                    },
+                }
+            except Exception as e:
+                return {"error": f"Failed to load metrics: {str(e)}"}
+
+        def _get_benchmark_workers(self) -> dict:
+            """Get worker status and utilization.
+
+            Returns:
+                dict with total/active/idle workers and per-worker stats
+            """
+            # Get VM registry
+            vms = self._fetch_vm_registry()
+
+            active_workers = [v for v in vms if v.get("status") == "online"]
+            idle_workers = [v for v in vms if v.get("status") != "online"]
+
+            workers = []
+            for vm in vms:
+                workers.append({
+                    "worker_id": vm.get("name", "unknown"),
+                    "status": "running" if vm.get("status") == "online" else "idle",
+                    "current_task": vm.get("current_task"),
+                    "tasks_completed": vm.get("tasks_completed", 0),
+                    "uptime_seconds": vm.get("uptime_seconds", 0),
+                    "idle_time_seconds": vm.get("idle_time_seconds", 0),
+                })
+
+            return {
+                "total_workers": len(vms),
+                "active_workers": len(active_workers),
+                "idle_workers": len(idle_workers),
+                "workers": workers,
+            }
+
+        def _get_benchmark_runs(self) -> list[dict]:
+            """Load all benchmark runs from benchmark_results directory.
+
+            Returns:
+                List of benchmark run summaries sorted by timestamp (newest first)
+            """
+            results_dir = Path("benchmark_results")
+            if not results_dir.exists():
+                return []
+
+            runs = []
+            for run_dir in results_dir.iterdir():
+                if run_dir.is_dir():
+                    summary_file = run_dir / "summary.json"
+                    if summary_file.exists():
+                        try:
+                            summary = json.loads(summary_file.read_text())
+                            runs.append(summary)
+                        except (json.JSONDecodeError, IOError) as e:
+                            print(f"Warning: Failed to load {summary_file}: {e}")
+
+            # Sort by run_name descending (newest first)
+            runs.sort(key=lambda r: r.get("run_name", ""), reverse=True)
+            return runs
+
+        def _get_task_execution(self, run_name: str, task_id: str) -> dict:
+            """Load task execution details from execution.json.
+
+            Args:
+                run_name: Name of the benchmark run
+                task_id: Task identifier
+
+            Returns:
+                Task execution data with steps and screenshots
+            """
+            results_dir = Path("benchmark_results")
+            execution_file = results_dir / run_name / "tasks" / task_id / "execution.json"
+
+            if not execution_file.exists():
+                raise FileNotFoundError(f"Execution file not found: {execution_file}")
+
+            try:
+                return json.loads(execution_file.read_text())
+            except (json.JSONDecodeError, IOError) as e:
+                raise Exception(f"Failed to load execution data: {e}")
 
         async def _detect_running_benchmark(
             self, vm_ip: str, container_name: str = "winarena"
