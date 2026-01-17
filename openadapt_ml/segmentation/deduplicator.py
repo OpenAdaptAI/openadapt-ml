@@ -38,9 +38,9 @@ class OpenAIEmbedder:
     def _get_client(self):
         if self._client is None:
             import openai
-            import os
+            from openadapt_ml.config import settings
 
-            api_key = self._api_key or os.environ.get("OPENAI_API_KEY")
+            api_key = self._api_key or settings.openai_api_key
             self._client = openai.OpenAI(api_key=api_key)
         return self._client
 
