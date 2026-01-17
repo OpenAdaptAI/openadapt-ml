@@ -1,5 +1,16 @@
 # Claude Context for openadapt-ml
 
+## Project Status & Priorities
+
+**IMPORTANT**: Before starting work, always check the project-wide status document:
+- **Location**: `/Users/abrichr/oa/src/STATUS.md`
+- **Purpose**: Tracks P0 priorities, active background tasks, blockers, and strategic decisions
+- **Action**: Read this file at the start of every session to understand current priorities
+
+This ensures continuity between Claude Code sessions and context compactions.
+
+---
+
 This file helps maintain context across sessions.
 
 ---
@@ -18,9 +29,32 @@ This file helps maintain context across sessions.
 uv run python -m openadapt_ml.benchmarks.cli vm monitor
 ```
 
+**ENHANCED FEATURES (as of Jan 2026):**
+The `vm monitor` command now provides comprehensive VM usage visibility:
+- **VM Status**: Real-time VM state, size, and IP
+- **Activity Detection**: What the VM is currently doing (idle, benchmark running, setup)
+- **Cost Tracking**: Current uptime, hourly rate, and total cost for session
+- **Azure ML Jobs**: Recent jobs from last 7 days with status
+- **Evaluation History**: Past benchmark runs and success rates (with --details flag)
+- **Dashboard & Tunnels**: Auto-starts web dashboard and SSH/VNC tunnels
+
+**Usage:**
+```bash
+# Basic monitoring
+uv run python -m openadapt_ml.benchmarks.cli vm monitor
+
+# With detailed information (costs per day/week, evaluation history)
+uv run python -m openadapt_ml.benchmarks.cli vm monitor --details
+
+# With auto-shutdown after 2 hours
+uv run python -m openadapt_ml.benchmarks.cli vm monitor --auto-shutdown-hours 2
+```
+
 **WHY THIS MATTERS:**
 - VNC is ONLY accessible via SSH tunnel at `localhost:8006` (NOT the public IP)
 - The dashboard auto-manages SSH tunnels
+- Shows real-time costs to prevent budget overruns
+- Tracks all Azure ML jobs for visibility into what's running
 - Without it, you cannot see what Windows is doing
 - The user WILL be frustrated if you keep forgetting this
 
@@ -119,6 +153,12 @@ openadapt-ml is a model-agnostic, domain-agnostic ML engine for GUI automation a
 - Zero-shot: 33% correct first actions
 - With demo: 100% correct first actions
 - See `docs/experiments/demo_conditioned_prompting_results.md`
+
+**✅ VALIDATED (Jan 17, 2026)**: Demo persistence fix is working
+- The P0 fix in `openadapt-evals` ensures demo is included at EVERY step, not just step 1
+- Mock test confirms: agent behavior changes from 6.8 avg steps (random) to 3.0 avg steps (focused)
+- See `openadapt-evals/CLAUDE.md` for full validation details
+- **Next step**: Run full WAA evaluation (154 tasks) to measure episode success improvement
 
 **Next step**: Build demo retrieval to automatically select relevant demos from a library.
 
