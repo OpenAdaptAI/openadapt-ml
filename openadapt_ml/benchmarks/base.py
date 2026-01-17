@@ -330,7 +330,9 @@ class StaticDatasetAdapter(BenchmarkAdapter):
     @abstractmethod
     def load_trajectories(
         self, split: str = "test"
-    ) -> Iterator[tuple[BenchmarkTask, list[tuple[BenchmarkObservation, BenchmarkAction]]]]:
+    ) -> Iterator[
+        tuple[BenchmarkTask, list[tuple[BenchmarkObservation, BenchmarkAction]]]
+    ]:
         """Iterate over expert trajectories.
 
         Args:

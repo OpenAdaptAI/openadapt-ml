@@ -78,12 +78,14 @@ class LiveEvaluationTracker:
             result=None,
         )
 
-        self._write_state({
-            "status": "running",
-            "total_tasks": self.total_tasks,
-            "tasks_completed": self.tasks_completed,
-            "current_task": asdict(self.current_task),
-        })
+        self._write_state(
+            {
+                "status": "running",
+                "total_tasks": self.total_tasks,
+                "tasks_completed": self.tasks_completed,
+                "current_task": asdict(self.current_task),
+            }
+        )
 
     def record_step(
         self,
@@ -124,12 +126,14 @@ class LiveEvaluationTracker:
         self.current_task.steps.append(step)
 
         # Write updated state
-        self._write_state({
-            "status": "running",
-            "total_tasks": self.total_tasks,
-            "tasks_completed": self.tasks_completed,
-            "current_task": asdict(self.current_task),
-        })
+        self._write_state(
+            {
+                "status": "running",
+                "total_tasks": self.total_tasks,
+                "tasks_completed": self.tasks_completed,
+                "current_task": asdict(self.current_task),
+            }
+        )
 
     def finish_task(self, result: BenchmarkResult) -> None:
         """Finish tracking the current task.
@@ -152,23 +156,27 @@ class LiveEvaluationTracker:
         self.tasks_completed += 1
 
         # Write updated state
-        self._write_state({
-            "status": "running",
-            "total_tasks": self.total_tasks,
-            "tasks_completed": self.tasks_completed,
-            "current_task": asdict(self.current_task),
-        })
+        self._write_state(
+            {
+                "status": "running",
+                "total_tasks": self.total_tasks,
+                "tasks_completed": self.tasks_completed,
+                "current_task": asdict(self.current_task),
+            }
+        )
 
         # Clear current task
         self.current_task = None
 
     def finish(self) -> None:
         """Mark evaluation as complete."""
-        self._write_state({
-            "status": "complete",
-            "total_tasks": self.total_tasks,
-            "tasks_completed": self.tasks_completed,
-        })
+        self._write_state(
+            {
+                "status": "complete",
+                "total_tasks": self.total_tasks,
+                "tasks_completed": self.tasks_completed,
+            }
+        )
 
     def _write_state(self, state: dict[str, Any]) -> None:
         """Write current state to JSON file.

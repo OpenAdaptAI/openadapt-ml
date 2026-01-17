@@ -4,12 +4,18 @@ from typing import Any, Dict, List, Optional
 
 import torch
 from peft import LoraConfig, PeftModel, get_peft_model
-from transformers import AutoProcessor, Qwen3VLForConditionalGeneration, Qwen2_5_VLForConditionalGeneration
+from transformers import (
+    AutoProcessor,
+    Qwen3VLForConditionalGeneration,
+    Qwen2_5_VLForConditionalGeneration,
+)
 
 from openadapt_ml.models.base_adapter import BaseVLMAdapter, get_default_device
 
 
-def _process_vision_info(messages: List[Dict[str, Any]]) -> tuple[list[list[Any]], list[list[Any]]]:
+def _process_vision_info(
+    messages: List[Dict[str, Any]],
+) -> tuple[list[list[Any]], list[list[Any]]]:
     """Minimal stand-in for qwen_vl_utils.process_vision_info.
 
     For our use case we only need to extract image/video entries from the
@@ -99,10 +105,12 @@ class QwenVLAdapter(BaseVLMAdapter):
         processor = AutoProcessor.from_pretrained(model_name)
 
         # Configure image resolution for faster training
-        if max_pixels is not None and hasattr(processor, 'image_processor'):
+        if max_pixels is not None and hasattr(processor, "image_processor"):
             processor.image_processor.max_pixels = max_pixels
-            print(f"Set max_pixels to {max_pixels} ({int(max_pixels**0.5)}x{int(max_pixels**0.5)} approx)")
-        if min_pixels is not None and hasattr(processor, 'image_processor'):
+            print(
+                f"Set max_pixels to {max_pixels} ({int(max_pixels**0.5)}x{int(max_pixels**0.5)} approx)"
+            )
+        if min_pixels is not None and hasattr(processor, "image_processor"):
             processor.image_processor.min_pixels = min_pixels
 
         model_kwargs: Dict[str, Any] = {}
@@ -120,7 +128,9 @@ class QwenVLAdapter(BaseVLMAdapter):
         if lora_config is not None:
             if isinstance(lora_config, dict):
                 lora_weights_path = lora_config.get("weights_path")
-                lora_cfg_clean = {k: v for k, v in lora_config.items() if k != "weights_path"}
+                lora_cfg_clean = {
+                    k: v for k, v in lora_config.items() if k != "weights_path"
+                }
             else:
                 lora_cfg_clean = lora_config
 
@@ -183,10 +193,12 @@ class QwenVLAdapter(BaseVLMAdapter):
                     },
                 ]
                 if assistant_text:
-                    qwen_messages_full.append({
-                        "role": "assistant",
-                        "content": [{"type": "text", "text": assistant_text}],
-                    })
+                    qwen_messages_full.append(
+                        {
+                            "role": "assistant",
+                            "content": [{"type": "text", "text": assistant_text}],
+                        }
+                    )
                 batch_messages_full.append(qwen_messages_full)
 
                 # User-only messages (for label masking)
@@ -249,7 +261,11 @@ class QwenVLAdapter(BaseVLMAdapter):
                     # Padding token is typically 0 or a special value
                     # For Qwen, we look for the first occurrence of pad token
                     pad_token_id = self.processor.tokenizer.pad_token_id
-                    user_ids_no_pad = user_ids[user_ids != pad_token_id] if pad_token_id is not None else user_ids
+                    user_ids_no_pad = (
+                        user_ids[user_ids != pad_token_id]
+                        if pad_token_id is not None
+                        else user_ids
+                    )
                     user_len = len(user_ids_no_pad)
 
                     # Check if user sequence is a prefix of full sequence
@@ -260,7 +276,10 @@ class QwenVLAdapter(BaseVLMAdapter):
                         labels[i, user_len:] = full_ids[user_len:]
 
             # Ensure padding tokens are masked in labels
-            if hasattr(self.processor.tokenizer, 'pad_token_id') and self.processor.tokenizer.pad_token_id is not None:
+            if (
+                hasattr(self.processor.tokenizer, "pad_token_id")
+                and self.processor.tokenizer.pad_token_id is not None
+            ):
                 labels[input_ids_full == self.processor.tokenizer.pad_token_id] = -100
 
             inputs_full["labels"] = labels
@@ -299,10 +318,12 @@ class QwenVLAdapter(BaseVLMAdapter):
                     }
                 ]
                 if assistant_text:
-                    qwen_messages.append({
-                        "role": "assistant",
-                        "content": [{"type": "text", "text": assistant_text}],
-                    })
+                    qwen_messages.append(
+                        {
+                            "role": "assistant",
+                            "content": [{"type": "text", "text": assistant_text}],
+                        }
+                    )
 
                 batch_messages.append(qwen_messages)
 
@@ -338,14 +359,20 @@ class QwenVLAdapter(BaseVLMAdapter):
             labels = input_ids.clone()
 
             # Mask padding tokens
-            if hasattr(self.processor.tokenizer, 'pad_token_id') and self.processor.tokenizer.pad_token_id is not None:
+            if (
+                hasattr(self.processor.tokenizer, "pad_token_id")
+                and self.processor.tokenizer.pad_token_id is not None
+            ):
                 labels[input_ids == self.processor.tokenizer.pad_token_id] = -100
 
             inputs["labels"] = labels
             return inputs
 
     def compute_loss(self, inputs: Dict[str, Any]) -> torch.Tensor:  # type: ignore[override]
-        inputs = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
+        inputs = {
+            k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+            for k, v in inputs.items()
+        }
         outputs = self.model(**inputs)
         # Hugging Face causal LM models return `loss` when `labels` are provided.
         return outputs.loss  # type: ignore[no-any-return]
@@ -419,6 +446,7 @@ class QwenVLAdapter(BaseVLMAdapter):
     def save_checkpoint(self, path: str) -> None:
         """Save the LoRA adapter weights to a directory."""
         from pathlib import Path
+
         save_path = Path(path)
         save_path.mkdir(parents=True, exist_ok=True)
         # Save the PEFT adapter (LoRA weights only, not base model)

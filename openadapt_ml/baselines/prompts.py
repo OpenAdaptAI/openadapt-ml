@@ -758,7 +758,9 @@ class PromptBuilder:
         """
         content: list[dict[str, Any]] = []
 
-        action_str = self._format_single_action(0, previous_action.get("type", ""), previous_action)
+        action_str = self._format_single_action(
+            0, previous_action.get("type", ""), previous_action
+        )
         action_str = action_str[3:]  # Remove "0. " prefix
 
         text = textwrap.dedent(f"""

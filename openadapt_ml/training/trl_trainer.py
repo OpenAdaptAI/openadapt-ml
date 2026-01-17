@@ -91,7 +91,9 @@ def _load_unsloth_model(config: TRLTrainingConfig):
         # Enable training mode
         FastVisionModel.for_training(model)
 
-        print(f"✓ Loaded {config.model_name} with Unsloth (4-bit: {config.load_in_4bit})")
+        print(
+            f"✓ Loaded {config.model_name} with Unsloth (4-bit: {config.load_in_4bit})"
+        )
         return model, tokenizer, True
 
     except ImportError:
@@ -161,10 +163,12 @@ def _convert_samples_to_trl_format(
         if not pil_images:
             continue  # Skip samples with missing images
 
-        trl_samples.append({
-            "images": pil_images,
-            "messages": sample["messages"],
-        })
+        trl_samples.append(
+            {
+                "images": pil_images,
+                "messages": sample["messages"],
+            }
+        )
 
     return trl_samples
 
@@ -270,7 +274,7 @@ def train_with_trl(
                 args=training_args,
             )
 
-        print(f"\n{'='*50}")
+        print(f"\n{'=' * 50}")
         print("Starting training:")
         print(f"  Model: {config.model_name}")
         print(f"  Samples: {len(trl_samples)}")
@@ -278,7 +282,7 @@ def train_with_trl(
         print(f"  Batch size: {config.batch_size}")
         print(f"  Unsloth: {is_unsloth}")
         print(f"  Output: {config.output_dir}")
-        print(f"{'='*50}\n")
+        print(f"{'=' * 50}\n")
 
         trainer.train()
 
@@ -291,8 +295,7 @@ def train_with_trl(
 
     except ImportError as e:
         raise ImportError(
-            f"TRL not installed. Install with: pip install trl\n"
-            f"Original error: {e}"
+            f"TRL not installed. Install with: pip install trl\nOriginal error: {e}"
         )
 
 
@@ -333,7 +336,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train VLM with TRL + Unsloth")
     parser.add_argument("--parquet", required=True, help="Path to parquet file")
     parser.add_argument("--output", default="checkpoints", help="Output directory")
-    parser.add_argument("--model", default="unsloth/Qwen2.5-VL-7B-Instruct", help="Model name")
+    parser.add_argument(
+        "--model", default="unsloth/Qwen2.5-VL-7B-Instruct", help="Model name"
+    )
     parser.add_argument("--epochs", type=int, default=3, help="Number of epochs")
     parser.add_argument("--use-som", action="store_true", help="Use Set-of-Marks DSL")
 

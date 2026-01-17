@@ -19,7 +19,7 @@ SYSTEM_PROMPT = (
     "- Example: An element in the middle of the screen would be approximately x=0.5, y=0.5\n\n"
     "ALLOWED ACTIONS (use exactly this format):\n"
     "- CLICK(x=0.XX, y=0.XX)  → click at normalized coordinates\n"
-    "- TYPE(text=\"...\")     → type text into the currently focused field\n"
+    '- TYPE(text="...")     → type text into the currently focused field\n'
     "- WAIT()                 → wait for UI to update\n"
     "- DONE()                 → task is complete\n\n"
     "RESPONSE FORMAT (required):\n"
@@ -41,14 +41,14 @@ SYSTEM_PROMPT_SOM = (
     "[3] = Login button\n\n"
     "ALLOWED ACTIONS (use exactly this format):\n"
     "- CLICK([N])            → click element with number N to focus/activate it\n"
-    "- TYPE([N], \"text\")   → type text into element N (e.g., TYPE([2], \"hello\"))\n"
+    '- TYPE([N], "text")   → type text into element N (e.g., TYPE([2], "hello"))\n'
     "- WAIT()                → wait for UI to update\n"
     "- DONE()                → task is complete\n\n"
     "ACTION SEQUENCE FOR LOGIN:\n"
     "1. CLICK([1]) to focus username field\n"
-    "2. TYPE([1], \"username\") to enter username\n"
+    '2. TYPE([1], "username") to enter username\n'
     "3. CLICK([2]) to focus password field\n"
-    "4. TYPE([2], \"password\") to enter password\n"
+    '4. TYPE([2], "password") to enter password\n'
     "5. CLICK([3]) to submit login\n"
     "6. DONE() when login is complete\n\n"
     "RESPONSE FORMAT (required):\n"
@@ -73,20 +73,20 @@ SYSTEM_PROMPT_SOM_REGISTRATION = (
     "[6] = Register button\n\n"
     "ALLOWED ACTIONS (use exactly this format):\n"
     "- CLICK([N])            → click element with number N to focus/activate it\n"
-    "- TYPE([N], \"text\")   → type text into element N (e.g., TYPE([2], \"hello\"))\n"
+    '- TYPE([N], "text")   → type text into element N (e.g., TYPE([2], "hello"))\n'
     "- WAIT()                → wait for UI to update\n"
     "- DONE()                → task is complete\n\n"
     "ACTION SEQUENCE FOR REGISTRATION:\n"
     "1. CLICK([1]) to focus first name field\n"
-    "2. TYPE([1], \"name\") to enter first name\n"
+    '2. TYPE([1], "name") to enter first name\n'
     "3. CLICK([2]) to focus last name field\n"
-    "4. TYPE([2], \"name\") to enter last name\n"
+    '4. TYPE([2], "name") to enter last name\n'
     "5. CLICK([3]) to focus email field\n"
-    "6. TYPE([3], \"email\") to enter email\n"
+    '6. TYPE([3], "email") to enter email\n'
     "7. CLICK([4]) to focus password field\n"
-    "8. TYPE([4], \"pass\") to enter password\n"
+    '8. TYPE([4], "pass") to enter password\n'
     "9. CLICK([5]) to focus confirm password field\n"
-    "10. TYPE([5], \"pass\") to enter confirmation\n"
+    '10. TYPE([5], "pass") to enter confirmation\n'
     "11. CLICK([6]) to submit registration\n"
     "12. DONE() when registration is complete\n\n"
     "RESPONSE FORMAT (required):\n"
@@ -126,12 +126,12 @@ def format_action(action: Action, use_som: bool = False) -> str:
         if t == ActionType.CLICK and element_id is not None:
             return f"CLICK([{element_id}])"
         if t == ActionType.TYPE and action.text is not None:
-            escaped = action.text.replace("\\", "\\\\").replace("\"", "\\\"")
+            escaped = action.text.replace("\\", "\\\\").replace('"', '\\"')
             if element_id is not None:
-                return f"TYPE([{element_id}], \"{escaped}\")"
+                return f'TYPE([{element_id}], "{escaped}")'
             else:
                 # Fallback: TYPE without element reference (for focused field)
-                return f"TYPE(\"{escaped}\")"
+                return f'TYPE("{escaped}")'
         if t == ActionType.WAIT:
             return "WAIT()"
         if t == ActionType.DONE:
@@ -144,8 +144,8 @@ def format_action(action: Action, use_som: bool = False) -> str:
             x, y = action.normalized_coordinates
             return f"CLICK(x={x:.2f}, y={y:.2f})"
         if t == ActionType.TYPE and action.text is not None:
-            escaped = action.text.replace("\\", "\\\\").replace("\"", "\\\"")
-            return f"TYPE(text=\"{escaped}\")"
+            escaped = action.text.replace("\\", "\\\\").replace('"', '\\"')
+            return f'TYPE(text="{escaped}")'
         if t == ActionType.WAIT:
             return "WAIT()"
         if t == ActionType.DONE:
@@ -180,13 +180,15 @@ def parse_action_som(text: str) -> Action:
     match = re.match(r'TYPE\(\[(\d+)\],\s*["\'](.*)["\']\)', text, re.DOTALL)
     if match:
         idx = match.group(1)
-        content = match.group(2).replace("\\\"", "\"").replace("\\\\", "\\")
-        return Action(type=ActionType.TYPE, text=content, element=UIElement(element_id=idx))
+        content = match.group(2).replace('\\"', '"').replace("\\\\", "\\")
+        return Action(
+            type=ActionType.TYPE, text=content, element=UIElement(element_id=idx)
+        )
 
     # TYPE("text") - no element index
     match = re.match(r'TYPE\(["\'](.*)["\']\)', text, re.DOTALL)
     if match:
-        content = match.group(1).replace("\\\"", "\"").replace("\\\\", "\\")
+        content = match.group(1).replace('\\"', '"').replace("\\\\", "\\")
         return Action(type=ActionType.TYPE, text=content)
 
     # WAIT()
@@ -201,7 +203,9 @@ def parse_action_som(text: str) -> Action:
     return Action(type=ActionType.FAIL, raw={"text": text})
 
 
-def _generate_generic_thought(step_index: int, step: Step, goal: str, total_steps: int) -> str:
+def _generate_generic_thought(
+    step_index: int, step: Step, goal: str, total_steps: int
+) -> str:
     """Generate a thought for real captures (non-synthetic scenarios).
 
     This creates action-appropriate thoughts that teach the model to output
@@ -238,7 +242,9 @@ def _generate_generic_thought(step_index: int, step: Step, goal: str, total_step
         return f"{progress} I need to scroll to reveal more content or reach the target element for '{goal}'."
 
     if t == ActionType.DRAG:
-        return f"{progress} I need to drag an element to complete this part of '{goal}'."
+        return (
+            f"{progress} I need to drag an element to complete this part of '{goal}'."
+        )
 
     if t == ActionType.KEY:
         return f"{progress} I need to press a key to continue the workflow."
@@ -268,7 +274,6 @@ def _generate_thought_for_step(
     actions back to the stated objective.
     """
 
-
     if scenario == "registration":
         return _generate_registration_thought(step_index, step, goal, total_steps)
     elif scenario == "login" and total_steps <= 7:
@@ -279,7 +284,9 @@ def _generate_thought_for_step(
         return _generate_generic_thought(step_index, step, goal, total_steps)
 
 
-def _generate_login_thought(step_index: int, step: Step, goal: str, total_steps: int) -> str:
+def _generate_login_thought(
+    step_index: int, step: Step, goal: str, total_steps: int
+) -> str:
     """Generate thought for login scenario (6 steps)."""
     action = step.action
     t = action.type
@@ -333,7 +340,9 @@ def _generate_login_thought(step_index: int, step: Step, goal: str, total_steps:
     )
 
 
-def _generate_registration_thought(step_index: int, step: Step, goal: str, total_steps: int) -> str:
+def _generate_registration_thought(
+    step_index: int, step: Step, goal: str, total_steps: int
+) -> str:
     """Generate thought for registration scenario (12 steps)."""
     action = step.action
     t = action.type
@@ -466,7 +475,9 @@ def build_next_action_sft_samples(
                     history_text += f"  {i}. {action_text}\n"
                 history_text += f"\nThis is step {step_index + 1} of {total_steps}. "
             else:
-                history_text = f"This is step 1 of {total_steps} (no actions completed yet). "
+                history_text = (
+                    f"This is step 1 of {total_steps} (no actions completed yet). "
+                )
 
             if use_som:
                 user_content = (
@@ -474,7 +485,7 @@ def build_next_action_sft_samples(
                     f"{history_text}"
                     "Look at the screenshot and determine the NEXT action.\n\n"
                     "Thought: [which numbered element to interact with and why]\n"
-                    "Action: [CLICK([N]) or TYPE([N], \"text\") or WAIT() or DONE()]"
+                    'Action: [CLICK([N]) or TYPE([N], "text") or WAIT() or DONE()]'
                 )
             else:
                 user_content = (
@@ -482,13 +493,15 @@ def build_next_action_sft_samples(
                     f"{history_text}"
                     "Look at the screenshot and determine the NEXT action.\n\n"
                     "Thought: [what element to interact with and why]\n"
-                    "Action: [CLICK(x=..., y=...) or TYPE(text=\"...\") or WAIT() or DONE()]"
+                    'Action: [CLICK(x=..., y=...) or TYPE(text="...") or WAIT() or DONE()]'
                 )
 
             # Provide a deterministic, semantically meaningful Thought while supervising
             # the exact DSL Action.
             action_text = format_action(step.action, use_som=use_som)
-            thought_text = _generate_thought_for_step(step_index, step, goal, scenario, total_steps)
+            thought_text = _generate_thought_for_step(
+                step_index, step, goal, scenario, total_steps
+            )
             assistant_content = f"Thought: {thought_text}\nAction: {action_text}"
 
             sample = {

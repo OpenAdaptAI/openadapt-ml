@@ -79,7 +79,9 @@ class UIElementGraph:
             [e17] textfield "Username" at (0.3, 0.4)-(0.7, 0.45)
         """
         lines = []
-        elements_to_show = self.elements[:max_elements] if max_elements else self.elements
+        elements_to_show = (
+            self.elements[:max_elements] if max_elements else self.elements
+        )
         for el in elements_to_show:
             name_part = f' "{el.name}"' if el.name else ""
             x1, y1, x2, y2 = el.bbox
@@ -340,9 +342,13 @@ class RawCoordsCondition(ConditionBase):
                 pass
 
         # Check for TYPE action
-        type_match = re.search(r'TYPE\s*\(\s*["\'](.+?)["\']\s*\)', model_output, re.IGNORECASE)
+        type_match = re.search(
+            r'TYPE\s*\(\s*["\'](.+?)["\']\s*\)', model_output, re.IGNORECASE
+        )
         if type_match:
-            return ParsedAction(type="type", text=type_match.group(1), raw_output=model_output)
+            return ParsedAction(
+                type="type", text=type_match.group(1), raw_output=model_output
+            )
 
         # Check for DONE action
         if re.search(r"DONE\s*\(\s*\)", model_output, re.IGNORECASE):
@@ -411,11 +417,16 @@ class CoordsCuesCondition(ConditionBase):
         prompt = self._build_base_prompt(goal, history)
 
         augmented_path = observation.screenshot_path
-        metadata: dict[str, Any] = {"condition": "coords_cues", "is_training": is_training}
+        metadata: dict[str, Any] = {
+            "condition": "coords_cues",
+            "is_training": is_training,
+        }
 
         if is_training and target_coords:
             # Add visual cues for training
-            prompt += "\n\nThe red marker and zoomed inset show the target click location."
+            prompt += (
+                "\n\nThe red marker and zoomed inset show the target click location."
+            )
             prompt += "\nLearn to identify this location based on the UI context."
 
             # Augment screenshot (placeholder - actual implementation would use PIL/cv2)
@@ -521,7 +532,9 @@ class MarksCondition(ConditionBase):
             prompt += "\n\nNo UI elements detected."
 
         prompt += "\n\nWhich element should be clicked?"
-        prompt += "\nRespond with: ACTION: CLICK([element_id]) e.g., ACTION: CLICK([e17])"
+        prompt += (
+            "\nRespond with: ACTION: CLICK([element_id]) e.g., ACTION: CLICK([e17])"
+        )
 
         # Augment screenshot with marks overlay
         augmented_path = self._add_marks_overlay(
@@ -535,7 +548,9 @@ class MarksCondition(ConditionBase):
             prompt=prompt,
             metadata={
                 "condition": "marks",
-                "num_elements": len(observation.ui_elements.elements) if observation.ui_elements else 0,
+                "num_elements": len(observation.ui_elements.elements)
+                if observation.ui_elements
+                else 0,
             },
         )
 
@@ -595,7 +610,9 @@ class MarksCondition(ConditionBase):
             # Normalize element ID format
             if not element_id.startswith("e"):
                 element_id = f"e{element_id}"
-            return ParsedAction(type="click", element_id=element_id, raw_output=model_output)
+            return ParsedAction(
+                type="click", element_id=element_id, raw_output=model_output
+            )
 
         # Try looser patterns
         element_match = re.search(
@@ -607,19 +624,27 @@ class MarksCondition(ConditionBase):
             element_id = element_match.group(1)
             if not element_id.startswith("e"):
                 element_id = f"e{element_id}"
-            return ParsedAction(type="click", element_id=element_id, raw_output=model_output)
+            return ParsedAction(
+                type="click", element_id=element_id, raw_output=model_output
+            )
 
         # Check for element mentioned in text (e.g., "click element e17")
         text_match = re.search(r"\b[eE](\d+)\b", model_output)
         if text_match:
             return ParsedAction(
-                type="click", element_id=f"e{text_match.group(1)}", raw_output=model_output
+                type="click",
+                element_id=f"e{text_match.group(1)}",
+                raw_output=model_output,
             )
 
         # Check for TYPE action
-        type_match = re.search(r'TYPE\s*\(\s*["\'](.+?)["\']\s*\)', model_output, re.IGNORECASE)
+        type_match = re.search(
+            r'TYPE\s*\(\s*["\'](.+?)["\']\s*\)', model_output, re.IGNORECASE
+        )
         if type_match:
-            return ParsedAction(type="type", text=type_match.group(1), raw_output=model_output)
+            return ParsedAction(
+                type="type", text=type_match.group(1), raw_output=model_output
+            )
 
         # Check for DONE action
         if re.search(r"DONE\s*\(\s*\)", model_output, re.IGNORECASE):

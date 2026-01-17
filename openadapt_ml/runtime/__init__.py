@@ -25,7 +25,11 @@ Example usage:
         log_blocked(assessment.reason)
 """
 
-from openadapt_ml.runtime.policy import AgentPolicy, PolicyOutput, parse_thought_state_action
+from openadapt_ml.runtime.policy import (
+    AgentPolicy,
+    PolicyOutput,
+    parse_thought_state_action,
+)
 from openadapt_ml.runtime.safety_gate import (
     SafetyAssessment,
     SafetyConfig,

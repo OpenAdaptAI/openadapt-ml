@@ -221,7 +221,9 @@ def evaluate_grounder_on_episode(
         action = step.action
 
         # Get action type as string for comparison
-        action_type_str = action.type.value if isinstance(action.type, ActionType) else action.type
+        action_type_str = (
+            action.type.value if isinstance(action.type, ActionType) else action.type
+        )
 
         # Only evaluate clicks with bboxes
         if action_type_str not in ("click", "double_click"):
@@ -251,7 +253,9 @@ def evaluate_grounder_on_episode(
         if action.normalized_coordinates:
             coords_x, coords_y = action.normalized_coordinates
         if coords_x is not None and coords_y is not None:
-            target_desc = step.reasoning or f"element at ({coords_x:.2f}, {coords_y:.2f})"
+            target_desc = (
+                step.reasoning or f"element at ({coords_x:.2f}, {coords_y:.2f})"
+            )
         else:
             target_desc = step.reasoning or "target element"
 

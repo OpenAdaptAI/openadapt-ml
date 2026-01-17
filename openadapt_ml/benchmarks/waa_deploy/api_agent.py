@@ -210,6 +210,7 @@ class ApiAgent:
                 )
             try:
                 from anthropic import Anthropic
+
                 self._client = Anthropic(api_key=self.api_key)
             except ImportError:
                 raise RuntimeError(
@@ -225,6 +226,7 @@ class ApiAgent:
                 )
             try:
                 from openai import OpenAI
+
                 self._client = OpenAI(api_key=self.api_key)
             except ImportError:
                 raise RuntimeError(
@@ -240,9 +242,13 @@ class ApiAgent:
         self.memory_block_text = "# empty memory block"
         self.step_counter = 0
 
-        logger.info(f"ApiAgent initialized with provider={provider}, model={self.model}")
+        logger.info(
+            f"ApiAgent initialized with provider={provider}, model={self.model}"
+        )
         if self.demo:
-            logger.info(f"Demo trajectory provided ({len(self.demo)} chars) - will persist across all steps")
+            logger.info(
+                f"Demo trajectory provided ({len(self.demo)} chars) - will persist across all steps"
+            )
 
     def predict(self, instruction: str, obs: Dict) -> tuple:
         """Predict the next action based on observation.
@@ -325,10 +331,9 @@ class ApiAgent:
         # Add action history if enabled (enhanced: includes reasoning, not just raw actions)
         if self.use_history and self.history:
             # Use rich history with reasoning (like PC Agent-E)
-            history_entries = self.history[-self.history_cutoff:]
+            history_entries = self.history[-self.history_cutoff :]
             history_str = "\n\n".join(
-                f"[Step {i+1}] {entry}"
-                for i, entry in enumerate(history_entries)
+                f"[Step {i + 1}] {entry}" for i, entry in enumerate(history_entries)
             )
             content_parts.append(f"History of previous steps:\n{history_str}")
             logs["history_entries"] = len(history_entries)
@@ -381,14 +386,18 @@ class ApiAgent:
             actions = [code_text]
             self.prev_actions.append(code_text)
             # Store rich history with reasoning (memory + action)
-            self._add_to_history(f"Thought: {self.memory_block_text}\nAction: {code_text}")
+            self._add_to_history(
+                f"Thought: {self.memory_block_text}\nAction: {code_text}"
+            )
         else:
             # Try to extract action from response text
             action = self._parse_action_from_text(response_text, w, h)
             if action:
                 actions = [action]
                 self.prev_actions.append(action)
-                self._add_to_history(f"Thought: {self.memory_block_text}\nAction: {action}")
+                self._add_to_history(
+                    f"Thought: {self.memory_block_text}\nAction: {action}"
+                )
             else:
                 logger.warning("Could not extract action from response")
                 actions = ["# Could not parse action"]
@@ -483,33 +492,25 @@ class ApiAgent:
             Python code string or None if parsing failed.
         """
         # Try to find click coordinates
-        click_match = re.search(
-            r"click.*?(\d+)\s*,\s*(\d+)", text, re.IGNORECASE
-        )
+        click_match = re.search(r"click.*?(\d+)\s*,\s*(\d+)", text, re.IGNORECASE)
         if click_match:
             x, y = int(click_match.group(1)), int(click_match.group(2))
             return f"computer.click({x}, {y})"
 
         # Try to find type text
-        type_match = re.search(
-            r'type[:\s]+["\'](.+?)["\']', text, re.IGNORECASE
-        )
+        type_match = re.search(r'type[:\s]+["\'](.+?)["\']', text, re.IGNORECASE)
         if type_match:
             text_to_type = type_match.group(1)
             return f'computer.type("{text_to_type}")'
 
         # Try to find key press
-        key_match = re.search(
-            r"press[:\s]+(\w+)", text, re.IGNORECASE
-        )
+        key_match = re.search(r"press[:\s]+(\w+)", text, re.IGNORECASE)
         if key_match:
             key = key_match.group(1).lower()
             return f'computer.press("{key}")'
 
         # Try to find hotkey
-        hotkey_match = re.search(
-            r"hotkey[:\s]+(\w+)\s*\+\s*(\w+)", text, re.IGNORECASE
-        )
+        hotkey_match = re.search(r"hotkey[:\s]+(\w+)\s*\+\s*(\w+)", text, re.IGNORECASE)
         if hotkey_match:
             key1, key2 = hotkey_match.group(1).lower(), hotkey_match.group(2).lower()
             return f'computer.hotkey("{key1}", "{key2}")'

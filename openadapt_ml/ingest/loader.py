@@ -142,7 +142,8 @@ def _dict_to_episode(data: Dict[str, Any], validate: bool = True) -> Episode:
         # Parse observation
         obs_data = step_data.get("observation", {})
         observation = Observation(
-            screenshot_path=obs_data.get("screenshot_path") or obs_data.get("image_path"),
+            screenshot_path=obs_data.get("screenshot_path")
+            or obs_data.get("image_path"),
             raw=obs_data.get("raw") or obs_data.get("meta"),
             a11y_tree=obs_data.get("a11y_tree") or obs_data.get("accessibility_tree"),
             dom=obs_data.get("dom") or obs_data.get("dom_html"),
@@ -168,7 +169,10 @@ def _dict_to_episode(data: Dict[str, Any], validate: bool = True) -> Episode:
         normalized_end = None
         if action_data.get("normalized_end"):
             normalized_end = tuple(action_data["normalized_end"])
-        elif action_data.get("end_x") is not None and action_data.get("end_y") is not None:
+        elif (
+            action_data.get("end_x") is not None
+            and action_data.get("end_y") is not None
+        ):
             normalized_end = (action_data["end_x"], action_data["end_y"])
 
         action = Action(
