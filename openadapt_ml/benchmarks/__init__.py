@@ -81,6 +81,8 @@ warnings.warn(
     stacklevel=2,
 )
 
+# ruff: noqa: E402
+# Imports after warning call are intentional
 from openadapt_ml.benchmarks.agent import (
     APIBenchmarkAgent,
     BenchmarkAgent,
@@ -109,6 +111,7 @@ from openadapt_ml.benchmarks.waa import WAAAdapter, WAAConfig, WAAMockAdapter
 from openadapt_ml.benchmarks.waa_live import WAALiveAdapter, WAALiveConfig
 from openadapt_ml.benchmarks.viewer import generate_benchmark_viewer
 
+
 # Azure orchestration (lazy import to avoid requiring azure-ai-ml)
 def _get_azure_classes():
     from openadapt_ml.benchmarks.azure import (
@@ -116,6 +119,7 @@ def _get_azure_classes():
         AzureWAAOrchestrator,
         estimate_cost,
     )
+
     return AzureConfig, AzureWAAOrchestrator, estimate_cost
 
 
@@ -164,5 +168,10 @@ def __getattr__(name: str):
             AzureWAAOrchestrator,
             estimate_cost,
         )
-        return {"AzureConfig": AzureConfig, "AzureWAAOrchestrator": AzureWAAOrchestrator, "estimate_cost": estimate_cost}[name]
+
+        return {
+            "AzureConfig": AzureConfig,
+            "AzureWAAOrchestrator": AzureWAAOrchestrator,
+            "estimate_cost": estimate_cost,
+        }[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

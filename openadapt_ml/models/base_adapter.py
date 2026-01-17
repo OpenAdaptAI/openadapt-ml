@@ -14,7 +14,10 @@ def get_default_device() -> torch.device:
 
     if torch.cuda.is_available():
         return torch.device("cuda")
-    if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():  # type: ignore[attr-defined]
+    if (
+        getattr(torch.backends, "mps", None) is not None
+        and torch.backends.mps.is_available()
+    ):  # type: ignore[attr-defined]
         return torch.device("mps")
     return torch.device("cpu")
 
@@ -28,7 +31,12 @@ class BaseVLMAdapter(ABC):
     - generating assistant text given a single sample at inference time
     """
 
-    def __init__(self, model: torch.nn.Module, processor: Any, device: Optional[torch.device] = None) -> None:
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        processor: Any,
+        device: Optional[torch.device] = None,
+    ) -> None:
         self.model = model
         self.processor = processor
         self.device = device or get_default_device()

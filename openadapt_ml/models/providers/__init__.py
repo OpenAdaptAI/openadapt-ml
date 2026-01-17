@@ -131,9 +131,7 @@ def get_provider(provider_name: str) -> BaseAPIProvider:
     provider_class = PROVIDERS.get(provider_name.lower())
     if provider_class is None:
         available = ", ".join(PROVIDERS.keys())
-        raise ValueError(
-            f"Unknown provider: {provider_name}. Available: {available}"
-        )
+        raise ValueError(f"Unknown provider: {provider_name}. Available: {available}")
     return provider_class()
 
 

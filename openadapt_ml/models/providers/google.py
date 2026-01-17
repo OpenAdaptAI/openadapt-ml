@@ -192,7 +192,11 @@ class GoogleProvider(BaseAPIProvider):
             error_str = str(e).lower()
 
             # Map common errors to specific exceptions
-            if "api_key" in error_str or "authentication" in error_str or "invalid" in error_str:
+            if (
+                "api_key" in error_str
+                or "authentication" in error_str
+                or "invalid" in error_str
+            ):
                 raise AuthenticationError(f"Google authentication failed: {e}") from e
             elif "quota" in error_str or "rate" in error_str or "429" in error_str:
                 raise RateLimitError(f"Google rate limit/quota exceeded: {e}") from e
@@ -354,7 +358,7 @@ Return ONLY valid JSON."""
             import json
             import re
 
-            json_match = re.search(r'\{[\s\S]*\}', text)
+            json_match = re.search(r"\{[\s\S]*\}", text)
             if json_match:
                 try:
                     data = json.loads(json_match.group())

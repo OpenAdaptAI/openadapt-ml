@@ -51,9 +51,8 @@ import signal
 import socket
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +124,9 @@ class SSHTunnelManager:
         self._current_vm_ip: str | None = None
         self._current_ssh_user: str | None = None
         self._auto_reconnect = auto_reconnect
-        self._reconnect_attempts: dict[str, int] = {}  # Track reconnect attempts per tunnel
+        self._reconnect_attempts: dict[
+            str, int
+        ] = {}  # Track reconnect attempts per tunnel
 
     def start_tunnels_for_vm(
         self,
@@ -198,7 +199,9 @@ class SSHTunnelManager:
                     pid=None,  # We don't know the PID of the external tunnel
                 )
             else:
-                logger.warning(f"Port {config.local_port} already in use by unknown process")
+                logger.warning(
+                    f"Port {config.local_port} already in use by unknown process"
+                )
                 return TunnelStatus(
                     name=config.name,
                     active=False,
@@ -213,16 +216,25 @@ class SSHTunnelManager:
         # TCPKeepAlive=yes: Enable TCP-level keepalive as additional safeguard
         ssh_cmd = [
             "ssh",
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "UserKnownHostsFile=/dev/null",
-            "-o", "LogLevel=ERROR",
-            "-o", "ServerAliveInterval=60",
-            "-o", "ServerAliveCountMax=10",
-            "-o", "TCPKeepAlive=yes",
-            "-o", "ExitOnForwardFailure=yes",
-            "-i", str(self.ssh_key_path),
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            "-o",
+            "LogLevel=ERROR",
+            "-o",
+            "ServerAliveInterval=60",
+            "-o",
+            "ServerAliveCountMax=10",
+            "-o",
+            "TCPKeepAlive=yes",
+            "-o",
+            "ExitOnForwardFailure=yes",
+            "-i",
+            str(self.ssh_key_path),
             "-N",  # Don't execute remote command
-            "-L", f"{config.local_port}:{config.remote_host}:{config.remote_port}",
+            "-L",
+            f"{config.local_port}:{config.remote_host}:{config.remote_port}",
             f"{ssh_user}@{vm_ip}",
         ]
 
@@ -253,7 +265,9 @@ class SSHTunnelManager:
 
             # Tunnel started successfully
             self._active_tunnels[config.name] = (config, proc)
-            logger.info(f"Started tunnel {config.name}: localhost:{config.local_port} -> {vm_ip}:{config.remote_port}")
+            logger.info(
+                f"Started tunnel {config.name}: localhost:{config.local_port} -> {vm_ip}:{config.remote_port}"
+            )
 
             return TunnelStatus(
                 name=config.name,
@@ -340,24 +354,36 @@ class SSHTunnelManager:
                         name=config.name,
                         active=True,
                         local_port=config.local_port,
-                        remote_endpoint=f"{self._current_vm_ip}:{config.remote_port}" if self._current_vm_ip else "unknown",
+                        remote_endpoint=f"{self._current_vm_ip}:{config.remote_port}"
+                        if self._current_vm_ip
+                        else "unknown",
                         pid=proc.pid,
                     )
                 else:
                     # Process died - but check if port is still working
                     # (could be another tunnel on the same port)
                     del self._active_tunnels[config.name]
-                    if self._is_port_in_use(config.local_port) and self._check_tunnel_works(config.local_port, config.remote_port):
+                    if self._is_port_in_use(
+                        config.local_port
+                    ) and self._check_tunnel_works(
+                        config.local_port, config.remote_port
+                    ):
                         results[config.name] = TunnelStatus(
                             name=config.name,
                             active=True,
                             local_port=config.local_port,
-                            remote_endpoint=f"{self._current_vm_ip}:{config.remote_port}" if self._current_vm_ip else "external",
+                            remote_endpoint=f"{self._current_vm_ip}:{config.remote_port}"
+                            if self._current_vm_ip
+                            else "external",
                             pid=None,  # External tunnel, PID unknown
                         )
                     else:
                         # Tunnel is dead - mark for restart if auto_reconnect enabled
-                        if self._auto_reconnect and auto_restart and self._current_vm_ip:
+                        if (
+                            self._auto_reconnect
+                            and auto_restart
+                            and self._current_vm_ip
+                        ):
                             tunnels_to_restart.append(config)
                         results[config.name] = TunnelStatus(
                             name=config.name,
@@ -369,13 +395,19 @@ class SSHTunnelManager:
             else:
                 # Not tracked internally - but check if an external tunnel exists
                 # This handles tunnels started by other processes or after manager restart
-                if self._is_port_in_use(config.local_port) and self._check_tunnel_works(config.local_port, config.remote_port):
-                    logger.debug(f"Found working external tunnel on port {config.local_port}")
+                if self._is_port_in_use(config.local_port) and self._check_tunnel_works(
+                    config.local_port, config.remote_port
+                ):
+                    logger.debug(
+                        f"Found working external tunnel on port {config.local_port}"
+                    )
                     results[config.name] = TunnelStatus(
                         name=config.name,
                         active=True,
                         local_port=config.local_port,
-                        remote_endpoint=f"{self._current_vm_ip}:{config.remote_port}" if self._current_vm_ip else "external",
+                        remote_endpoint=f"{self._current_vm_ip}:{config.remote_port}"
+                        if self._current_vm_ip
+                        else "external",
                         pid=None,  # External tunnel, PID unknown
                     )
                 else:
@@ -390,16 +422,22 @@ class SSHTunnelManager:
         for config in tunnels_to_restart:
             attempts = self._reconnect_attempts.get(config.name, 0)
             if attempts < self.MAX_RECONNECT_ATTEMPTS:
-                logger.info(f"Auto-reconnecting tunnel {config.name} (attempt {attempts + 1}/{self.MAX_RECONNECT_ATTEMPTS})")
+                logger.info(
+                    f"Auto-reconnecting tunnel {config.name} (attempt {attempts + 1}/{self.MAX_RECONNECT_ATTEMPTS})"
+                )
                 time.sleep(self.RECONNECT_DELAY_SECONDS)
                 self._reconnect_attempts[config.name] = attempts + 1
-                status = self._start_tunnel(config, self._current_vm_ip, self._current_ssh_user or "azureuser")
+                status = self._start_tunnel(
+                    config, self._current_vm_ip, self._current_ssh_user or "azureuser"
+                )
                 results[config.name] = status
                 if status.active:
                     logger.info(f"Successfully reconnected tunnel {config.name}")
                     self._reconnect_attempts[config.name] = 0  # Reset on success
             else:
-                logger.warning(f"Tunnel {config.name} exceeded max reconnect attempts ({self.MAX_RECONNECT_ATTEMPTS})")
+                logger.warning(
+                    f"Tunnel {config.name} exceeded max reconnect attempts ({self.MAX_RECONNECT_ATTEMPTS})"
+                )
                 results[config.name] = TunnelStatus(
                     name=config.name,
                     active=False,
@@ -455,7 +493,9 @@ class SSHTunnelManager:
         """
         # If VM changed, stop old tunnels and reset reconnect attempts
         if self._current_vm_ip and self._current_vm_ip != vm_ip:
-            logger.info(f"VM IP changed from {self._current_vm_ip} to {vm_ip}, restarting tunnels")
+            logger.info(
+                f"VM IP changed from {self._current_vm_ip} to {vm_ip}, restarting tunnels"
+            )
             self.stop_all_tunnels()
             self.reset_reconnect_attempts()  # Fresh start for new VM
 

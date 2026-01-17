@@ -171,7 +171,11 @@ class OpenAIProvider(BaseAPIProvider):
             error_str = str(e).lower()
 
             # Map common errors to specific exceptions
-            if "authentication" in error_str or "api_key" in error_str or "invalid_api_key" in error_str:
+            if (
+                "authentication" in error_str
+                or "api_key" in error_str
+                or "invalid_api_key" in error_str
+            ):
                 raise AuthenticationError(f"OpenAI authentication failed: {e}") from e
             elif "rate_limit" in error_str or "429" in error_str:
                 raise RateLimitError(f"OpenAI rate limit exceeded: {e}") from e

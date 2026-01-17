@@ -73,7 +73,7 @@ def plot_eval_metrics(
     fig.suptitle(
         "VLM Model Comparison (Offline fine-tuned vs API models)",
         fontsize=12,
-        fontweight='bold',
+        fontweight="bold",
     )
     if num_metrics == 1:
         axes = [axes]
@@ -96,36 +96,38 @@ def plot_eval_metrics(
             hatches.append(hatch)
 
         x = range(num_models)
-        bars = ax.bar(x, values, tick_label=labels, color=colors, edgecolor='black', linewidth=1.2)
+        bars = ax.bar(
+            x, values, tick_label=labels, color=colors, edgecolor="black", linewidth=1.2
+        )
 
         # Apply hatch patterns
         for bar, hatch in zip(bars, hatches):
             bar.set_hatch(hatch)
 
-        ax.set_title(title, fontsize=11, fontweight='bold')
+        ax.set_title(title, fontsize=11, fontweight="bold")
         ax.set_ylabel(key, fontsize=9)
         ax.set_ylim(bottom=0.0)
         # Rotate x-axis labels to prevent crowding
-        ax.tick_params(axis='x', labelrotation=45, labelsize=8)
+        ax.tick_params(axis="x", labelrotation=45, labelsize=8)
         # Align labels to the right for better readability when rotated
         for tick in ax.get_xticklabels():
-            tick.set_horizontalalignment('right')
+            tick.set_horizontalalignment("right")
 
     fig.tight_layout()
 
     # Add legend explaining color coding and hatch patterns
     legend_elements = [
-        Patch(facecolor='#4A90E2', edgecolor='black', label='Qwen3-VL-2B'),
-        Patch(facecolor='#2E5C8A', edgecolor='black', label='Qwen3-VL-8B'),
-        Patch(facecolor='#FF6B35', edgecolor='black', label='Claude (API)'),
-        Patch(facecolor='#C1121F', edgecolor='black', label='GPT (API)'),
-        Patch(facecolor='gray', edgecolor='black', hatch='///', label='Fine-tuned'),
-        Patch(facecolor='gray', edgecolor='black', label='Base/Pretrained'),
+        Patch(facecolor="#4A90E2", edgecolor="black", label="Qwen3-VL-2B"),
+        Patch(facecolor="#2E5C8A", edgecolor="black", label="Qwen3-VL-8B"),
+        Patch(facecolor="#FF6B35", edgecolor="black", label="Claude (API)"),
+        Patch(facecolor="#C1121F", edgecolor="black", label="GPT (API)"),
+        Patch(facecolor="gray", edgecolor="black", hatch="///", label="Fine-tuned"),
+        Patch(facecolor="gray", edgecolor="black", label="Base/Pretrained"),
     ]
 
     fig.legend(
         handles=legend_elements,
-        loc='lower center',
+        loc="lower center",
         bbox_to_anchor=(0.5, -0.05),
         ncol=3,
         fontsize=9,
@@ -133,7 +135,7 @@ def plot_eval_metrics(
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=150, bbox_inches='tight')
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 

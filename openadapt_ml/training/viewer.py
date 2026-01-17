@@ -33,7 +33,7 @@ def _copy_transcript_and_audio(capture_path: Path | None, output_dir: Path) -> N
     transcript_dst = output_dir / "transcript.json"
     if transcript_src.exists() and not transcript_dst.exists():
         shutil.copy2(transcript_src, transcript_dst)
-        print(f"  Copied transcript.json from capture")
+        print("  Copied transcript.json from capture")
 
     # Convert audio to mp3 if it exists (ffmpeg required)
     audio_dst = output_dir / "audio.mp3"
@@ -44,14 +44,24 @@ def _copy_transcript_and_audio(capture_path: Path | None, output_dir: Path) -> N
             if audio_src.exists():
                 try:
                     result = subprocess.run(
-                        ["ffmpeg", "-i", str(audio_src), "-y", "-q:a", "2", str(audio_dst)],
+                        [
+                            "ffmpeg",
+                            "-i",
+                            str(audio_src),
+                            "-y",
+                            "-q:a",
+                            "2",
+                            str(audio_dst),
+                        ],
                         capture_output=True,
                         timeout=60,
                     )
                     if result.returncode == 0:
                         print(f"  Converted {audio_src.name} to audio.mp3")
                     else:
-                        print(f"  Warning: ffmpeg conversion failed for {audio_src.name}")
+                        print(
+                            f"  Warning: ffmpeg conversion failed for {audio_src.name}"
+                        )
                 except FileNotFoundError:
                     print("  Warning: ffmpeg not found, cannot convert audio")
                 except subprocess.TimeoutExpired:
@@ -120,12 +130,12 @@ def generate_unified_viewer_from_output_dir(output_dir: Path) -> Path | None:
                 data = json.load(f)
 
             # Determine checkpoint name from filename
-            name_match = re.search(r'predictions_(.+)\.json', json_file.name)
+            name_match = re.search(r"predictions_(.+)\.json", json_file.name)
             if name_match:
                 raw_name = name_match.group(1)
-                if raw_name.startswith('epoch'):
+                if raw_name.startswith("epoch"):
                     checkpoint_name = f"Epoch {raw_name[5:]}"
-                elif raw_name == 'preview':
+                elif raw_name == "preview":
                     checkpoint_name = "Preview"
                 else:
                     checkpoint_name = raw_name.title()
@@ -133,19 +143,19 @@ def generate_unified_viewer_from_output_dir(output_dir: Path) -> Path | None:
                 checkpoint_name = json_file.stem
 
             # Extract base data from first file
-            if base_data is None and 'base_data' in data:
-                base_data = data['base_data']
+            if base_data is None and "base_data" in data:
+                base_data = data["base_data"]
 
             # Store predictions
-            if 'predictions' in data:
-                predictions_by_checkpoint[checkpoint_name] = data['predictions']
+            if "predictions" in data:
+                predictions_by_checkpoint[checkpoint_name] = data["predictions"]
                 print(f"  Loaded predictions from {json_file.name}")
         except Exception as e:
             print(f"  Warning: Could not load {json_file.name}: {e}")
 
     # Fallback: look for comparison_epoch*.html files and extract their data
     for comp_file in sorted(output_dir.glob("comparison_epoch*.html")):
-        match = re.search(r'epoch(\d+)', comp_file.name)
+        match = re.search(r"epoch(\d+)", comp_file.name)
         if not match:
             continue
 
@@ -157,9 +167,9 @@ def generate_unified_viewer_from_output_dir(output_dir: Path) -> Path | None:
             html_content = comp_file.read_text()
             # Look for comparisonData = [...]; (supports both const and window. prefix)
             data_match = re.search(
-                r'(?:const\s+|window\.)comparisonData\s*=\s*(\[.*?\]);',
+                r"(?:const\s+|window\.)comparisonData\s*=\s*(\[.*?\]);",
                 html_content,
-                re.DOTALL
+                re.DOTALL,
             )
             if data_match:
                 comparison_data = json.loads(data_match.group(1))
@@ -168,20 +178,24 @@ def generate_unified_viewer_from_output_dir(output_dir: Path) -> Path | None:
                 if base_data is None:
                     base_data = []
                     for item in comparison_data:
-                        base_data.append({
-                            "index": item.get("index", 0),
-                            "time": item.get("time", 0),
-                            "image_path": item.get("image_path", ""),
-                            "human_action": item.get("human_action", {}),
-                        })
+                        base_data.append(
+                            {
+                                "index": item.get("index", 0),
+                                "time": item.get("time", 0),
+                                "image_path": item.get("image_path", ""),
+                                "human_action": item.get("human_action", {}),
+                            }
+                        )
 
                 # Extract predictions
                 predictions = []
                 for item in comparison_data:
-                    predictions.append({
-                        "predicted_action": item.get("predicted_action"),
-                        "match": item.get("match"),
-                    })
+                    predictions.append(
+                        {
+                            "predicted_action": item.get("predicted_action"),
+                            "match": item.get("match"),
+                        }
+                    )
                 predictions_by_checkpoint[checkpoint_name] = predictions
                 print(f"  Loaded predictions from {comp_file.name}")
         except Exception as e:
@@ -193,9 +207,9 @@ def generate_unified_viewer_from_output_dir(output_dir: Path) -> Path | None:
         try:
             html_content = preview_file.read_text()
             data_match = re.search(
-                r'(?:const\s+|window\.)comparisonData\s*=\s*(\[.*?\]);',
+                r"(?:const\s+|window\.)comparisonData\s*=\s*(\[.*?\]);",
                 html_content,
-                re.DOTALL
+                re.DOTALL,
             )
             if data_match:
                 comparison_data = json.loads(data_match.group(1))
@@ -204,26 +218,32 @@ def generate_unified_viewer_from_output_dir(output_dir: Path) -> Path | None:
                 if base_data is None:
                     base_data = []
                     for item in comparison_data:
-                        base_data.append({
-                            "index": item.get("index", 0),
-                            "time": item.get("time", 0),
-                            "image_path": item.get("image_path", ""),
-                            "human_action": item.get("human_action", {}),
-                        })
+                        base_data.append(
+                            {
+                                "index": item.get("index", 0),
+                                "time": item.get("time", 0),
+                                "image_path": item.get("image_path", ""),
+                                "human_action": item.get("human_action", {}),
+                            }
+                        )
 
                 predictions = []
                 for item in comparison_data:
-                    predictions.append({
-                        "predicted_action": item.get("predicted_action"),
-                        "match": item.get("match"),
-                    })
+                    predictions.append(
+                        {
+                            "predicted_action": item.get("predicted_action"),
+                            "match": item.get("match"),
+                        }
+                    )
                 # Only add if it has actual predictions
                 has_predictions = any(p.get("predicted_action") for p in predictions)
                 if has_predictions and "Preview" not in predictions_by_checkpoint:
                     predictions_by_checkpoint["Preview"] = predictions
-                    print(f"  Loaded predictions from comparison_preview.html")
+                    print("  Loaded predictions from comparison_preview.html")
         except Exception as e:
-            print(f"  Warning: Could not extract data from comparison_preview.html: {e}")
+            print(
+                f"  Warning: Could not extract data from comparison_preview.html: {e}"
+            )
 
     # If we still don't have base data, we can't generate the viewer
     if base_data is None:
@@ -237,6 +257,7 @@ def generate_unified_viewer_from_output_dir(output_dir: Path) -> Path | None:
     capture_modified_time = None
     if capture_path and capture_path.exists():
         import datetime
+
         mtime = capture_path.stat().st_mtime
         capture_modified_time = datetime.datetime.fromtimestamp(mtime).isoformat()
 
@@ -279,18 +300,22 @@ def _generate_unified_viewer_from_extracted_data(
     base_data_json = json.dumps(base_data)
     predictions_json = json.dumps(predictions_by_checkpoint)
     evaluations_json = json.dumps(evaluations or [])
-    captures_json = json.dumps([{
-        "id": capture_id,
-        "name": goal,
-        "steps": len(base_data),
-    }])
+    captures_json = json.dumps(
+        [
+            {
+                "id": capture_id,
+                "name": goal,
+                "steps": len(base_data),
+            }
+        ]
+    )
     current_capture_json = json.dumps(capture_id)
     capture_modified_time_json = json.dumps(capture_modified_time)
 
     # Find first image to get dimensions (for display)
-    first_image_path = base_data[0].get("image_path", "") if base_data else ""
+    base_data[0].get("image_path", "") if base_data else ""
 
-    html = f'''<!DOCTYPE html>
+    html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -2563,9 +2588,9 @@ def _generate_unified_viewer_from_extracted_data(
     setupGalleryPanel();
     </script>
 </body>
-</html>'''
+</html>"""
 
-    output_path.write_text(html, encoding='utf-8')
+    output_path.write_text(html, encoding="utf-8")
     print(f"Generated unified viewer: {output_path}")
 
 
@@ -2593,9 +2618,7 @@ def _enhance_comparison_to_unified_viewer(
 
     # Extract base data from the existing comparisonData (supports both const and window. prefix)
     data_match = re.search(
-        r'(?:const\s+|window\.)comparisonData\s*=\s*(\[.*?\]);',
-        html,
-        re.DOTALL
+        r"(?:const\s+|window\.)comparisonData\s*=\s*(\[.*?\]);", html, re.DOTALL
     )
     if not data_match:
         print(f"Could not find comparisonData in {base_html_file}")
@@ -2606,31 +2629,37 @@ def _enhance_comparison_to_unified_viewer(
     # Build base data (human actions only) and ensure predictions dict has base data
     base_data = []
     for item in base_comparison_data:
-        base_data.append({
-            "index": item.get("index", 0),
-            "time": item.get("time", 0),
-            "image_path": item.get("image_path", ""),
-            "human_action": item.get("human_action", {}),
-        })
+        base_data.append(
+            {
+                "index": item.get("index", 0),
+                "time": item.get("time", 0),
+                "image_path": item.get("image_path", ""),
+                "human_action": item.get("human_action", {}),
+            }
+        )
 
     # JSON encode predictions
     predictions_json = json.dumps(predictions_by_checkpoint)
-    captures_json = json.dumps([{
-        "id": capture_id,
-        "name": goal,
-        "steps": len(base_data),
-    }])
+    captures_json = json.dumps(
+        [
+            {
+                "id": capture_id,
+                "name": goal,
+                "steps": len(base_data),
+            }
+        ]
+    )
 
     # 1. Replace nav bar with unified header combining nav + controls
     # Use shared header CSS and HTML for consistency with training dashboard
-    header_css = f'<style>{_get_shared_header_css()}</style>'
+    header_css = f"<style>{_get_shared_header_css()}</style>"
 
     # Build the controls HTML for the viewer (example + checkpoint dropdowns)
     controls_html = f'''
             <div class="control-group">
                 <span class="control-label">Example</span>
                 <select id="capture-select">
-                    <option value="{capture_id}">{goal[:40]}{'...' if len(goal) > 40 else ''} ({len(base_data)})</option>
+                    <option value="{capture_id}">{goal[:40]}{"..." if len(goal) > 40 else ""} ({len(base_data)})</option>
                 </select>
             </div>
             <div class="control-group">
@@ -2640,17 +2669,15 @@ def _enhance_comparison_to_unified_viewer(
     '''
 
     unified_header = header_css + _generate_shared_header_html(
-        "viewer",
-        controls_html=controls_html,
-        meta_html=f"ID: {capture_id}"
+        "viewer", controls_html=controls_html, meta_html=f"ID: {capture_id}"
     )
 
     # Remove any old viewer-controls div if it exists (from previous runs)
     html = re.sub(
         r'<div class="viewer-controls"[^>]*>.*?</div>\s*(?=<)',
-        '',
+        "",
         html,
-        flags=re.DOTALL
+        flags=re.DOTALL,
     )
 
     # Try to replace existing nav with unified header
@@ -2660,31 +2687,21 @@ def _enhance_comparison_to_unified_viewer(
             r'<nav class="nav-bar"[^>]*>.*?</nav>\s*',
             unified_header,
             html,
-            flags=re.DOTALL
+            flags=re.DOTALL,
         )
         nav_replaced = True
 
     # Remove the old <header> element - unified header already contains all info
-    html = re.sub(
-        r'<header[^>]*>.*?</header>\s*',
-        '',
-        html,
-        flags=re.DOTALL
-    )
+    html = re.sub(r"<header[^>]*>.*?</header>\s*", "", html, flags=re.DOTALL)
 
     # If no nav was found/replaced, insert unified header after <body>
     if not nav_replaced:
-        html = re.sub(
-            r'(<body[^>]*>)',
-            r'\1\n' + unified_header,
-            html,
-            count=1
-        )
+        html = re.sub(r"(<body[^>]*>)", r"\1\n" + unified_header, html, count=1)
 
     # 3. Replace the comparisonData with multi-checkpoint system
     # We need to modify the JavaScript to use our checkpoint system
 
-    checkpoint_script = f'''
+    checkpoint_script = f"""
     <script>
     // Unified viewer: multi-checkpoint support
     // Bridge local comparisonData to window scope for cross-script access
@@ -2867,19 +2884,19 @@ def _enhance_comparison_to_unified_viewer(
         }}, 200);
     }})();
     </script>
-    '''
+    """
 
     # Insert checkpoint script before </body>
-    html = html.replace('</body>', checkpoint_script + '</body>')
+    html = html.replace("</body>", checkpoint_script + "</body>")
 
     # 4. Disable the old discoverDashboards that creates wrong nav
     html = html.replace(
-        'discoverDashboards();',
-        '// discoverDashboards disabled - using unified viewer nav'
+        "discoverDashboards();",
+        "// discoverDashboards disabled - using unified viewer nav",
     )
 
     # Write output
-    output_path.write_text(html, encoding='utf-8')
+    output_path.write_text(html, encoding="utf-8")
     print(f"Generated unified viewer from {base_html_file.name}: {output_path}")
 
 
@@ -2904,67 +2921,78 @@ def _add_static_nav_to_comparison(
     # Move comparison panel to be a full-width sibling BEFORE main-content (not inside it)
     if '<div class="comparison-panel"' in html:
         # Check if panel is NOT already right before main-content
-        if '<div class="comparison-panel"' in html and 'class="comparison-panel"' in html:
+        if (
+            '<div class="comparison-panel"' in html
+            and 'class="comparison-panel"' in html
+        ):
             # Check if it's in the wrong place (inside sidebar or main-content)
-            in_sidebar = '<div class="sidebar">' in html and html.index('<div class="comparison-panel"') > html.index('<div class="sidebar">')
-            in_main = '<div class="main-content">' in html and '<div class="main-content">\n' in html and '<div class="main-content">\n        <div class="comparison-panel"' in html
+            in_sidebar = '<div class="sidebar">' in html and html.index(
+                '<div class="comparison-panel"'
+            ) > html.index('<div class="sidebar">')
+            in_main = (
+                '<div class="main-content">' in html
+                and '<div class="main-content">\n' in html
+                and '<div class="main-content">\n        <div class="comparison-panel"'
+                in html
+            )
 
             if in_sidebar or in_main:
                 # Extract comparison panel from wherever it is
                 panel_match = re.search(
                     r'(\s*<div class="comparison-panel"[^>]*>.*?</div>\s*</div>\s*</div>)',
                     html,
-                    re.DOTALL
+                    re.DOTALL,
                 )
                 if panel_match:
                     panel_html = panel_match.group(1)
                     # Remove from current location
-                    html = html.replace(panel_html, '')
+                    html = html.replace(panel_html, "")
                     # Insert as sibling BEFORE main-content
                     html = html.replace(
                         '<div class="main-content">',
-                        panel_html.strip() + '\n        <div class="main-content">'
+                        panel_html.strip() + '\n        <div class="main-content">',
                     )
-                    print(f"  Moved Action Comparison above screenshot in {comparison_path.name}")
+                    print(
+                        f"  Moved Action Comparison above screenshot in {comparison_path.name}"
+                    )
 
     # Build nav links if not provided
     if nav_links is None:
-        nav_links = _build_nav_links()
+        # Default nav links if not provided
+        nav_links = []
 
     # Build nav HTML with active state for current file
     # NOTE: No "Dashboards:" label to match training dashboard nav
     current_file = comparison_path.name
-    nav_html = '''
+    nav_html = """
     <nav class="nav-bar" style="display:flex;gap:8px;padding:12px 16px;background:#12121a;border:1px solid rgba(255,255,255,0.06);border-radius:8px;margin-bottom:16px;flex-wrap:wrap;">
-'''
+"""
     for filename, label in nav_links:
         is_active = filename == current_file
-        active_style = "background:#00d4aa;color:#0a0a0f;border-color:#00d4aa;font-weight:600;" if is_active else ""
+        active_style = (
+            "background:#00d4aa;color:#0a0a0f;border-color:#00d4aa;font-weight:600;"
+            if is_active
+            else ""
+        )
         nav_html += f'        <a href="{filename}" style="padding:8px 16px;border-radius:6px;font-size:0.8rem;text-decoration:none;color:#888;background:#1a1a24;border:1px solid rgba(255,255,255,0.06);{active_style}">{label}</a>\n'
-    nav_html += '    </nav>\n'
+    nav_html += "    </nav>\n"
 
     # ALWAYS replace existing nav or add new one (for consistency)
     if '<nav class="nav-bar"' in html:
         # Replace existing nav
         html = re.sub(
-            r'<nav class="nav-bar"[^>]*>.*?</nav>\s*',
-            nav_html,
-            html,
-            flags=re.DOTALL
+            r'<nav class="nav-bar"[^>]*>.*?</nav>\s*', nav_html, html, flags=re.DOTALL
         )
         print(f"  Updated navigation in {comparison_path.name}")
     elif '<div class="container">' in html:
         # Insert nav BEFORE the container, not inside it
         # This ensures the unified header is not affected by container padding
         html = html.replace(
-            '<div class="container">',
-            nav_html + '\n    <div class="container">'
+            '<div class="container">', nav_html + '\n    <div class="container">'
         )
         print(f"  Added navigation to {comparison_path.name}")
-    elif '<body>' in html:
-        html = html.replace('<body>', '<body>\n' + nav_html)
+    elif "<body>" in html:
+        html = html.replace("<body>", "<body>\n" + nav_html)
         print(f"  Added navigation to {comparison_path.name}")
 
     comparison_path.write_text(html)
-
-
