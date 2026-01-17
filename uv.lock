@@ -558,6 +558,18 @@ wheels = [
 ]
 
 [[package]]
+name = "click"
+version = "8.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "platform_system == 'Windows'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3d/fa/656b739db8587d7b5dfa22e22ed02566950fbfbcdc20311993483657a5c0/click-8.3.1.tar.gz", hash = "sha256:12ff4785d337a1bb490bb7e9c2b1ee5da3112e94a8622f26a6c77f5d2fc6842a", size = 295065 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/98/78/01c019cdb5d6498122777c1a43056ebb3ebfeef2076d9d026bfe15583b2b/click-8.3.1-py3-none-any.whl", hash = "sha256:981153a64e25f12d547d3426c367a4857371575ee7ad18df2a6183ab0545b2a6", size = 108274 },
+]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -2065,6 +2077,7 @@ dependencies = [
     { name = "azure-ai-ml" },
     { name = "azure-identity" },
     { name = "bitsandbytes" },
+    { name = "click" },
     { name = "google-generativeai" },
     { name = "matplotlib" },
     { name = "openadapt-capture" },
@@ -2112,6 +2125,7 @@ requires-dist = [
     { name = "azure-identity", specifier = ">=1.25.1" },
     { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.0.0" },
     { name = "bitsandbytes", specifier = ">=0.41.0" },
+    { name = "click", specifier = ">=8.1.0" },
     { name = "datasets", marker = "extra == 'training'", specifier = ">=2.18.0" },
     { name = "google-generativeai", specifier = ">=0.8.5" },
     { name = "matplotlib", specifier = ">=3.10.7" },
