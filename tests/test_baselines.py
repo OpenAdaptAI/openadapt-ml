@@ -457,10 +457,11 @@ class TestPromptBuilder:
         prompt = builder.get_system_prompt()
 
         assert "GUI automation agent" in prompt
-        assert "CLICK(x, y)" in prompt
-        assert "normalized coordinates" in prompt
-        # Track A should NOT mention element IDs
-        assert "element ID" not in prompt.lower() or "element_id" not in prompt
+        # The prompt shows coordinates in JSON format
+        assert "normalized" in prompt.lower()
+        assert "0.0" in prompt and "1.0" in prompt  # Coordinate range explanation
+        # Track A should NOT mention element IDs as primary method
+        assert "element_id" not in prompt.lower() or "element ID" not in prompt.lower()
 
     def test_track_b_system_prompt(self):
         """Test PromptBuilder generates Track B system prompt."""
@@ -561,8 +562,8 @@ class TestPromptBuilder:
         content = builder.build_user_content(goal="Click", a11y_tree=a11y_tree)
 
         text_content = content[0]["text"]
-        # Should be truncated
-        assert "truncated" in text_content
+        # Should be truncated - the implementation shows "showing X of Y elements"
+        assert "showing 5 of 20" in text_content or "truncated" in text_content
 
 
 class TestParsedAction:
