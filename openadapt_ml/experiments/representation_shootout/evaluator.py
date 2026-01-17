@@ -138,19 +138,27 @@ class DriftTransformer:
 
         if drift_config.drift_type == DriftType.RESOLUTION:
             return DriftTransformer._apply_resolution_drift(
-                observation, ground_truth, drift_config.params  # type: ignore
+                observation,
+                ground_truth,
+                drift_config.params,  # type: ignore
             )
         elif drift_config.drift_type == DriftType.TRANSLATION:
             return DriftTransformer._apply_translation_drift(
-                observation, ground_truth, drift_config.params  # type: ignore
+                observation,
+                ground_truth,
+                drift_config.params,  # type: ignore
             )
         elif drift_config.drift_type == DriftType.THEME:
             return DriftTransformer._apply_theme_drift(
-                observation, ground_truth, drift_config.params  # type: ignore
+                observation,
+                ground_truth,
+                drift_config.params,  # type: ignore
             )
         elif drift_config.drift_type == DriftType.SCROLL:
             return DriftTransformer._apply_scroll_drift(
-                observation, ground_truth, drift_config.params  # type: ignore
+                observation,
+                ground_truth,
+                drift_config.params,  # type: ignore
             )
         else:
             logger.warning(f"Unknown drift type: {drift_config.drift_type}")
@@ -372,7 +380,9 @@ def compute_metrics(
         if gt_el_id:
             pred_id = prediction.element_id.lower().replace("e", "")
             gt_id = str(gt_el_id).lower().replace("e", "")
-            metrics[MetricName.GROUNDING_TOP1_ACCURACY.value] = 1.0 if pred_id == gt_id else 0.0
+            metrics[MetricName.GROUNDING_TOP1_ACCURACY.value] = (
+                1.0 if pred_id == gt_id else 0.0
+            )
         else:
             metrics[MetricName.GROUNDING_TOP1_ACCURACY.value] = 0.0
 
@@ -382,7 +392,9 @@ def compute_metrics(
 
     if gt_x is not None and gt_y is not None:
         if prediction.x is not None and prediction.y is not None:
-            distance = math.sqrt((prediction.x - gt_x) ** 2 + (prediction.y - gt_y) ** 2)
+            distance = math.sqrt(
+                (prediction.x - gt_x) ** 2 + (prediction.y - gt_y) ** 2
+            )
         else:
             # If prediction failed or is element-based, compute distance from element center
             if prediction.element_id and ui_elements:
@@ -568,7 +580,9 @@ class DriftEvaluator:
                     robustness_scores[condition][r.drift] = 1.0
                 else:
                     drift_value = r.metrics.get(primary_metric, 0)
-                    robustness_scores[condition][r.drift] = drift_value / canonical_value
+                    robustness_scores[condition][r.drift] = (
+                        drift_value / canonical_value
+                    )
 
         return robustness_scores
 
@@ -622,7 +636,7 @@ def make_recommendation(
     if coords_cues_avg >= marks_avg - tolerance:
         recommended = "COORDINATES"
         reason = (
-            f"Coords+Cues ({coords_cues_avg:.1%}) is within {tolerance*100}% of "
+            f"Coords+Cues ({coords_cues_avg:.1%}) is within {tolerance * 100}% of "
             f"Marks ({marks_avg:.1%}) under drift. Coordinates approach is simpler "
             "and doesn't require element detection pipeline."
         )
@@ -631,7 +645,7 @@ def make_recommendation(
         gap = marks_avg - coords_cues_avg
         reason = (
             f"Marks ({marks_avg:.1%}) outperforms Coords+Cues ({coords_cues_avg:.1%}) "
-            f"by {gap:.1%} (>{tolerance*100}%) under drift. Element-based approach "
+            f"by {gap:.1%} (>{tolerance * 100}%) under drift. Element-based approach "
             "provides better robustness to UI changes."
         )
 

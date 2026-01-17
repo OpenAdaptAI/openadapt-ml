@@ -6,7 +6,6 @@ and convert them to the Episode/Step format used by openadapt-ml for training.
 
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -101,7 +100,7 @@ def capture_to_episode(
     """
     try:
         from openadapt_capture import Capture
-        from openadapt_capture.events import (
+        from openadapt_capture.events import (  # noqa: F401
             EventType,
             KeyTypeEvent,
             MouseClickEvent,
@@ -135,7 +134,9 @@ def capture_to_episode(
             dir_name = capture_path.name
             if dir_name and dir_name != "capture":
                 # Convert kebab-case/snake_case to readable text
-                instruction = dir_name.replace("-", " ").replace("_", " ").strip().capitalize()
+                instruction = (
+                    dir_name.replace("-", " ").replace("_", " ").strip().capitalize()
+                )
             else:
                 instruction = "Complete the recorded workflow"
 
@@ -155,9 +156,7 @@ def capture_to_episode(
         screenshot_path = _save_screenshot(screenshot, output_dir, episode_id, idx)
 
         # Normalize coordinates
-        norm_coords = _normalize_coords(
-            action.x, action.y, screen_width, screen_height
-        )
+        norm_coords = _normalize_coords(action.x, action.y, screen_width, screen_height)
 
         # Map event type to openadapt-ml ActionType
         event_type = action.type
@@ -174,15 +173,15 @@ def capture_to_episode(
         if isinstance(action.event, MouseDragEvent):
             end_x = action.event.x + action.event.dx
             end_y = action.event.y + action.event.dy
-            norm_end = _normalize_coords(
-                end_x, end_y, screen_width, screen_height
+            norm_end = _normalize_coords(end_x, end_y, screen_width, screen_height)
+            ml_action = ml_action.model_copy(
+                update={
+                    "normalized_end": norm_end,
+                    "raw": {
+                        "button": action.event.button,
+                    },
+                }
             )
-            ml_action = ml_action.model_copy(update={
-                "normalized_end": norm_end,
-                "raw": {
-                    "button": action.event.button,
-                },
-            })
 
         # Handle scroll events
         if isinstance(action.event, MouseScrollEvent):
@@ -197,13 +196,15 @@ def capture_to_episode(
             elif action.event.dx < 0:
                 scroll_direction = "left"
 
-            ml_action = ml_action.model_copy(update={
-                "scroll_direction": scroll_direction,
-                "raw": {
-                    "dx": action.event.dx,
-                    "dy": action.event.dy,
-                },
-            })
+            ml_action = ml_action.model_copy(
+                update={
+                    "scroll_direction": scroll_direction,
+                    "raw": {
+                        "dx": action.event.dx,
+                        "dy": action.event.dy,
+                    },
+                }
+            )
 
         # Handle keyboard events - include key names for special keys
         if action.keys:
@@ -227,7 +228,9 @@ def capture_to_episode(
         last_step = steps[-1]
         done_step = Step(
             step_index=len(steps),
-            observation=Observation(screenshot_path=last_step.observation.screenshot_path),
+            observation=Observation(
+                screenshot_path=last_step.observation.screenshot_path
+            ),
             action=Action(type=ActionType.DONE),
             reasoning="Workflow complete.",
             timestamp=(last_step.timestamp or 0) + 0.1,

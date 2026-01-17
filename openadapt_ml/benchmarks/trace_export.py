@@ -51,7 +51,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from openadapt_ml.benchmarks.data_collection import ExecutionStep
 from openadapt_ml.benchmarks.viewer import (
     load_benchmark_metadata,
     load_benchmark_summary,
@@ -122,7 +121,7 @@ class TraceExporter:
         """
         # Load benchmark data
         metadata = load_benchmark_metadata(self.benchmark_dir)
-        summary = load_benchmark_summary(self.benchmark_dir)
+        load_benchmark_summary(self.benchmark_dir)
         tasks = load_task_results(self.benchmark_dir)
 
         logger.info(
@@ -153,7 +152,9 @@ class TraceExporter:
                 episodes.append(episode)
 
                 # Save episode JSON
-                episode_path = self.output_dir / "episodes" / f"{episode.episode_id}.json"
+                episode_path = (
+                    self.output_dir / "episodes" / f"{episode.episode_id}.json"
+                )
                 save_episode(episode, episode_path)
 
                 # Copy screenshots if enabled
@@ -170,7 +171,9 @@ class TraceExporter:
                 )
 
             except Exception as e:
-                error_msg = f"Failed to export task {task.get('task_id', 'unknown')}: {e}"
+                error_msg = (
+                    f"Failed to export task {task.get('task_id', 'unknown')}: {e}"
+                )
                 logger.error(error_msg)
                 stats.errors.append(error_msg)
                 stats.skipped_tasks += 1
@@ -508,7 +511,10 @@ class TraceExporter:
                         "action": {
                             "type": step.action.type.value,
                             "coordinates": (
-                                {"x": step.action.coordinates.x, "y": step.action.coordinates.y}
+                                {
+                                    "x": step.action.coordinates.x,
+                                    "y": step.action.coordinates.y,
+                                }
                                 if step.action.coordinates
                                 else None
                             ),
@@ -520,7 +526,9 @@ class TraceExporter:
                             "scroll_amount": step.action.scroll_amount,
                         },
                         "reasoning": step.reasoning,
-                        "domain": episode.metadata.get("domain") if episode.metadata else None,
+                        "domain": episode.metadata.get("domain")
+                        if episode.metadata
+                        else None,
                         "success": episode.success,
                     }
                     f.write(json.dumps(sample) + "\n")
@@ -568,7 +576,9 @@ def export_traces(
     return exporter.export()
 
 
-def list_available_runs(benchmark_results_dir: str | Path = "benchmark_results") -> list[dict[str, Any]]:
+def list_available_runs(
+    benchmark_results_dir: str | Path = "benchmark_results",
+) -> list[dict[str, Any]]:
     """List available benchmark runs for export.
 
     Args:
@@ -597,20 +607,24 @@ def list_available_runs(benchmark_results_dir: str | Path = "benchmark_results")
         if metadata_path.exists():
             with open(metadata_path) as f:
                 metadata = json.load(f)
-            run_info.update({
-                "benchmark_name": metadata.get("benchmark_name"),
-                "model_id": metadata.get("model_id"),
-                "created_at": metadata.get("created_at"),
-            })
+            run_info.update(
+                {
+                    "benchmark_name": metadata.get("benchmark_name"),
+                    "model_id": metadata.get("model_id"),
+                    "created_at": metadata.get("created_at"),
+                }
+            )
 
         if summary_path.exists():
             with open(summary_path) as f:
                 summary = json.load(f)
-            run_info.update({
-                "num_tasks": summary.get("num_tasks", 0),
-                "num_success": summary.get("num_success", 0),
-                "success_rate": summary.get("success_rate", 0.0),
-            })
+            run_info.update(
+                {
+                    "num_tasks": summary.get("num_tasks", 0),
+                    "num_success": summary.get("num_success", 0),
+                    "success_rate": summary.get("success_rate", 0.0),
+                }
+            )
 
         runs.append(run_info)
 

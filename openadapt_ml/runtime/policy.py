@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from PIL import Image
 
@@ -26,13 +26,16 @@ _TYPE_SOM_SIMPLE_RE = re.compile(r'TYPE\(["\']([^"\']*(?:\\.[^"\']*)*)["\']\)')
 @dataclass
 class PolicyOutput:
     """Result of a single policy step."""
+
     action: Action
     thought: Optional[str] = None
     state: Optional[Dict[str, Any]] = None
     raw_text: str = ""
 
 
-def parse_thought_state_action(text: str) -> Tuple[Optional[str], Optional[Dict[str, Any]], str]:
+def parse_thought_state_action(
+    text: str,
+) -> Tuple[Optional[str], Optional[Dict[str, Any]], str]:
     """Parse Thought / State / Action blocks from model output.
 
     Expected format:
@@ -54,12 +57,18 @@ def parse_thought_state_action(text: str) -> Tuple[Optional[str], Optional[Dict[
     action_str: str = text.strip()
 
     # Extract Thought - find the LAST occurrence (model's response, not template)
-    thought_matches = list(re.finditer(r"Thought:\s*(.+?)(?=State:|Action:|$)", text, re.DOTALL | re.IGNORECASE))
+    thought_matches = list(
+        re.finditer(
+            r"Thought:\s*(.+?)(?=State:|Action:|$)", text, re.DOTALL | re.IGNORECASE
+        )
+    )
     if thought_matches:
         thought = thought_matches[-1].group(1).strip()
 
     # Extract State (JSON on same line or next line) - last occurrence
-    state_matches = list(re.finditer(r"State:\s*(\{.*?\})", text, re.DOTALL | re.IGNORECASE))
+    state_matches = list(
+        re.finditer(r"State:\s*(\{.*?\})", text, re.DOTALL | re.IGNORECASE)
+    )
     if state_matches:
         try:
             state = json.loads(state_matches[-1].group(1))
@@ -127,7 +136,11 @@ class AgentPolicy:
             idx = int(m.group(1))
             raw_text = m.group(2)
             unescaped = raw_text.replace('\\"', '"').replace("\\\\", "\\")
-            return Action(type=ActionType.TYPE, text=unescaped, element=UIElement(element_id=str(idx)))
+            return Action(
+                type=ActionType.TYPE,
+                text=unescaped,
+                element=UIElement(element_id=str(idx)),
+            )
 
         # TYPE("text") - SoM style without index
         m = _TYPE_SOM_SIMPLE_RE.search(text)

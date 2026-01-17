@@ -17,9 +17,12 @@ from pathlib import Path
 from typing import Any
 
 from openadapt_ml.ingest.capture import capture_to_episode
-from openadapt_ml.schema import Episode, Step, ActionType
+from openadapt_ml.schema import Episode, ActionType
 from openadapt_ml.datasets.next_action import SYSTEM_PROMPT, format_action
-from openadapt_ml.training.trainer import _get_shared_header_css, _generate_shared_header_html
+from openadapt_ml.training.trainer import (
+    _get_shared_header_css,
+    _generate_shared_header_html,
+)
 
 
 def load_model(checkpoint_path: str | None, config_path: str | None = None):
@@ -50,6 +53,7 @@ def load_model(checkpoint_path: str | None, config_path: str | None = None):
     except Exception as e:
         print(f"Warning: Could not load model: {e}")
         import traceback
+
         traceback.print_exc()
         return None
 
@@ -79,7 +83,9 @@ def predict_action(
                 history_text += f"  {i}. {action_text}\n"
             history_text += f"\nThis is step {step_index + 1} of {total_steps}. "
         else:
-            history_text = f"This is step 1 of {total_steps} (no actions completed yet). "
+            history_text = (
+                f"This is step 1 of {total_steps} (no actions completed yet). "
+            )
 
         # Match training prompt format exactly
         user_content = (
@@ -87,7 +93,7 @@ def predict_action(
             f"{history_text}"
             "Look at the screenshot and determine the NEXT action.\n\n"
             "Thought: [what element to interact with and why]\n"
-            "Action: [CLICK(x=..., y=...) or TYPE(text=\"...\") or WAIT() or DONE()]"
+            'Action: [CLICK(x=..., y=...) or TYPE(text="...") or WAIT() or DONE()]'
         )
 
         # Build sample in the format expected by the adapter
@@ -107,14 +113,20 @@ def predict_action(
 
         # Try to extract coordinates from output
         # Match patterns like: CLICK(x=0.42, y=0.31) or click at (0.42, 0.31)
-        click_match = re.search(r'CLICK\s*\(\s*x\s*=\s*([\d.]+)\s*,\s*y\s*=\s*([\d.]+)\s*\)', result, re.IGNORECASE)
+        click_match = re.search(
+            r"CLICK\s*\(\s*x\s*=\s*([\d.]+)\s*,\s*y\s*=\s*([\d.]+)\s*\)",
+            result,
+            re.IGNORECASE,
+        )
         if not click_match:
-            click_match = re.search(r'click.*?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*\)', result, re.IGNORECASE)
+            click_match = re.search(
+                r"click.*?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*\)", result, re.IGNORECASE
+            )
         if not click_match:
             # Try to find any two decimal numbers
-            nums = re.findall(r'(0\.\d+)', result)
+            nums = re.findall(r"(0\.\d+)", result)
             if len(nums) >= 2:
-                click_match = type('Match', (), {'group': lambda s, i: nums[i-1]})()
+                click_match = type("Match", (), {"group": lambda s, i: nums[i - 1]})()
 
         if click_match:
             action["x"] = float(click_match.group(1))
@@ -124,6 +136,7 @@ def predict_action(
         return action
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         return {"type": "error", "error": str(e)}
 
@@ -145,7 +158,11 @@ def generate_comparison_data(
         action_x, action_y = None, None
         if step.action.normalized_coordinates:
             action_x, action_y = step.action.normalized_coordinates
-        action_type_str = step.action.type.value if isinstance(step.action.type, ActionType) else step.action.type
+        action_type_str = (
+            step.action.type.value
+            if isinstance(step.action.type, ActionType)
+            else step.action.type
+        )
         step_data = {
             "index": i,
             "time": step.step_index,
@@ -204,7 +221,7 @@ def generate_comparison_html(
         comparison_json = json.dumps(comparison_data)
 
         # Add comparison panel above screenshot in main content
-        comparison_panel = '''
+        comparison_panel = """
         <div class="comparison-panel" id="comparison-panel">
             <div class="comparison-header">
                 <h2>Action Comparison</h2>
@@ -223,9 +240,9 @@ def generate_comparison_html(
                 <div class="match-indicator" id="match-indicator"></div>
             </div>
         </div>
-        '''
+        """
 
-        comparison_styles = '''
+        comparison_styles = """
         <style>
         /* Navigation bar */
         .nav-bar {
@@ -432,9 +449,9 @@ def generate_comparison_html(
             border-color: var(--accent);
         }
         </style>
-        '''
+        """
 
-        comparison_script = f'''
+        comparison_script = f"""
         <script>
         // Consolidated viewer script - all variables and functions in one scope
         // Export to window for cross-script access (for checkpoint dropdown script)
@@ -714,32 +731,33 @@ def generate_comparison_html(
             // Note: Nav is now injected via shared header HTML, no need for discoverDashboards()
         }}, 100);
         </script>
-        '''
+        """
 
         # Insert into HTML
         # Add shared header CSS and comparison styles before </head>
-        shared_header_css = f'<style>{_get_shared_header_css()}</style>'
-        html = base_html.replace('</head>', shared_header_css + comparison_styles + '</head>')
+        shared_header_css = f"<style>{_get_shared_header_css()}</style>"
+        html = base_html.replace(
+            "</head>", shared_header_css + comparison_styles + "</head>"
+        )
 
         # Add shared header HTML after container div
         shared_header_html = _generate_shared_header_html("viewer")
         html = html.replace(
-            '<div class="container">',
-            '<div class="container">\n' + shared_header_html
+            '<div class="container">', '<div class="container">\n' + shared_header_html
         )
 
         # Add comparison panel as full-width row BEFORE the main-content/sidebar flex row
         # Insert right BEFORE <div class="main-content"> as a sibling
         html = html.replace(
             '<div class="main-content">',
-            comparison_panel + '\n        <div class="main-content">'
+            comparison_panel + '\n        <div class="main-content">',
         )
 
         # Add script before </body>
-        html = html.replace('</body>', comparison_script + '</body>')
+        html = html.replace("</body>", comparison_script + "</body>")
 
         # Write output
-        output_path.write_text(html, encoding='utf-8')
+        output_path.write_text(html, encoding="utf-8")
         print(f"Generated comparison viewer: {output_path}")
 
     except ImportError:
@@ -752,20 +770,24 @@ def main():
         description="Compare human actions vs model predictions on a capture."
     )
     parser.add_argument(
-        "--capture", "-c",
+        "--capture",
+        "-c",
         required=True,
         help="Path to openadapt-capture recording directory",
     )
     parser.add_argument(
-        "--checkpoint", "-m",
+        "--checkpoint",
+        "-m",
         help="Path to trained model checkpoint (optional)",
     )
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         help="Output HTML path (default: capture_dir/comparison.html)",
     )
     parser.add_argument(
-        "--goal", "-g",
+        "--goal",
+        "-g",
         help="Task goal/description (auto-detected from capture if not provided)",
     )
     parser.add_argument(
@@ -797,7 +819,7 @@ def main():
         matches = sum(1 for d in comparison_data if d.get("match") is True)
         total = sum(1 for d in comparison_data if d.get("match") is not None)
         if total > 0:
-            print(f"Match rate: {matches}/{total} ({100*matches/total:.1f}%)")
+            print(f"Match rate: {matches}/{total} ({100 * matches / total:.1f}%)")
 
     # Generate HTML
     output_path = Path(args.output) if args.output else capture_path / "comparison.html"
@@ -806,6 +828,7 @@ def main():
     # Open in browser
     if args.open:
         import webbrowser
+
         webbrowser.open(f"file://{output_path.absolute()}")
 
     return 0
@@ -842,11 +865,13 @@ def generate_unified_viewer(
             capture_id = capture_path.name if capture_path else "unknown"
 
         if available_captures is None:
-            available_captures = [{
-                "id": capture_id,
-                "name": episode.instruction or "Untitled",
-                "steps": len(episode.steps),
-            }]
+            available_captures = [
+                {
+                    "id": capture_id,
+                    "name": episode.instruction or "Untitled",
+                    "steps": len(episode.steps),
+                }
+            ]
 
         # Prepare base capture data (human actions only, no predictions)
         base_data = []
@@ -855,18 +880,24 @@ def generate_unified_viewer(
             action_x, action_y = None, None
             if step.action.normalized_coordinates:
                 action_x, action_y = step.action.normalized_coordinates
-            action_type_str = step.action.type.value if isinstance(step.action.type, ActionType) else step.action.type
-            base_data.append({
-                "index": i,
-                "time": step.step_index,
-                "image_path": step.observation.screenshot_path,
-                "human_action": {
-                    "type": action_type_str,
-                    "x": action_x,
-                    "y": action_y,
-                    "text": step.action.text,
-                },
-            })
+            action_type_str = (
+                step.action.type.value
+                if isinstance(step.action.type, ActionType)
+                else step.action.type
+            )
+            base_data.append(
+                {
+                    "index": i,
+                    "time": step.step_index,
+                    "image_path": step.observation.screenshot_path,
+                    "human_action": {
+                        "type": action_type_str,
+                        "x": action_x,
+                        "y": action_y,
+                        "text": step.action.text,
+                    },
+                }
+            )
 
         # JSON encode all data
         base_data_json = json.dumps(base_data)
@@ -875,7 +906,7 @@ def generate_unified_viewer(
         current_capture_json = json.dumps(capture_id)
 
         # Unified viewer styles and controls
-        unified_styles = '''
+        unified_styles = """
         <style>
         /* Navigation bar */
         .nav-bar {
@@ -1129,10 +1160,10 @@ def generate_unified_viewer(
             border-color: var(--accent);
         }
         </style>
-        '''
+        """
 
         # Comparison panel HTML
-        comparison_panel = '''
+        comparison_panel = """
         <div class="viewer-controls" id="viewer-controls">
             <div class="control-group">
                 <span class="control-label">Training Example:</span>
@@ -1162,10 +1193,10 @@ def generate_unified_viewer(
                 <div class="match-indicator" id="match-indicator"></div>
             </div>
         </div>
-        '''
+        """
 
         # Unified viewer script
-        unified_script = f'''
+        unified_script = f"""
         <script>
         // Consolidated unified viewer script - all variables in one scope
         // Data
@@ -1477,18 +1508,18 @@ def generate_unified_viewer(
             updateComparison(currentIndex);
         }}, 100);
         </script>
-        '''
+        """
 
         # Inject into HTML
-        html = base_html.replace('</head>', unified_styles + '</head>')
+        html = base_html.replace("</head>", unified_styles + "</head>")
         html = html.replace(
             '<div class="main-content">',
-            comparison_panel + '\n        <div class="main-content">'
+            comparison_panel + '\n        <div class="main-content">',
         )
-        html = html.replace('</body>', unified_script + '</body>')
+        html = html.replace("</body>", unified_script + "</body>")
 
         # Write output
-        output_path.write_text(html, encoding='utf-8')
+        output_path.write_text(html, encoding="utf-8")
         print(f"Generated unified viewer: {output_path}")
 
     except ImportError:

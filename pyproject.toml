@@ -3,7 +3,7 @@ name = "openadapt-ml"
 version = "0.2.0"
 description = "Model-agnostic, domain-agnostic ML engine for GUI automation agents"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 license = "MIT"
 authors = [
     {name = "MLDSAI Inc.", email = "richard@mldsai.com"}
@@ -14,6 +14,8 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Libraries :: Python Modules",

@@ -124,9 +124,13 @@ def evaluate_agent_on_benchmark(
 
     # Run evaluation
     if config.parallel > 1 and adapter.supports_parallel:
-        results = _evaluate_parallel(agent, adapter, tasks, config, trace_collector, live_tracker)
+        results = _evaluate_parallel(
+            agent, adapter, tasks, config, trace_collector, live_tracker
+        )
     else:
-        results = _evaluate_sequential(agent, adapter, tasks, config, trace_collector, live_tracker)
+        results = _evaluate_sequential(
+            agent, adapter, tasks, config, trace_collector, live_tracker
+        )
 
     # Save summary if trace collection is enabled
     if trace_collector is not None:
@@ -175,7 +179,9 @@ def _evaluate_sequential(
         if config.verbose:
             logger.info(f"Task {i + 1}/{len(tasks)}: {task.task_id}")
 
-        result = _run_single_task(agent, adapter, task, config, trace_collector, live_tracker)
+        result = _run_single_task(
+            agent, adapter, task, config, trace_collector, live_tracker
+        )
         results.append(result)
 
         if config.on_task_complete:
@@ -213,7 +219,15 @@ def _evaluate_parallel(
     with ThreadPoolExecutor(max_workers=config.parallel) as executor:
         # Submit all tasks
         future_to_task = {
-            executor.submit(_run_single_task, agent, adapter, task, config, trace_collector, live_tracker): task
+            executor.submit(
+                _run_single_task,
+                agent,
+                adapter,
+                task,
+                config,
+                trace_collector,
+                live_tracker,
+            ): task
             for task in tasks
         }
 

@@ -133,7 +133,9 @@ def load_task_results(benchmark_dir: Path) -> list[dict[str, Any]]:
         screenshots_dir = task_dir / "screenshots"
         if screenshots_dir.exists():
             screenshot_paths = sorted(screenshots_dir.glob("*.png"))
-            task_data["screenshots"] = [str(p.relative_to(benchmark_dir)) for p in screenshot_paths]
+            task_data["screenshots"] = [
+                str(p.relative_to(benchmark_dir)) for p in screenshot_paths
+            ]
         else:
             task_data["screenshots"] = []
 
@@ -294,7 +296,7 @@ def _generate_benchmark_viewer_html(
     num_success = sum(1 for t in tasks if t.get("execution", {}).get("success", False))
     success_rate = (num_success / num_tasks * 100) if num_tasks > 0 else 0
 
-    html = f'''<!DOCTYPE html>
+    html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -785,7 +787,7 @@ def _generate_benchmark_viewer_html(
                     <div class="stat-label">Failed</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-value {'success' if success_rate >= 50 else 'error'}">{success_rate:.1f}%</div>
+                    <div class="stat-value {"success" if success_rate >= 50 else "error"}">{success_rate:.1f}%</div>
                     <div class="stat-label">Success Rate</div>
                 </div>
             </div>
@@ -838,7 +840,7 @@ def _generate_benchmark_viewer_html(
     const summary = {summary_json};
     const domainStats = {domain_stats_json};
     const tasks = {tasks_json};
-    const embedScreenshots = {'true' if embed_screenshots else 'false'};
+    const embedScreenshots = {"true" if embed_screenshots else "false"};
 
     let currentTaskIndex = -1;
     let currentStepIndex = 0;
@@ -1214,6 +1216,6 @@ def _generate_benchmark_viewer_html(
     </script>
 </body>
 </html>
-'''
+"""
 
     return html

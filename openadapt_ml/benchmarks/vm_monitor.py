@@ -120,9 +120,12 @@ class VMMonitor:
             result = subprocess.run(
                 [
                     "ssh",
-                    "-o", "StrictHostKeyChecking=no",
-                    "-o", f"ConnectTimeout={self.timeout}",
-                    "-o", "BatchMode=yes",
+                    "-o",
+                    "StrictHostKeyChecking=no",
+                    "-o",
+                    f"ConnectTimeout={self.timeout}",
+                    "-o",
+                    "BatchMode=yes",
                     f"{self.config.ssh_user}@{self.config.ssh_host}",
                     "echo ok",
                 ],
@@ -145,9 +148,12 @@ class VMMonitor:
             result = subprocess.run(
                 [
                     "ssh",
-                    "-o", "StrictHostKeyChecking=no",
-                    "-o", f"ConnectTimeout={self.timeout}",
-                    "-o", "BatchMode=yes",
+                    "-o",
+                    "StrictHostKeyChecking=no",
+                    "-o",
+                    f"ConnectTimeout={self.timeout}",
+                    "-o",
+                    "BatchMode=yes",
                     f"{self.config.ssh_user}@{self.config.ssh_host}",
                     cmd,
                 ],
@@ -173,9 +179,12 @@ class VMMonitor:
             result = subprocess.run(
                 [
                     "ssh",
-                    "-o", "StrictHostKeyChecking=no",
-                    "-o", f"ConnectTimeout={self.timeout}",
-                    "-o", "BatchMode=yes",
+                    "-o",
+                    "StrictHostKeyChecking=no",
+                    "-o",
+                    f"ConnectTimeout={self.timeout}",
+                    "-o",
+                    "BatchMode=yes",
                     f"{self.config.ssh_user}@{self.config.ssh_host}",
                     cmd,
                 ],
@@ -191,9 +200,12 @@ class VMMonitor:
                 log_result = subprocess.run(
                     [
                         "ssh",
-                        "-o", "StrictHostKeyChecking=no",
-                        "-o", f"ConnectTimeout={self.timeout}",
-                        "-o", "BatchMode=yes",
+                        "-o",
+                        "StrictHostKeyChecking=no",
+                        "-o",
+                        f"ConnectTimeout={self.timeout}",
+                        "-o",
+                        "BatchMode=yes",
                         f"{self.config.ssh_user}@{self.config.ssh_host}",
                         log_cmd,
                     ],
@@ -220,9 +232,12 @@ class VMMonitor:
                 result = subprocess.run(
                     [
                         "ssh",
-                        "-o", "StrictHostKeyChecking=no",
-                        "-o", f"ConnectTimeout={self.timeout}",
-                        "-o", "BatchMode=yes",
+                        "-o",
+                        "StrictHostKeyChecking=no",
+                        "-o",
+                        f"ConnectTimeout={self.timeout}",
+                        "-o",
+                        "BatchMode=yes",
                         f"{self.config.ssh_user}@{self.config.ssh_host}",
                         cmd,
                     ],
@@ -233,7 +248,7 @@ class VMMonitor:
                 if result.returncode == 0 and result.stdout.strip():
                     try:
                         bytes_size = int(result.stdout.strip())
-                        return round(bytes_size / (1024 ** 3), 2)
+                        return round(bytes_size / (1024**3), 2)
                     except ValueError:
                         continue
             return None
@@ -257,7 +272,9 @@ class VMMonitor:
 
             if status.ssh_reachable:
                 # Check container
-                status.container_running, status.container_logs = self.get_container_status()
+                status.container_running, status.container_logs = (
+                    self.get_container_status()
+                )
 
                 # Check WAA probe
                 status.waa_ready, status.waa_probe_response = self.check_waa_probe()
@@ -412,7 +429,9 @@ class VMPoolRegistry:
             resource_group=resource_group,
             location=location,
             vm_size=vm_size,
-            workers=[PoolWorker(name=name, ip=ip, status="ready") for name, ip in workers],
+            workers=[
+                PoolWorker(name=name, ip=ip, status="ready") for name, ip in workers
+            ],
         )
         self.save()
         return self._pool
@@ -468,7 +487,9 @@ class VMPoolRegistry:
 class VMRegistry:
     """Manage a registry of VMs and their status."""
 
-    def __init__(self, registry_file: str | Path = "benchmark_results/vm_registry.json"):
+    def __init__(
+        self, registry_file: str | Path = "benchmark_results/vm_registry.json"
+    ):
         """Initialize registry.
 
         Args:
@@ -546,17 +567,23 @@ def main():
     parser.add_argument("--host", help="SSH host")
     parser.add_argument("--user", default="azureuser", help="SSH user")
     parser.add_argument("--container", default="winarena", help="Docker container name")
-    parser.add_argument("--interval", type=int, default=30, help="Check interval in seconds")
+    parser.add_argument(
+        "--interval", type=int, default=30, help="Check interval in seconds"
+    )
     parser.add_argument("--output", help="Output file for status updates (JSON lines)")
     parser.add_argument("--list", action="store_true", help="List all registered VMs")
-    parser.add_argument("--check-all", action="store_true", help="Check all registered VMs")
+    parser.add_argument(
+        "--check-all", action="store_true", help="Check all registered VMs"
+    )
 
     args = parser.parse_args()
 
     if args.list:
         registry = VMRegistry()
         for vm in registry.list():
-            print(f"  {vm.name}: {vm.ssh_user}@{vm.ssh_host} (container: {vm.docker_container})")
+            print(
+                f"  {vm.name}: {vm.ssh_user}@{vm.ssh_host} (container: {vm.docker_container})"
+            )
         return
 
     if args.check_all:
@@ -586,12 +613,14 @@ def main():
         ts = datetime.now().strftime("%H:%M:%S")
         waa_str = "READY!" if status.waa_ready else "not ready"
         disk_str = f"{status.disk_usage_gb}GB" if status.disk_usage_gb else "?"
-        print(f"[{ts}] SSH: {'✓' if status.ssh_reachable else '✗'} | "
-              f"VNC: {'✓' if status.vnc_reachable else '✗'} | "
-              f"WAA: {waa_str} | Disk: {disk_str}")
+        print(
+            f"[{ts}] SSH: {'✓' if status.ssh_reachable else '✗'} | "
+            f"VNC: {'✓' if status.vnc_reachable else '✗'} | "
+            f"WAA: {waa_str} | Disk: {disk_str}"
+        )
         if status.container_logs:
             # Show last log line
-            last_line = status.container_logs.split('\n')[-1][:80]
+            last_line = status.container_logs.split("\n")[-1][:80]
             print(f"         Log: {last_line}")
 
     print(f"Monitoring {args.host}... (Ctrl+C to stop)")

@@ -2,7 +2,6 @@
 
 import json
 import random
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -92,13 +91,15 @@ class StubTrainingProvider:
 
         elapsed = time.time() - self.start_time
 
-        self.losses.append({
-            "epoch": self.current_epoch,
-            "step": self.current_step + 1,
-            "loss": loss,
-            "lr": 5e-5,
-            "time": elapsed,
-        })
+        self.losses.append(
+            {
+                "epoch": self.current_epoch,
+                "step": self.current_step + 1,
+                "loss": loss,
+                "lr": 5e-5,
+                "time": elapsed,
+            }
+        )
 
         self.current_step += 1
 
@@ -123,32 +124,37 @@ class StubTrainingProvider:
         if not sample_path.exists():
             # Try to copy from common capture location
             import shutil
-            capture_screenshots = Path.home() / "oa/src/openadapt-capture/turn-off-nightshift/screenshots"
+
+            capture_screenshots = (
+                Path.home() / "oa/src/openadapt-capture/turn-off-nightshift/screenshots"
+            )
             if capture_screenshots.exists():
                 sample_path.parent.mkdir(parents=True, exist_ok=True)
                 for img in capture_screenshots.glob("*.png"):
                     shutil.copy(img, sample_path)
                     break  # Just copy the first one
 
-        self.evaluations.append({
-            "epoch": self.current_epoch,
-            "sample_idx": 7,  # Match the real training sample
-            "image_path": "screenshots/sample.png",
-            "human_action": {
-                "type": "click",
-                "x": 0.65,
-                "y": 0.65,
-                "text": None,
-            },
-            "predicted_action": {
-                "type": "click",
-                "x": 0.65 + random.uniform(-0.15, 0.15) * (1 - accuracy_boost),
-                "y": 0.65 + random.uniform(-0.15, 0.15) * (1 - accuracy_boost),
-                "raw_output": f"Thought: [Stub] Epoch {self.current_epoch} - analyzing screenshot to find target element. The model is learning to identify UI components.\nAction: CLICK(x=0.65, y=0.65)",
-            },
-            "distance": random.uniform(0.05, 0.2) * (1 - accuracy_boost),
-            "correct": random.random() > (0.5 - accuracy_boost),
-        })
+        self.evaluations.append(
+            {
+                "epoch": self.current_epoch,
+                "sample_idx": 7,  # Match the real training sample
+                "image_path": "screenshots/sample.png",
+                "human_action": {
+                    "type": "click",
+                    "x": 0.65,
+                    "y": 0.65,
+                    "text": None,
+                },
+                "predicted_action": {
+                    "type": "click",
+                    "x": 0.65 + random.uniform(-0.15, 0.15) * (1 - accuracy_boost),
+                    "y": 0.65 + random.uniform(-0.15, 0.15) * (1 - accuracy_boost),
+                    "raw_output": f"Thought: [Stub] Epoch {self.current_epoch} - analyzing screenshot to find target element. The model is learning to identify UI components.\nAction: CLICK(x=0.65, y=0.65)",
+                },
+                "distance": random.uniform(0.05, 0.2) * (1 - accuracy_boost),
+                "correct": random.random() > (0.5 - accuracy_boost),
+            }
+        )
 
     def get_status(self) -> dict:
         """Return current training status.
@@ -161,7 +167,11 @@ class StubTrainingProvider:
 
         # Determine status
         if self.termination_status:
-            status = "completed" if self.termination_status == "auto_complete" else self.termination_status
+            status = (
+                "completed"
+                if self.termination_status == "auto_complete"
+                else self.termination_status
+            )
         elif self.is_complete():
             status = "completed"
         else:
@@ -215,11 +225,17 @@ class StubTrainingProvider:
         Args:
             callback: Optional function called after each step with status dict
         """
-        self._log(f"[Stub] Starting simulated training: {self.epochs} epochs, {self.steps_per_epoch} steps/epoch")
+        self._log(
+            f"[Stub] Starting simulated training: {self.epochs} epochs, {self.steps_per_epoch} steps/epoch"
+        )
         self._log(f"[Stub] Output: {self.output_dir}")
-        self._log(f"[Stub] Step delay: {self.step_delay}s (total ~{self.epochs * self.steps_per_epoch * self.step_delay:.0f}s)")
+        self._log(
+            f"[Stub] Step delay: {self.step_delay}s (total ~{self.epochs * self.steps_per_epoch * self.step_delay:.0f}s)"
+        )
         if self.early_stop_loss > 0:
-            self._log(f"[Stub] Early stop: loss < {self.early_stop_loss} for {self.early_stop_patience} steps")
+            self._log(
+                f"[Stub] Early stop: loss < {self.early_stop_loss} for {self.early_stop_patience} steps"
+            )
         self._log("")
 
         while not self.is_complete():
@@ -239,9 +255,13 @@ class StubTrainingProvider:
             if self.early_stop_loss > 0 and loss < self.early_stop_loss:
                 self.consecutive_low_loss += 1
                 if self.consecutive_low_loss >= self.early_stop_patience:
-                    self._log(f"\n[Stub] Auto-stopped: loss ({loss:.4f}) < {self.early_stop_loss} for {self.early_stop_patience} steps")
+                    self._log(
+                        f"\n[Stub] Auto-stopped: loss ({loss:.4f}) < {self.early_stop_loss} for {self.early_stop_patience} steps"
+                    )
                     self.termination_status = "auto_low_loss"
-                    self.termination_message = f"Loss reached {loss:.4f} (< {self.early_stop_loss})"
+                    self.termination_message = (
+                        f"Loss reached {loss:.4f} (< {self.early_stop_loss})"
+                    )
                     self.write_status()
                     break
             else:
@@ -253,7 +273,9 @@ class StubTrainingProvider:
             epoch = status["epoch"]
             step = status["step"]
             display_epoch = min(epoch + 1, self.epochs)  # Cap at max for display
-            self._log(f"  Epoch {display_epoch}/{self.epochs} | Step {step} | Loss: {loss:.4f}")
+            self._log(
+                f"  Epoch {display_epoch}/{self.epochs} | Step {step} | Loss: {loss:.4f}"
+            )
 
             if callback:
                 callback(status)

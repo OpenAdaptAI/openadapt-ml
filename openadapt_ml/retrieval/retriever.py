@@ -49,7 +49,9 @@ class DemoRetriever:
         if index.is_empty():
             raise ValueError("Cannot create retriever from empty index")
         if not index.is_fitted():
-            raise ValueError("Index must be built before retrieval (call index.build())")
+            raise ValueError(
+                "Index must be built before retrieval (call index.build())"
+            )
 
         self.index = index
         self.domain_bonus = domain_bonus

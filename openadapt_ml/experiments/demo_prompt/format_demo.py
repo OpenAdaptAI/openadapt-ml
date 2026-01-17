@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from openadapt_ml.schema import Action, ActionType, Episode, Step
+    from openadapt_ml.schema import Action, Episode, Step
 
 
 def format_action(action: "Action") -> str:
@@ -19,7 +19,7 @@ def format_action(action: "Action") -> str:
         String representation like "CLICK(0.5, 0.3)" or "TYPE('hello')".
     """
     # Get action type value (handle both enum and string)
-    action_type = action.type.value if hasattr(action.type, 'value') else action.type
+    action_type = action.type.value if hasattr(action.type, "value") else action.type
 
     if action_type == "click":
         if action.normalized_coordinates is not None:
@@ -53,7 +53,10 @@ def format_action(action: "Action") -> str:
         return f"SCROLL({direction})"
 
     elif action_type == "drag":
-        if action.normalized_coordinates is not None and action.normalized_end is not None:
+        if (
+            action.normalized_coordinates is not None
+            and action.normalized_end is not None
+        ):
             x, y = action.normalized_coordinates
             end_x, end_y = action.normalized_end
             return f"DRAG({x:.3f}, {y:.3f}, {end_x:.3f}, {end_y:.3f})"
@@ -112,7 +115,11 @@ def format_episode_as_demo(
         lines.append(format_step(step, i))
 
         # Optionally include screenshot reference
-        if include_screenshots and step.observation and step.observation.screenshot_path:
+        if (
+            include_screenshots
+            and step.observation
+            and step.observation.screenshot_path
+        ):
             lines.append(f"  [Screenshot: {step.observation.screenshot_path}]")
 
         lines.append("")
@@ -167,9 +174,12 @@ def format_episode_verbose(
             if next_step.observation and next_step.observation.window_title:
                 if (
                     not step.observation
-                    or next_step.observation.window_title != step.observation.window_title
+                    or next_step.observation.window_title
+                    != step.observation.window_title
                 ):
-                    lines.append(f"  [Result: Window changed to {next_step.observation.window_title}]")
+                    lines.append(
+                        f"  [Result: Window changed to {next_step.observation.window_title}]"
+                    )
 
         lines.append("")
 

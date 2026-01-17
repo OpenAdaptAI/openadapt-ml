@@ -8,7 +8,9 @@ from openadapt_ml.ingest.synthetic import generate_synthetic_episodes
 
 def main() -> None:
     output_dir = Path("synthetic") / "debug"
-    episodes = generate_synthetic_episodes(num_episodes=2, seed=42, output_dir=output_dir)
+    episodes = generate_synthetic_episodes(
+        num_episodes=2, seed=42, output_dir=output_dir
+    )
 
     print(f"Generated {len(episodes)} episodes into {output_dir.resolve()}")
 
