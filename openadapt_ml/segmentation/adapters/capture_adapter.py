@@ -29,16 +29,14 @@ class CaptureAdapter:
     expected by FrameDescriber.
     """
 
-    # Event types to include in segmentation
+    # Event types to include in segmentation (actual openadapt-capture types)
     RELEVANT_EVENT_TYPES = {
-        "click",
-        "double_click",
-        "right_click",
-        "key",
-        "type",
-        "scroll",
-        "drag",
-        "move",
+        "mouse.down",
+        "mouse.up",
+        "key.down",
+        "key.up",
+        "mouse.move",
+        "screen.frame",  # Frame captures (maps to screenshots)
     }
 
     def __init__(
@@ -97,79 +95,90 @@ class CaptureAdapter:
         capture_metadata = dict(capture_row)
         started_at = capture_metadata["started_at"]
 
-        # Query events
+        # Get all screen.frame events (these define our frames)
         cursor.execute(
             """
             SELECT id, timestamp, type, data
             FROM events
-            WHERE type IN ({})
+            WHERE type = 'screen.frame'
             ORDER BY timestamp
-            """.format(",".join("?" * len(self.RELEVANT_EVENT_TYPES))),
-            tuple(self.RELEVANT_EVENT_TYPES),
+            """
         )
 
+        frame_events = cursor.fetchall()
+        logger.info(f"Found {len(frame_events)} screen.frame events")
+
+        # Get all action events (mouse, key)
+        cursor.execute(
+            """
+            SELECT id, timestamp, type, data
+            FROM events
+            WHERE type IN ('mouse.down', 'mouse.up', 'key.down', 'key.up', 'mouse.move')
+            ORDER BY timestamp
+            """
+        )
+
+        action_events = cursor.fetchall()
+        logger.info(f"Found {len(action_events)} action events")
+
+        # Pair action events (down+up → single action)
+        paired_actions = self._pair_action_events(action_events, started_at)
+        logger.info(f"Paired into {len(paired_actions)} actions")
+
+        # Load screenshot files
+        screenshot_files = self._get_screenshot_files(screenshots_dir)
+        logger.info(f"Found {len(screenshot_files)} screenshot files")
+
+        # Build frame list with corresponding actions
         images = []
         events = []
-        screenshot_files = self._get_screenshot_files(screenshots_dir)
 
-        last_move_pos = None
-        frame_index = 0
+        for frame_idx, frame_row in enumerate(frame_events):
+            frame_timestamp = frame_row["timestamp"]
 
-        for row in cursor.fetchall():
-            event_id = row["id"]
-            timestamp = row["timestamp"]
-            event_type = row["type"]
-            data_json = row["data"]
-
-            try:
-                data = json.loads(data_json) if data_json else {}
-            except json.JSONDecodeError:
-                logger.warning(f"Failed to parse JSON for event {event_id}")
+            # Find screenshot
+            screenshot_path = screenshot_files.get(frame_idx)
+            if not screenshot_path:
+                logger.warning(f"No screenshot found for frame {frame_idx}")
                 continue
 
-            # Skip moves if not including or too close to last move
-            if event_type == "move":
-                if not self.include_moves:
-                    continue
-                if last_move_pos:
-                    x, y = data.get("x"), data.get("y")
-                    if x is not None and y is not None:
-                        dx = x - last_move_pos[0]
-                        dy = y - last_move_pos[1]
-                        distance = (dx**2 + dy**2) ** 0.5
-                        if distance < self.min_move_distance:
-                            continue
-                last_move_pos = (data.get("x"), data.get("y"))
+            try:
+                # Load image
+                images.append(Image.open(screenshot_path))
 
-            # Find corresponding screenshot
-            screenshot_path = self._find_screenshot(
-                screenshot_files, frame_index, event_id
-            )
+                # Find action closest to this frame (within reasonable window)
+                frame_relative_time = frame_timestamp - started_at
+                closest_action = self._find_closest_action(
+                    paired_actions, frame_relative_time, window=2.0
+                )
 
-            if screenshot_path:
-                try:
-                    images.append(Image.open(screenshot_path))
+                if closest_action:
+                    # Use action details
+                    event = {
+                        "timestamp": frame_relative_time,
+                        "frame_index": frame_idx,
+                        "name": closest_action["type"],
+                        **closest_action.get("extra", {})
+                    }
+                else:
+                    # No action, create a frame-only event
+                    event = {
+                        "timestamp": frame_relative_time,
+                        "frame_index": frame_idx,
+                        "name": "frame",
+                    }
 
-                    # Convert to expected format
-                    event = self._convert_event(
-                        event_type=event_type,
-                        timestamp=timestamp - started_at,  # Relative to start
-                        frame_index=frame_index,
-                        data=data,
-                    )
-                    events.append(event)
+                events.append(event)
 
-                    frame_index += 1
-
-                except Exception as e:
-                    logger.warning(f"Failed to load screenshot {screenshot_path}: {e}")
+            except Exception as e:
+                logger.warning(f"Failed to load screenshot {screenshot_path}: {e}")
 
         conn.close()
 
         if not images:
             raise ValueError(f"No screenshots loaded from {capture_path}")
 
-        logger.info(f"Loaded {len(images)} frames from {capture_path}")
+        logger.info(f"Loaded {len(images)} frames with {len(events)} events from {capture_path}")
         return images, events
 
     def _get_screenshot_files(self, screenshots_dir: Path) -> dict[int, Path]:
@@ -260,6 +269,115 @@ class CaptureAdapter:
             event["end_y"] = data.get("end_y")
 
         return event
+
+    def _pair_action_events(self, action_events: list, started_at: float) -> list[dict]:
+        """Pair mouse.down+up and key.down+up events into single actions.
+
+        Args:
+            action_events: List of SQLite Row objects with action events
+            started_at: Recording start timestamp
+
+        Returns:
+            List of paired action dicts with type, timestamp, duration, and data
+        """
+        paired = []
+        pending_down = {}  # type -> (event, timestamp, data)
+
+        for row in action_events:
+            event_type = row["type"]
+            timestamp = row["timestamp"] - started_at  # Relative
+            data_json = row["data"]
+
+            try:
+                data = json.loads(data_json) if data_json else {}
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse JSON for event {row['id']}")
+                continue
+
+            # Handle down events
+            if event_type.endswith('.down'):
+                base_type = event_type[:-5]  # Remove '.down' → 'mouse' or 'key'
+                pending_down[base_type] = (event_type, timestamp, data)
+
+            # Handle up events
+            elif event_type.endswith('.up'):
+                base_type = event_type[:-3]  # Remove '.up'
+
+                if base_type in pending_down:
+                    # Found matching down event
+                    down_type, down_timestamp, down_data = pending_down.pop(base_type)
+                    duration = timestamp - down_timestamp
+
+                    # Create paired action
+                    if base_type == 'mouse':
+                        action = {
+                            'type': 'click',
+                            'timestamp': down_timestamp,
+                            'duration': duration,
+                            'extra': {
+                                'mouse_x': down_data.get('x'),
+                                'mouse_y': down_data.get('y'),
+                                'button': down_data.get('button', 'left'),
+                            }
+                        }
+                    elif base_type == 'key':
+                        action = {
+                            'type': 'key',
+                            'timestamp': down_timestamp,
+                            'duration': duration,
+                            'extra': {
+                                'text': down_data.get('key') or down_data.get('text'),
+                                'key': down_data.get('key'),
+                            }
+                        }
+                    else:
+                        continue
+
+                    paired.append(action)
+                else:
+                    # Unpaired up event (shouldn't happen, but log it)
+                    logger.debug(f"Unpaired {event_type} event at {timestamp}")
+
+            # Handle mouse.move (if configured to include)
+            elif event_type == 'mouse.move' and self.include_moves:
+                action = {
+                    'type': 'move',
+                    'timestamp': timestamp,
+                    'duration': 0.0,
+                    'extra': {
+                        'mouse_x': data.get('x'),
+                        'mouse_y': data.get('y'),
+                    }
+                }
+                paired.append(action)
+
+        # Log any unpaired down events
+        for base_type, (down_type, down_timestamp, down_data) in pending_down.items():
+            logger.debug(f"Unpaired {down_type} event at {down_timestamp}")
+
+        return paired
+
+    def _find_closest_action(self, paired_actions: list[dict], frame_time: float, window: float = 2.0) -> Optional[dict]:
+        """Find action closest to a given frame time.
+
+        Args:
+            paired_actions: List of paired action dicts
+            frame_time: Frame timestamp (relative to recording start)
+            window: Maximum time distance in seconds to consider
+
+        Returns:
+            Closest action dict or None if no action within window
+        """
+        closest_action = None
+        closest_distance = float('inf')
+
+        for action in paired_actions:
+            distance = abs(action['timestamp'] - frame_time)
+            if distance < closest_distance and distance <= window:
+                closest_distance = distance
+                closest_action = action
+
+        return closest_action
 
     def get_capture_metadata(self, capture_path: Path) -> dict:
         """Get recording metadata from capture.db.
