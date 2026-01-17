@@ -4950,10 +4950,121 @@ ls -lh /mnt/waa-storage/
         import threading
         import time
         from datetime import datetime, timedelta
+        from openadapt_ml.benchmarks.vm_monitor import (
+            fetch_azure_ml_jobs,
+            calculate_vm_costs,
+            get_vm_uptime_hours,
+            detect_vm_activity,
+            get_evaluation_history,
+        )
 
         port = getattr(args, "port", 8765)
         auto_shutdown_hours = getattr(args, "auto_shutdown_hours", 0)
-        print("\n=== VM Monitor Dashboard ===\n")
+        show_details = getattr(args, "details", False)
+
+        print("\n" + "=" * 70)
+        print(" VM MONITOR DASHBOARD ".center(70))
+        print("=" * 70 + "\n")
+
+        # ===== VM STATUS =====
+        print("1. VM STATUS")
+        print("-" * 70)
+        ip = get_vm_ip(resource_group, vm_name)
+        if ip:
+            print(f"  Name:       {vm_name}")
+            print(f"  IP Address: {ip}")
+            print(f"  Resource:   {resource_group}")
+
+            # Get VM size for cost calculation
+            vm_info_result = subprocess.run(
+                [
+                    "az",
+                    "vm",
+                    "show",
+                    "-d",
+                    "-g",
+                    resource_group,
+                    "-n",
+                    vm_name,
+                    "--query",
+                    "{size:hardwareProfile.vmSize,powerState:powerState}",
+                    "-o",
+                    "json",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            vm_size = "Standard_D4ds_v5"  # default
+            power_state = "unknown"
+            if vm_info_result.returncode == 0:
+                vm_info = json.loads(vm_info_result.stdout)
+                vm_size = vm_info.get("size", vm_size)
+                power_state = vm_info.get("powerState", "unknown")
+
+            print(f"  VM Size:    {vm_size}")
+            print(f"  State:      {power_state}")
+        else:
+            print(f"  ✗ VM '{vm_name}' not found")
+            print(f"  Run: uv run python -m openadapt_ml.benchmarks.cli vm setup-waa")
+            sys.exit(1)
+
+        # ===== VM ACTIVITY =====
+        print(f"\n2. CURRENT ACTIVITY")
+        print("-" * 70)
+        activity = detect_vm_activity(ip, "azureuser", "winarena", "172.30.0.2")
+        activity_icon = "⚙" if activity.is_active else "💤"
+        print(f"  Status:     {activity_icon} {activity.activity_type.upper()}")
+        print(f"  Details:    {activity.description}")
+
+        # ===== COST TRACKING =====
+        print(f"\n3. COST TRACKING")
+        print("-" * 70)
+        uptime_hours = get_vm_uptime_hours(resource_group, vm_name)
+        costs = calculate_vm_costs(vm_size, uptime_hours)
+        print(f"  Uptime:     {uptime_hours:.2f} hours")
+        print(f"  Rate:       ${costs.hourly_rate_usd:.3f}/hour")
+        print(f"  Cost:       ${costs.cost_usd:.2f} (current session)")
+        if show_details:
+            print(f"  Daily:      ${costs.cost_per_day_usd:.2f}/day")
+            print(f"  Weekly:     ${costs.cost_per_week_usd:.2f}/week")
+
+        # ===== AZURE ML JOBS =====
+        print(f"\n4. RECENT AZURE ML JOBS (Last 7 Days)")
+        print("-" * 70)
+        jobs = fetch_azure_ml_jobs(resource_group=resource_group, days=7, max_results=5)
+        if jobs:
+            for job in jobs[:5]:  # Show top 5
+                status_icon = {
+                    "running": "▶",
+                    "completed": "✓",
+                    "failed": "✗",
+                    "canceled": "⊗",
+                }.get(job.status, "?")
+                created_date = job.created_at[:10] if len(job.created_at) >= 10 else job.created_at
+                print(f"  {status_icon} {job.display_name or job.job_id[:12]}")
+                print(f"     Status: {job.status} | Created: {created_date}")
+                if show_details and job.azure_dashboard_url:
+                    print(f"     URL: {job.azure_dashboard_url[:70]}...")
+        else:
+            print("  No recent jobs found")
+
+        # ===== EVALUATION HISTORY =====
+        if show_details:
+            print(f"\n5. EVALUATION HISTORY")
+            print("-" * 70)
+            history = get_evaluation_history(max_runs=5)
+            if history:
+                for run in history[:5]:
+                    success_pct = f"{run.success_rate*100:.1f}%" if run.success_rate else "N/A"
+                    print(f"  • {run.run_id}")
+                    print(f"     Tasks: {run.num_tasks} | Success: {success_pct} | Agent: {run.agent_type}")
+            else:
+                print("  No evaluation history found")
+
+        # ===== DASHBOARD & TUNNELS =====
+        print(f"\n6. DASHBOARD & ACCESS")
+        print("-" * 70)
 
         # Check if server is already running on port
         def is_port_in_use(port: int) -> bool:
@@ -4961,7 +5072,7 @@ ls -lh /mnt/waa-storage/
                 return s.connect_ex(("localhost", port)) == 0
 
         if is_port_in_use(port):
-            print(f"  Dashboard already running on port {port}")
+            print(f"  ✓ Dashboard already running on port {port}")
         else:
             print(f"  Starting dashboard server on port {port}...")
             # Start server in background
@@ -4969,26 +5080,22 @@ ls -lh /mnt/waa-storage/
                 get_current_output_dir,
                 _regenerate_benchmark_viewer_if_available,
             )
-            import os
 
-            serve_dir = get_current_output_dir().resolve()  # Use absolute path
+            serve_dir = get_current_output_dir().resolve()
             if not serve_dir.exists():
                 serve_dir.mkdir(parents=True)
             _regenerate_benchmark_viewer_if_available(serve_dir)
 
             def start_server():
-                # Import the actual server from local.py
                 from openadapt_ml.cloud.local import cmd_serve
                 import argparse
 
-                # Pass benchmark=str(serve_dir) to serve from the correct directory
-                # This bypasses get_current_output_dir() relative path issues
                 fake_args = argparse.Namespace(
                     port=port,
                     open=False,
-                    no_regenerate=True,  # Already regenerated above
+                    no_regenerate=True,
                     quiet=True,
-                    benchmark=str(serve_dir),  # Serve from this directory
+                    benchmark=str(serve_dir),
                     start_page=None,
                 )
                 cmd_serve(fake_args)
@@ -4996,60 +5103,68 @@ ls -lh /mnt/waa-storage/
             server_thread = threading.Thread(target=start_server, daemon=True)
             server_thread.start()
             time.sleep(1)
-            print("  ✓ Dashboard started")
+            print(f"  ✓ Dashboard started on port {port}")
 
         # Start SSH tunnels for VNC and WAA
-        ip = get_vm_ip(resource_group, vm_name)
-        if ip:
-            try:
-                from openadapt_ml.cloud.ssh_tunnel import get_tunnel_manager
+        try:
+            from openadapt_ml.cloud.ssh_tunnel import get_tunnel_manager
 
-                tunnel_manager = get_tunnel_manager()
-                tunnel_manager.start_tunnels_for_vm(ip, "azureuser")
-                tunnel_status = tunnel_manager.get_tunnel_status()
-                if tunnel_status.get("vnc") and tunnel_status["vnc"].active:
-                    print(f"  ✓ VNC tunnel started (localhost:8006 -> {ip}:8006)")
-                else:
-                    print(
-                        f"  ⚠ VNC tunnel not started - run manually: ssh -L 8006:{ip}:8006 azureuser@{ip}"
-                    )
-            except Exception as e:
-                print(f"  ⚠ Could not start tunnels: {e}")
+            tunnel_manager = get_tunnel_manager()
+            tunnel_manager.start_tunnels_for_vm(ip, "azureuser")
+            tunnel_status = tunnel_manager.get_tunnel_status()
+            if tunnel_status.get("vnc") and tunnel_status["vnc"].active:
+                print(f"  ✓ VNC tunnel: localhost:8006 -> {ip}:8006")
+            else:
+                print(f"  ⚠ VNC tunnel failed - use: ssh -L 8006:{ip}:8006 azureuser@{ip}")
+        except Exception as e:
+            print(f"  ⚠ Tunnel error: {str(e)[:50]}")
 
-        # Open browser
+        # URLs
         url = f"http://localhost:{port}/benchmark.html"
-        print(f"\n  Opening: {url}")
-        print("  VNC: http://localhost:8006")
+        print(f"\n  Dashboard:  {url}")
+        print(f"  VNC:        http://localhost:8006")
+
+        # Auto-shutdown info
         if auto_shutdown_hours > 0:
             shutdown_time = datetime.now() + timedelta(hours=auto_shutdown_hours)
-            print(
-                f"  Auto-shutdown: {shutdown_time.strftime('%H:%M:%S')} ({auto_shutdown_hours}h)"
-            )
-        print("\n  Press Ctrl+C to stop monitoring.\n")
+            print(f"  Shutdown:   {shutdown_time.strftime('%H:%M:%S')} ({auto_shutdown_hours}h)")
+
+        print(f"\n{'=' * 70}")
+        print("  Press Ctrl+C to stop monitoring")
+        print("=" * 70 + "\n")
+
+        # Open browser
         webbrowser.open(url)
 
-        # Track start time for auto-shutdown
+        # Track start time for auto-shutdown and updates
         start_time = datetime.now()
+        last_update = datetime.now()
+        update_interval = 30  # Update every 30 seconds
 
-        # Keep running to maintain dashboard and show probe status
+        # Keep running to maintain dashboard and show live status
         try:
             while True:
-                ip = get_vm_ip(resource_group, vm_name)
-                elapsed = datetime.now() - start_time
+                current_time = datetime.now()
+                elapsed = current_time - start_time
                 elapsed_str = f"{int(elapsed.total_seconds() // 3600)}h{int((elapsed.total_seconds() % 3600) // 60)}m"
 
-                if ip:
-                    is_ready, response = check_waa_probe(ip, internal_ip="172.30.0.2")
-                    status = "READY" if is_ready else "waiting..."
-                    print(
-                        f"  [{time.strftime('%H:%M:%S')}] WAA: {status} | Elapsed: {elapsed_str}      ",
-                        end="\r",
-                    )
+                # Update status every update_interval seconds
+                if (current_time - last_update).total_seconds() >= update_interval:
+                    # Quick status check
+                    is_ready, _ = check_waa_probe(ip, internal_ip="172.30.0.2")
+                    activity = detect_vm_activity(ip, "azureuser", "winarena", "172.30.0.2")
+                    status_line = f"WAA: {'READY' if is_ready else 'waiting'} | Activity: {activity.activity_type}"
+                    last_update = current_time
                 else:
-                    print(
-                        f"  [{time.strftime('%H:%M:%S')}] VM not found | Elapsed: {elapsed_str}      ",
-                        end="\r",
-                    )
+                    # Use cached status
+                    is_ready, _ = check_waa_probe(ip, internal_ip="172.30.0.2")
+                    status_line = f"WAA: {'READY' if is_ready else 'waiting'}"
+
+                # Live status display
+                print(
+                    f"  [{time.strftime('%H:%M:%S')}] {status_line} | Uptime: {elapsed_str}      ",
+                    end="\r",
+                )
 
                 # Check auto-shutdown timeout
                 if (
@@ -5074,12 +5189,10 @@ ls -lh /mnt/waa-storage/
                     if deallocate_result.returncode == 0:
                         print(f"  ✓ VM '{vm_name}' deallocation initiated")
                     else:
-                        print(
-                            f"  ✗ Failed to deallocate: {deallocate_result.stderr[:50]}"
-                        )
+                        print(f"  ✗ Failed to deallocate: {deallocate_result.stderr[:50]}")
                     break
 
-                time.sleep(10)
+                time.sleep(5)
         except KeyboardInterrupt:
             print("\n\n  Monitoring stopped.")
 
@@ -6259,6 +6372,12 @@ Quick Start:
         type=float,
         default=0,
         help="For monitor: auto-deallocate VM after N hours (0=disabled)",
+    )
+    p_vm.add_argument(
+        "--details",
+        action="store_true",
+        default=False,
+        help="For monitor: show detailed information (evaluation history, costs per day/week)",
     )
     p_vm.add_argument(
         "--rebuild",
