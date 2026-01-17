@@ -32,7 +32,9 @@ def _normalize(x_px: int, y_px: int) -> Tuple[float, float]:
     return x_px / IMG_WIDTH, y_px / IMG_HEIGHT
 
 
-def _text_size(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont) -> Tuple[int, int]:
+def _text_size(
+    draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont
+) -> Tuple[int, int]:
     """Compute text width/height using textbbox for Pillow compatibility."""
 
     left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
@@ -313,7 +315,9 @@ def _center(bounds: Tuple[int, int, int, int]) -> Tuple[float, float]:
     return _normalize(cx, cy)
 
 
-def _bbox_normalized(bounds: Tuple[int, int, int, int]) -> Tuple[float, float, float, float]:
+def _bbox_normalized(
+    bounds: Tuple[int, int, int, int],
+) -> Tuple[float, float, float, float]:
     """Convert pixel bounds (x, y, w, h) to normalized bbox (x_min, y_min, x_max, y_max)."""
     x, y, w, h = bounds
     x_min = x / IMG_WIDTH
@@ -426,7 +430,9 @@ def _script_login_episode(
 
     # Step 4: password typed -> click login button
     cx_btn, cy_btn = _center(layout.login_button)
-    img4, _ = _draw_login_screen(username=username, password=password, layout=layout, jitter=False)
+    img4, _ = _draw_login_screen(
+        username=username, password=password, layout=layout, jitter=False
+    )
     img4_path = root / f"{episode_id}_step_4.png"
     _save_image(img4, img4_path)
     obs4 = Observation(screenshot_path=str(img4_path))
@@ -670,7 +676,9 @@ SOM_CONFIRM_PASSWORD_FIELD = 5
 SOM_REGISTER_BUTTON = 6
 
 
-def _compute_registration_layout(max_offset: int = 8, jitter: bool = True) -> RegistrationUIElements:
+def _compute_registration_layout(
+    max_offset: int = 8, jitter: bool = True
+) -> RegistrationUIElements:
     """Compute registration form layout with optional jitter."""
 
     label_x = 180
@@ -683,7 +691,9 @@ def _compute_registration_layout(max_offset: int = 8, jitter: bool = True) -> Re
             return x, y
         dx = random.randint(-max_offset, max_offset)
         dy = random.randint(-max_offset, max_offset)
-        return max(20, min(IMG_WIDTH - box_w - 20, x + dx)), max(20, min(IMG_HEIGHT - 60, y + dy))
+        return max(20, min(IMG_WIDTH - box_w - 20, x + dx)), max(
+            20, min(IMG_HEIGHT - 60, y + dy)
+        )
 
     # First name
     fn_x, fn_y = _maybe_jitter(label_x, start_y + 24)
@@ -707,7 +717,9 @@ def _compute_registration_layout(max_offset: int = 8, jitter: bool = True) -> Re
 
     # Register button
     btn_w, btn_h = 160, 45
-    btn_x, btn_y = _maybe_jitter((IMG_WIDTH - btn_w) // 2, start_y + 5 * field_spacing + 40)
+    btn_x, btn_y = _maybe_jitter(
+        (IMG_WIDTH - btn_w) // 2, start_y + 5 * field_spacing + 40
+    )
     register_button = (btn_x, btn_y, btn_w, btn_h)
 
     return RegistrationUIElements(
@@ -743,7 +755,7 @@ def _draw_registration_screen(
         layout = _compute_registration_layout(jitter=jitter)
 
     label_x = 180
-    box_w, box_h = 400, 36
+    _box_w, _box_h = 400, 36
     start_y = 100
     field_spacing = 70
 
@@ -766,19 +778,37 @@ def _draw_registration_screen(
 
     # Register button
     btn_x, btn_y, btn_w, btn_h = layout.register_button
-    draw.rectangle([(btn_x, btn_y), (btn_x + btn_w, btn_y + btn_h)], outline="black", fill="darkblue")
+    draw.rectangle(
+        [(btn_x, btn_y), (btn_x + btn_w, btn_y + btn_h)],
+        outline="black",
+        fill="darkblue",
+    )
     btn_text = "Register"
     btw, bth = _text_size(draw, btn_text, FONT)
-    draw.text((btn_x + (btn_w - btw) // 2, btn_y + (btn_h - bth) // 2), btn_text, fill="white", font=FONT)
+    draw.text(
+        (btn_x + (btn_w - btw) // 2, btn_y + (btn_h - bth) // 2),
+        btn_text,
+        fill="white",
+        font=FONT,
+    )
 
     # Decoy "Clear Form" button
     decoy_w, decoy_h = 100, 35
     decoy_x = IMG_WIDTH - decoy_w - 30
     decoy_y = btn_y + 5
-    draw.rectangle([(decoy_x, decoy_y), (decoy_x + decoy_w, decoy_y + decoy_h)], outline="gray", fill=(200, 200, 200))
+    draw.rectangle(
+        [(decoy_x, decoy_y), (decoy_x + decoy_w, decoy_y + decoy_h)],
+        outline="gray",
+        fill=(200, 200, 200),
+    )
     decoy_text = "Clear"
     dtw, dth = _text_size(draw, decoy_text, FONT)
-    draw.text((decoy_x + (decoy_w - dtw) // 2, decoy_y + (decoy_h - dth) // 2), decoy_text, fill="gray", font=FONT)
+    draw.text(
+        (decoy_x + (decoy_w - dtw) // 2, decoy_y + (decoy_h - dth) // 2),
+        decoy_text,
+        fill="gray",
+        font=FONT,
+    )
 
     return img, layout
 
@@ -789,10 +819,17 @@ def _draw_registration_success_screen(first_name: str, email: str) -> Image.Imag
     draw = ImageDraw.Draw(img)
     text = f"Welcome, {first_name}!"
     tw, th = _text_size(draw, text, FONT_TITLE)
-    draw.text(((IMG_WIDTH - tw) // 2, IMG_HEIGHT // 2 - 40), text, fill="darkgreen", font=FONT_TITLE)
+    draw.text(
+        ((IMG_WIDTH - tw) // 2, IMG_HEIGHT // 2 - 40),
+        text,
+        fill="darkgreen",
+        font=FONT_TITLE,
+    )
     subtext = f"Confirmation sent to {email}"
     stw, sth = _text_size(draw, subtext, FONT)
-    draw.text(((IMG_WIDTH - stw) // 2, IMG_HEIGHT // 2 + 20), subtext, fill="gray", font=FONT)
+    draw.text(
+        ((IMG_WIDTH - stw) // 2, IMG_HEIGHT // 2 + 20), subtext, fill="gray", font=FONT
+    )
     return img
 
 
@@ -830,10 +867,21 @@ def _script_registration_episode(
         ("last_name", layout.last_name_box, last_name, SOM_LAST_NAME_FIELD),
         ("email", layout.email_box, email, SOM_EMAIL_FIELD),
         ("password", layout.password_box, password, SOM_REG_PASSWORD_FIELD),
-        ("confirm_password", layout.confirm_password_box, password, SOM_CONFIRM_PASSWORD_FIELD),
+        (
+            "confirm_password",
+            layout.confirm_password_box,
+            password,
+            SOM_CONFIRM_PASSWORD_FIELD,
+        ),
     ]
 
-    current_values = {"first_name": "", "last_name": "", "email": "", "password": "", "confirm_password": ""}
+    current_values = {
+        "first_name": "",
+        "last_name": "",
+        "email": "",
+        "password": "",
+        "confirm_password": "",
+    }
     step_idx = 0
 
     for field_name, box, value, elem_idx in field_sequence:
@@ -851,17 +899,19 @@ def _script_registration_episode(
         )
         img_path = root / f"{episode_id}_step_{step_idx}.png"
         _save_image(img, img_path)
-        steps.append(Step(
-            step_index=step_idx,
-            timestamp=float(step_idx),
-            observation=Observation(screenshot_path=str(img_path)),
-            action=Action(
-                type=ActionType.CLICK,
-                normalized_coordinates=(cx, cy),
-                raw={"bbox": bbox, "element_index": elem_idx},
-            ),
-            reasoning=f"Focus the {field_name.replace('_', ' ')} field.",
-        ))
+        steps.append(
+            Step(
+                step_index=step_idx,
+                timestamp=float(step_idx),
+                observation=Observation(screenshot_path=str(img_path)),
+                action=Action(
+                    type=ActionType.CLICK,
+                    normalized_coordinates=(cx, cy),
+                    raw={"bbox": bbox, "element_index": elem_idx},
+                ),
+                reasoning=f"Focus the {field_name.replace('_', ' ')} field.",
+            )
+        )
         step_idx += 1
 
         # Type step
@@ -876,17 +926,19 @@ def _script_registration_episode(
         )
         img2_path = root / f"{episode_id}_step_{step_idx}.png"
         _save_image(img2, img2_path)
-        steps.append(Step(
-            step_index=step_idx,
-            timestamp=float(step_idx),
-            observation=Observation(screenshot_path=str(img2_path)),
-            action=Action(
-                type=ActionType.TYPE,
-                text=value,
-                raw={"element_index": elem_idx},
-            ),
-            reasoning=f"Type the {field_name.replace('_', ' ')}.",
-        ))
+        steps.append(
+            Step(
+                step_index=step_idx,
+                timestamp=float(step_idx),
+                observation=Observation(screenshot_path=str(img2_path)),
+                action=Action(
+                    type=ActionType.TYPE,
+                    text=value,
+                    raw={"element_index": elem_idx},
+                ),
+                reasoning=f"Type the {field_name.replace('_', ' ')}.",
+            )
+        )
         current_values[field_name] = value
         step_idx += 1
 
@@ -904,30 +956,34 @@ def _script_registration_episode(
     )
     img_path = root / f"{episode_id}_step_{step_idx}.png"
     _save_image(img, img_path)
-    steps.append(Step(
-        step_index=step_idx,
-        timestamp=float(step_idx),
-        observation=Observation(screenshot_path=str(img_path)),
-        action=Action(
-            type=ActionType.CLICK,
-            normalized_coordinates=(cx, cy),
-            raw={"bbox": bbox, "element_index": SOM_REGISTER_BUTTON},
-        ),
-        reasoning="Submit the registration form.",
-    ))
+    steps.append(
+        Step(
+            step_index=step_idx,
+            timestamp=float(step_idx),
+            observation=Observation(screenshot_path=str(img_path)),
+            action=Action(
+                type=ActionType.CLICK,
+                normalized_coordinates=(cx, cy),
+                raw={"bbox": bbox, "element_index": SOM_REGISTER_BUTTON},
+            ),
+            reasoning="Submit the registration form.",
+        )
+    )
     step_idx += 1
 
     # Done step
     img_done = _draw_registration_success_screen(first_name, email)
     img_done_path = root / f"{episode_id}_step_{step_idx}.png"
     _save_image(img_done, img_done_path)
-    steps.append(Step(
-        step_index=step_idx,
-        timestamp=float(step_idx),
-        observation=Observation(screenshot_path=str(img_done_path)),
-        action=Action(type=ActionType.DONE),
-        reasoning="Registration successful; workflow complete.",
-    ))
+    steps.append(
+        Step(
+            step_index=step_idx,
+            timestamp=float(step_idx),
+            observation=Observation(screenshot_path=str(img_done_path)),
+            action=Action(type=ActionType.DONE),
+            reasoning="Registration successful; workflow complete.",
+        )
+    )
 
     return Episode(
         episode_id=episode_id,
@@ -968,10 +1024,21 @@ def _script_registration_episode_som(
         ("last_name", layout.last_name_box, last_name, SOM_LAST_NAME_FIELD),
         ("email", layout.email_box, email, SOM_EMAIL_FIELD),
         ("password", layout.password_box, password, SOM_REG_PASSWORD_FIELD),
-        ("confirm_password", layout.confirm_password_box, password, SOM_CONFIRM_PASSWORD_FIELD),
+        (
+            "confirm_password",
+            layout.confirm_password_box,
+            password,
+            SOM_CONFIRM_PASSWORD_FIELD,
+        ),
     ]
 
-    current_values = {"first_name": "", "last_name": "", "email": "", "password": "", "confirm_password": ""}
+    current_values = {
+        "first_name": "",
+        "last_name": "",
+        "email": "",
+        "password": "",
+        "confirm_password": "",
+    }
     step_idx = 0
 
     for field_name, box, value, elem_idx in field_sequence:
@@ -990,17 +1057,19 @@ def _script_registration_episode_som(
         img_som = _overlay_som_marks(img, som_elements)
         img_path = root / f"{episode_id}_step_{step_idx}.png"
         _save_image(img_som, img_path)
-        steps.append(Step(
-            step_index=step_idx,
-            timestamp=float(step_idx),
-            observation=Observation(screenshot_path=str(img_path)),
-            action=Action(
-                type=ActionType.CLICK,
-                normalized_coordinates=(cx, cy),
-                raw={"bbox": bbox, "element_index": elem_idx},
-            ),
-            reasoning=f"Focus element [{elem_idx}] ({field_name.replace('_', ' ')} field).",
-        ))
+        steps.append(
+            Step(
+                step_index=step_idx,
+                timestamp=float(step_idx),
+                observation=Observation(screenshot_path=str(img_path)),
+                action=Action(
+                    type=ActionType.CLICK,
+                    normalized_coordinates=(cx, cy),
+                    raw={"bbox": bbox, "element_index": elem_idx},
+                ),
+                reasoning=f"Focus element [{elem_idx}] ({field_name.replace('_', ' ')} field).",
+            )
+        )
         step_idx += 1
 
         # Type step
@@ -1016,17 +1085,19 @@ def _script_registration_episode_som(
         img2_som = _overlay_som_marks(img2, som_elements)
         img2_path = root / f"{episode_id}_step_{step_idx}.png"
         _save_image(img2_som, img2_path)
-        steps.append(Step(
-            step_index=step_idx,
-            timestamp=float(step_idx),
-            observation=Observation(screenshot_path=str(img2_path)),
-            action=Action(
-                type=ActionType.TYPE,
-                text=value,
-                raw={"element_index": elem_idx},
-            ),
-            reasoning=f"Type into element [{elem_idx}].",
-        ))
+        steps.append(
+            Step(
+                step_index=step_idx,
+                timestamp=float(step_idx),
+                observation=Observation(screenshot_path=str(img2_path)),
+                action=Action(
+                    type=ActionType.TYPE,
+                    text=value,
+                    raw={"element_index": elem_idx},
+                ),
+                reasoning=f"Type into element [{elem_idx}].",
+            )
+        )
         current_values[field_name] = value
         step_idx += 1
 
@@ -1045,30 +1116,34 @@ def _script_registration_episode_som(
     img_som = _overlay_som_marks(img, som_elements)
     img_path = root / f"{episode_id}_step_{step_idx}.png"
     _save_image(img_som, img_path)
-    steps.append(Step(
-        step_index=step_idx,
-        timestamp=float(step_idx),
-        observation=Observation(screenshot_path=str(img_path)),
-        action=Action(
-            type=ActionType.CLICK,
-            normalized_coordinates=(cx, cy),
-            raw={"bbox": bbox, "element_index": SOM_REGISTER_BUTTON},
-        ),
-        reasoning=f"Click element [{SOM_REGISTER_BUTTON}] to submit registration.",
-    ))
+    steps.append(
+        Step(
+            step_index=step_idx,
+            timestamp=float(step_idx),
+            observation=Observation(screenshot_path=str(img_path)),
+            action=Action(
+                type=ActionType.CLICK,
+                normalized_coordinates=(cx, cy),
+                raw={"bbox": bbox, "element_index": SOM_REGISTER_BUTTON},
+            ),
+            reasoning=f"Click element [{SOM_REGISTER_BUTTON}] to submit registration.",
+        )
+    )
     step_idx += 1
 
     # Done step
     img_done = _draw_registration_success_screen(first_name, email)
     img_done_path = root / f"{episode_id}_step_{step_idx}.png"
     _save_image(img_done, img_done_path)
-    steps.append(Step(
-        step_index=step_idx,
-        timestamp=float(step_idx),
-        observation=Observation(screenshot_path=str(img_done_path)),
-        action=Action(type=ActionType.DONE),
-        reasoning="Registration successful; workflow complete.",
-    ))
+    steps.append(
+        Step(
+            step_index=step_idx,
+            timestamp=float(step_idx),
+            observation=Observation(screenshot_path=str(img_done_path)),
+            action=Action(type=ActionType.DONE),
+            reasoning="Registration successful; workflow complete.",
+        )
+    )
 
     return Episode(
         episode_id=episode_id,
@@ -1149,15 +1224,29 @@ def generate_synthetic_episodes(
 
             if use_som:
                 episode = _script_registration_episode_som(
-                    episode_dir, episode_id_full, first_name, last_name, email, password, jitter=jitter
+                    episode_dir,
+                    episode_id_full,
+                    first_name,
+                    last_name,
+                    email,
+                    password,
+                    jitter=jitter,
                 )
             else:
                 episode = _script_registration_episode(
-                    episode_dir, episode_id_full, first_name, last_name, email, password, jitter=jitter
+                    episode_dir,
+                    episode_id_full,
+                    first_name,
+                    last_name,
+                    email,
+                    password,
+                    jitter=jitter,
                 )
 
         else:
-            raise ValueError(f"Unknown scenario: {scenario}. Options: login, registration")
+            raise ValueError(
+                f"Unknown scenario: {scenario}. Options: login, registration"
+            )
 
         episodes.append(episode)
 

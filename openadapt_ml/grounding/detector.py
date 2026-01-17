@@ -20,7 +20,7 @@ from openadapt_ml.config import settings
 from openadapt_ml.grounding.base import GroundingModule, RegionCandidate
 
 if TYPE_CHECKING:
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image
 
 
 class GeminiGrounder(GroundingModule):
@@ -104,7 +104,7 @@ class GeminiGrounder(GroundingModule):
 
         # Try to parse JSON from the response
         # Look for JSON array or object in the response
-        json_match = re.search(r'\[[\s\S]*\]|\{[\s\S]*\}', response_text)
+        json_match = re.search(r"\[[\s\S]*\]|\{[\s\S]*\}", response_text)
         if not json_match:
             return candidates
 
@@ -340,11 +340,11 @@ Example output format:
         response_text = response.text
 
         # Try to extract JSON array from response
-        json_match = re.search(r'\[[\s\S]*\]', response_text)
+        json_match = re.search(r"\[[\s\S]*\]", response_text)
         if not json_match:
             # Maybe it's just a plain array
-            if response_text.strip().startswith('['):
-                json_match = re.match(r'.*', response_text)
+            if response_text.strip().startswith("["):
+                json_match = re.match(r".*", response_text)
             else:
                 return []
 
@@ -369,13 +369,18 @@ Example output format:
                         max(0, min(1, y2 / screenshot.height)),
                     ]
 
-                normalized_elements.append({
-                    "id": elem.get("id", len(normalized_elements) + 1),
-                    "label": elem.get("label", f"Element {elem.get('id', len(normalized_elements) + 1)}"),
-                    "bbox": norm_bbox,
-                    "type": elem.get("type", "other"),
-                    "text": elem.get("text", ""),
-                })
+                normalized_elements.append(
+                    {
+                        "id": elem.get("id", len(normalized_elements) + 1),
+                        "label": elem.get(
+                            "label",
+                            f"Element {elem.get('id', len(normalized_elements) + 1)}",
+                        ),
+                        "bbox": norm_bbox,
+                        "type": elem.get("type", "other"),
+                        "text": elem.get("text", ""),
+                    }
+                )
 
         return normalized_elements
 
@@ -549,8 +554,7 @@ class DetectorGrounder(GroundingModule):
             self._backend = GeminiGrounder(**kwargs)
         elif backend == "omniparser":
             raise NotImplementedError(
-                "OmniParser backend not yet implemented. "
-                "Use backend='gemini' for now."
+                "OmniParser backend not yet implemented. Use backend='gemini' for now."
             )
         else:
             raise ValueError(f"Unknown backend: {backend}")

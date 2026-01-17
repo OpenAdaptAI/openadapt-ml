@@ -8,14 +8,12 @@ from __future__ import annotations
 import argparse
 import base64
 import json
-import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from openadapt_ml.experiments.demo_prompt.format_demo import (
-    format_episode_as_demo,
     format_episode_verbose,
     generate_length_matched_control,
     get_demo_screenshot_paths,
@@ -138,14 +136,16 @@ class DemoPromptExperiment:
                     if Path(path).exists():
                         with open(path, "rb") as f:
                             image_b64 = base64.b64encode(f.read()).decode("utf-8")
-                        content.append({
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": image_b64,
-                            },
-                        })
+                        content.append(
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "image/png",
+                                    "data": image_b64,
+                                },
+                            }
+                        )
 
             # Add text
             content.append({"type": "text", "text": user_content})
@@ -158,7 +158,11 @@ class DemoPromptExperiment:
             )
 
             parts = getattr(response, "content", [])
-            texts = [getattr(p, "text", "") for p in parts if getattr(p, "type", "") == "text"]
+            texts = [
+                getattr(p, "text", "")
+                for p in parts
+                if getattr(p, "type", "") == "text"
+            ]
             return "\n".join([t for t in texts if t]).strip()
 
         elif self.provider == "openai":
@@ -170,10 +174,14 @@ class DemoPromptExperiment:
                     if Path(path).exists():
                         with open(path, "rb") as f:
                             image_b64 = base64.b64encode(f.read()).decode("utf-8")
-                        user_content_parts.append({
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/png;base64,{image_b64}"},
-                        })
+                        user_content_parts.append(
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{image_b64}"
+                                },
+                            }
+                        )
 
             # Add text
             user_content_parts.append({"type": "text", "text": user_content})
@@ -446,7 +454,9 @@ def run_experiment(
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
-        results_file = output_path / f"results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        results_file = (
+            output_path / f"results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        )
         with open(results_file, "w") as f:
             json.dump(
                 {

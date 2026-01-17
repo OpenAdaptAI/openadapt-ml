@@ -30,6 +30,7 @@ from openadapt_ml.schema.episode import (
 # WAA (Windows Agent Arena) Converter
 # ============================================================================
 
+
 def _parse_waa_action(action_str: str) -> tuple[ActionType, dict[str, Any]]:
     """Parse WAA action string into ActionType and parameters.
 
@@ -104,19 +105,25 @@ def _parse_waa_action(action_str: str) -> tuple[ActionType, dict[str, Any]]:
         if func_name == "click":
             params = {}
             if len(cleaned_args) >= 2:
-                params["coordinates"] = Coordinates(x=int(cleaned_args[0]), y=int(cleaned_args[1]))
+                params["coordinates"] = Coordinates(
+                    x=int(cleaned_args[0]), y=int(cleaned_args[1])
+                )
             return ActionType.CLICK, params
 
         elif func_name == "doubleclick":
             params = {}
             if len(cleaned_args) >= 2:
-                params["coordinates"] = Coordinates(x=int(cleaned_args[0]), y=int(cleaned_args[1]))
+                params["coordinates"] = Coordinates(
+                    x=int(cleaned_args[0]), y=int(cleaned_args[1])
+                )
             return ActionType.DOUBLE_CLICK, params
 
         elif func_name == "rightclick":
             params = {}
             if len(cleaned_args) >= 2:
-                params["coordinates"] = Coordinates(x=int(cleaned_args[0]), y=int(cleaned_args[1]))
+                params["coordinates"] = Coordinates(
+                    x=int(cleaned_args[0]), y=int(cleaned_args[1])
+                )
             return ActionType.RIGHT_CLICK, params
 
         elif func_name in ("write", "typewrite"):
@@ -144,7 +151,9 @@ def _parse_waa_action(action_str: str) -> tuple[ActionType, dict[str, Any]]:
         elif func_name == "moveto":
             params = {}
             if len(cleaned_args) >= 2:
-                params["coordinates"] = Coordinates(x=int(cleaned_args[0]), y=int(cleaned_args[1]))
+                params["coordinates"] = Coordinates(
+                    x=int(cleaned_args[0]), y=int(cleaned_args[1])
+                )
             return ActionType.HOVER, params
 
         elif func_name == "drag" or func_name == "dragto":
@@ -229,7 +238,20 @@ def from_waa_trajectory(
         metadata={
             "domain": task_info.get("domain"),
             "difficulty": task_info.get("difficulty"),
-            **{k: v for k, v in task_info.items() if k not in ["id", "task_id", "instruction", "goal", "success", "domain", "difficulty"]},
+            **{
+                k: v
+                for k, v in task_info.items()
+                if k
+                not in [
+                    "id",
+                    "task_id",
+                    "instruction",
+                    "goal",
+                    "success",
+                    "domain",
+                    "difficulty",
+                ]
+            },
         },
     )
 
@@ -296,12 +318,16 @@ def _action_to_pyautogui(action: Action) -> str:
 
     if action.type == ActionType.DOUBLE_CLICK:
         if action.coordinates:
-            return f"pyautogui.doubleClick({action.coordinates.x}, {action.coordinates.y})"
+            return (
+                f"pyautogui.doubleClick({action.coordinates.x}, {action.coordinates.y})"
+            )
         return "pyautogui.doubleClick()"
 
     if action.type == ActionType.RIGHT_CLICK:
         if action.coordinates:
-            return f"pyautogui.rightClick({action.coordinates.x}, {action.coordinates.y})"
+            return (
+                f"pyautogui.rightClick({action.coordinates.x}, {action.coordinates.y})"
+            )
         return "pyautogui.rightClick()"
 
     if action.type == ActionType.TYPE:
@@ -341,6 +367,7 @@ def _action_to_pyautogui(action: Action) -> str:
 # ============================================================================
 # Internal Format Converter (openadapt_ml.schemas.sessions)
 # ============================================================================
+
 
 def from_internal_episode(
     internal_episode: Any,
@@ -395,7 +422,9 @@ def from_internal_episode(
             key=step.action.key,
             modifiers=step.action.modifiers,
             scroll_direction=step.action.scroll_direction,
-            scroll_amount=int(step.action.scroll_amount) if step.action.scroll_amount else None,
+            scroll_amount=int(step.action.scroll_amount)
+            if step.action.scroll_amount
+            else None,
             normalized_end=(step.action.end_x, step.action.end_y)
             if step.action.end_x is not None and step.action.end_y is not None
             else None,
@@ -403,17 +432,21 @@ def from_internal_episode(
                 element_id=step.action.target_node_id,
                 role=step.action.target_role,
                 name=step.action.target_name,
-            ) if step.action.target_node_id else None,
+            )
+            if step.action.target_node_id
+            else None,
             raw=step.action.raw,
         )
 
-        steps.append(Step(
-            step_index=i,
-            observation=obs,
-            action=action,
-            reasoning=step.thought,
-            timestamp=step.t,
-        ))
+        steps.append(
+            Step(
+                step_index=i,
+                observation=obs,
+                action=action,
+                reasoning=step.thought,
+                timestamp=step.t,
+            )
+        )
 
     return Episode(
         episode_id=episode_id or internal_episode.id,
@@ -423,7 +456,9 @@ def from_internal_episode(
         metadata={
             "workflow_id": internal_episode.workflow_id,
             "summary": internal_episode.summary,
-        } if internal_episode.workflow_id or internal_episode.summary else None,
+        }
+        if internal_episode.workflow_id or internal_episode.summary
+        else None,
     )
 
 
@@ -468,11 +503,21 @@ def to_internal_episode(episode: Episode) -> dict:
                 "modifiers": step.action.modifiers,
                 "scroll_direction": step.action.scroll_direction,
                 "scroll_amount": step.action.scroll_amount,
-                "end_x": step.action.normalized_end[0] if step.action.normalized_end else None,
-                "end_y": step.action.normalized_end[1] if step.action.normalized_end else None,
-                "target_node_id": step.action.element.element_id if step.action.element else None,
-                "target_role": step.action.element.role if step.action.element else None,
-                "target_name": step.action.element.name if step.action.element else None,
+                "end_x": step.action.normalized_end[0]
+                if step.action.normalized_end
+                else None,
+                "end_y": step.action.normalized_end[1]
+                if step.action.normalized_end
+                else None,
+                "target_node_id": step.action.element.element_id
+                if step.action.element
+                else None,
+                "target_role": step.action.element.role
+                if step.action.element
+                else None,
+                "target_name": step.action.element.name
+                if step.action.element
+                else None,
                 "raw": step.action.raw,
             },
             "thought": step.reasoning,
@@ -484,7 +529,9 @@ def to_internal_episode(episode: Episode) -> dict:
         "goal": episode.instruction,
         "steps": steps,
         "success": episode.success,
-        "workflow_id": episode.metadata.get("workflow_id") if episode.metadata else None,
+        "workflow_id": episode.metadata.get("workflow_id")
+        if episode.metadata
+        else None,
         "summary": episode.metadata.get("summary") if episode.metadata else None,
     }
 
@@ -519,7 +566,9 @@ def load_waa_result(result_dir: Union[str, Path]) -> Episode:
                 trajectory = data
             elif isinstance(data, dict):
                 trajectory = data.get("steps", data.get("trajectory", []))
-                task_info = {k: v for k, v in data.items() if k not in ["steps", "trajectory"]}
+                task_info = {
+                    k: v for k, v in data.items() if k not in ["steps", "trajectory"]
+                }
 
     # Try to read result
     result_file = result_dir / "result.txt"
@@ -536,6 +585,4 @@ def load_waa_result(result_dir: Union[str, Path]) -> Episode:
     if task_id and "task_id" not in task_info:
         task_info["task_id"] = task_id
 
-    return from_waa_trajectory(
-        trajectory, task_info, episode_id=f"waa_{task_id}"
-    )
+    return from_waa_trajectory(trajectory, task_info, episode_id=f"waa_{task_id}")

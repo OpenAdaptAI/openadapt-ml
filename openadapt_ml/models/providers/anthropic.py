@@ -27,10 +27,16 @@ DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 
 # Supported models with their context windows
 SUPPORTED_MODELS = {
-    "claude-opus-4-5-20251101": {"context": 200_000, "description": "SOTA computer use"},
+    "claude-opus-4-5-20251101": {
+        "context": 200_000,
+        "description": "SOTA computer use",
+    },
     "claude-sonnet-4-5-20250929": {"context": 200_000, "description": "Fast, cheaper"},
     "claude-sonnet-4-20250514": {"context": 200_000, "description": "Previous Sonnet"},
-    "claude-haiku-3-5-20241022": {"context": 200_000, "description": "Fastest, cheapest"},
+    "claude-haiku-3-5-20241022": {
+        "context": 200_000,
+        "description": "Fastest, cheapest",
+    },
 }
 
 
@@ -168,7 +174,9 @@ class AnthropicProvider(BaseAPIProvider):
 
             # Map common errors to specific exceptions
             if "authentication" in error_str or "api_key" in error_str:
-                raise AuthenticationError(f"Anthropic authentication failed: {e}") from e
+                raise AuthenticationError(
+                    f"Anthropic authentication failed: {e}"
+                ) from e
             elif "rate_limit" in error_str or "429" in error_str:
                 raise RateLimitError(f"Anthropic rate limit exceeded: {e}") from e
             elif "model_not_found" in error_str or "not found" in error_str:

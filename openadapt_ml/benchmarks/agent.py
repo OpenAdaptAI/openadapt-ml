@@ -22,7 +22,6 @@ Example:
 
 from __future__ import annotations
 
-import json
 import re
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
@@ -36,7 +35,7 @@ from openadapt_ml.benchmarks.base import (
 if TYPE_CHECKING:
     from openadapt_ml.models.api_adapter import ApiVLMAdapter
     from openadapt_ml.runtime.policy import AgentPolicy
-    from openadapt_ml.schema import Action, ActionType
+    from openadapt_ml.schema import Action
 
 
 class BenchmarkAgent(ABC):
@@ -270,7 +269,9 @@ class PolicyAgent(BenchmarkAgent):
             end_x, end_y = action.normalized_end
 
         # Extract action type value (enum -> string)
-        action_type = action.type.value if hasattr(action.type, 'value') else action.type
+        action_type = (
+            action.type.value if hasattr(action.type, "value") else action.type
+        )
 
         # Extract element info if available
         target_node_id = None
@@ -860,9 +861,18 @@ Then output the action on a new line starting with "ACTION:"
             end_y = float(drag_match.group(4))
 
             # Normalize coordinates if they appear to be pixel values
-            if observation and observation.viewport and (x > 1.0 or y > 1.0 or end_x > 1.0 or end_y > 1.0):
+            if (
+                observation
+                and observation.viewport
+                and (x > 1.0 or y > 1.0 or end_x > 1.0 or end_y > 1.0)
+            ):
                 width, height = observation.viewport
-                raw_action["original_coords"] = {"x": x, "y": y, "end_x": end_x, "end_y": end_y}
+                raw_action["original_coords"] = {
+                    "x": x,
+                    "y": y,
+                    "end_x": end_x,
+                    "end_y": end_y,
+                }
                 raw_action["normalized"] = True
                 x = x / width
                 y = y / height
@@ -971,7 +981,6 @@ class UnifiedBaselineAgent(BenchmarkAgent):
         """Lazily initialize the UnifiedBaselineAdapter."""
         if self._adapter is None:
             from openadapt_ml.baselines import (
-                BaselineConfig,
                 TrackConfig,
                 UnifiedBaselineAdapter,
             )
@@ -1175,8 +1184,4 @@ class UnifiedBaselineAgent(BenchmarkAgent):
         pass
 
     def __repr__(self) -> str:
-        return (
-            f"UnifiedBaselineAgent("
-            f"model={self.model_alias}, "
-            f"track={self.track})"
-        )
+        return f"UnifiedBaselineAgent(model={self.model_alias}, track={self.track})"
