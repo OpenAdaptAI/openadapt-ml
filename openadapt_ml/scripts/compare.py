@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from openadapt_ml.ingest.capture import capture_to_episode
-from openadapt_ml.schema import Episode, Step, ActionType
+from openadapt_ml.schema import Episode, ActionType
 from openadapt_ml.datasets.next_action import SYSTEM_PROMPT, format_action
 from openadapt_ml.training.trainer import _get_shared_header_css, _generate_shared_header_html
 

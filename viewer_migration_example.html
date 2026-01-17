@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Viewer Migration Example</title>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <style>
+        /* OpenAdapt Viewer - Core Styles
+ * Shared CSS variables and base component styles.
+ * All classes use the 'oa-' prefix to avoid conflicts.
+ */
+
+/* === CSS Variables === */
+:root {
+    /* Background colors */
+    --oa-bg-primary: #0a0a0f;
+    --oa-bg-secondary: #12121a;
+    --oa-bg-tertiary: #1a1a24;
+
+    /* Border */
+    --oa-border-color: rgba(255, 255, 255, 0.06);
+    --oa-border-radius: 8px;
+    --oa-border-radius-lg: 12px;
+
+    /* Text colors */
+    --oa-text-primary: #f0f0f0;
+    --oa-text-secondary: #888;
+    --oa-text-muted: #555;
+
+    /* Accent colors */
+    --oa-accent: #00d4aa;
+    --oa-accent-dim: rgba(0, 212, 170, 0.15);
+    --oa-accent-secondary: #a78bfa;
+
+    /* Status colors */
+    --oa-success: #34d399;
+    --oa-success-bg: rgba(52, 211, 153, 0.15);
+    --oa-error: #ff5f5f;
+    --oa-error-bg: rgba(255, 95, 95, 0.15);
+    --oa-warning: #f59e0b;
+    --oa-warning-bg: rgba(245, 158, 11, 0.15);
+    --oa-info: #3b82f6;
+    --oa-info-bg: rgba(59, 130, 246, 0.15);
+
+    /* Spacing */
+    --oa-space-xs: 4px;
+    --oa-space-sm: 8px;
+    --oa-space-md: 16px;
+    --oa-space-lg: 24px;
+    --oa-space-xl: 32px;
+
+    /* Typography */
+    --oa-font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    --oa-font-mono: "SF Mono", Monaco, "Cascadia Code", Consolas, monospace;
+    --oa-font-size-xs: 0.75rem;
+    --oa-font-size-sm: 0.85rem;
+    --oa-font-size-md: 1rem;
+    --oa-font-size-lg: 1.125rem;
+    --oa-font-size-xl: 1.5rem;
+
+    /* Shadows */
+    --oa-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --oa-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.3);
+    --oa-shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.4);
+
+    /* Transitions */
+    --oa-transition-fast: 0.15s ease;
+    --oa-transition-normal: 0.2s ease;
+    --oa-transition-slow: 0.3s ease;
+}
+
+/* Light mode overrides */
+.oa-light, [data-theme="light"] {
+    --oa-bg-primary: #ffffff;
+    --oa-bg-secondary: #f3f4f6;
+    --oa-bg-tertiary: #e5e7eb;
+    --oa-border-color: rgba(0, 0, 0, 0.1);
+    --oa-text-primary: #111827;
+    --oa-text-secondary: #6b7280;
+    --oa-text-muted: #9ca3af;
+}
+
+/* === Screenshot Component === */
+.oa-screenshot-container {
+    position: relative;
+    background: var(--oa-bg-tertiary);
+    border-radius: var(--oa-border-radius);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.oa-screenshot-image {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.oa-screenshot-placeholder {
+    color: var(--oa-text-muted);
+    font-size: var(--oa-font-size-sm);
+    padding: var(--oa-space-lg);
+    text-align: center;
+}
+
+.oa-screenshot-caption {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: var(--oa-space-sm) var(--oa-space-md);
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+    color: var(--oa-text-primary);
+    font-size: var(--oa-font-size-sm);
+}
+
+/* Overlay markers */
+.oa-overlay {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+.oa-overlay-click {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 3px solid var(--oa-accent);
+    background: var(--oa-accent-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.oa-overlay-click.oa-overlay-human {
+    border-color: #22c55e;
+    background: rgba(34, 197, 94, 0.2);
+}
+
+.oa-overlay-click.oa-overlay-predicted {
+    border-color: #3b82f6;
+    background: rgba(59, 130, 246, 0.2);
+}
+
+.oa-overlay-label {
+    font-size: 10px;
+    font-weight: bold;
+    color: white;
+}
+
+/* === Playback Controls === */
+.oa-playback-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--oa-space-sm);
+    padding: var(--oa-space-md);
+    background: var(--oa-bg-secondary);
+    border-radius: var(--oa-border-radius);
+    border: 1px solid var(--oa-border-color);
+}
+
+.oa-playback-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: var(--oa-border-radius);
+    background: var(--oa-bg-tertiary);
+    color: var(--oa-text-primary);
+    cursor: pointer;
+    transition: all var(--oa-transition-fast);
+}
+
+.oa-playback-btn:hover {
+    background: var(--oa-accent-dim);
+    color: var(--oa-accent);
+}
+
+.oa-playback-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.oa-playback-btn.oa-playback-btn-primary {
+    background: var(--oa-accent);
+    color: var(--oa-bg-primary);
+}
+
+.oa-playback-btn.oa-playback-btn-primary:hover {
+    background: #00e5b8;
+}
+
+.oa-playback-counter {
+    font-size: var(--oa-font-size-sm);
+    color: var(--oa-text-secondary);
+    min-width: 100px;
+    text-align: center;
+}
+
+.oa-playback-speed {
+    padding: var(--oa-space-sm) var(--oa-space-md);
+    border: 1px solid var(--oa-border-color);
+    border-radius: var(--oa-border-radius);
+    background: var(--oa-bg-tertiary);
+    color: var(--oa-text-primary);
+    font-size: var(--oa-font-size-sm);
+    cursor: pointer;
+}
+
+/* === Timeline === */
+.oa-timeline {
+    width: 100%;
+    padding: var(--oa-space-sm) 0;
+}
+
+.oa-timeline-track {
+    height: 8px;
+    background: var(--oa-bg-tertiary);
+    border-radius: 4px;
+    overflow: hidden;
+    cursor: pointer;
+}
+
+.oa-timeline-progress {
+    height: 100%;
+    background: linear-gradient(90deg, var(--oa-accent), var(--oa-accent-secondary));
+    border-radius: 4px;
+    transition: width var(--oa-transition-normal);
+}
+
+.oa-timeline-markers {
+    display: flex;
+    justify-content: space-between;
+    margin-top: var(--oa-space-xs);
+    font-size: var(--oa-font-size-xs);
+    color: var(--oa-text-muted);
+}
+
+/* === Action Display === */
+.oa-action {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--oa-space-sm);
+}
+
+.oa-action-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--oa-space-xs) var(--oa-space-sm);
+    background: var(--oa-bg-tertiary);
+    border-radius: var(--oa-border-radius);
+    font-size: var(--oa-font-size-sm);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.oa-action-badge.oa-action-click { color: var(--oa-info); }
+.oa-action-badge.oa-action-type { color: var(--oa-accent); }
+.oa-action-badge.oa-action-scroll { color: var(--oa-warning); }
+.oa-action-badge.oa-action-key { color: var(--oa-accent-secondary); }
+
+.oa-action-details {
+    font-size: var(--oa-font-size-sm);
+    color: var(--oa-text-secondary);
+    font-family: var(--oa-font-mono);
+}
+
+/* === Metrics === */
+.oa-metrics-grid {
+    display: grid;
+    gap: var(--oa-space-md);
+}
+
+.oa-metrics-card {
+    background: var(--oa-bg-secondary);
+    border: 1px solid var(--oa-border-color);
+    border-radius: var(--oa-border-radius-lg);
+    padding: var(--oa-space-md);
+    transition: border-color var(--oa-transition-fast);
+}
+
+.oa-metrics-card:hover {
+    border-color: var(--oa-accent-dim);
+}
+
+.oa-metrics-card-label {
+    font-size: var(--oa-font-size-sm);
+    color: var(--oa-text-secondary);
+    margin-bottom: var(--oa-space-xs);
+}
+
+.oa-metrics-card-value {
+    font-size: var(--oa-font-size-xl);
+    font-weight: 700;
+    color: var(--oa-text-primary);
+}
+
+.oa-metrics-card-value.oa-metrics-success { color: var(--oa-success); }
+.oa-metrics-card-value.oa-metrics-error { color: var(--oa-error); }
+.oa-metrics-card-value.oa-metrics-warning { color: var(--oa-warning); }
+.oa-metrics-card-value.oa-metrics-accent { color: var(--oa-accent); }
+
+.oa-metrics-card-change {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: var(--oa-font-size-xs);
+    margin-top: var(--oa-space-xs);
+}
+
+.oa-metrics-card-change.positive { color: var(--oa-success); }
+.oa-metrics-card-change.negative { color: var(--oa-error); }
+
+/* === Filter Bar === */
+.oa-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--oa-space-md);
+    padding: var(--oa-space-md);
+    background: var(--oa-bg-secondary);
+    border-radius: var(--oa-border-radius-lg);
+    border: 1px solid var(--oa-border-color);
+}
+
+.oa-filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--oa-space-xs);
+}
+
+.oa-filter-label {
+    font-size: var(--oa-font-size-xs);
+    font-weight: 600;
+    color: var(--oa-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.oa-filter-dropdown {
+    padding: var(--oa-space-sm) var(--oa-space-md);
+    background: var(--oa-bg-tertiary);
+    border: 1px solid var(--oa-border-color);
+    border-radius: var(--oa-border-radius);
+    color: var(--oa-text-primary);
+    font-size: var(--oa-font-size-sm);
+    cursor: pointer;
+    min-width: 150px;
+}
+
+.oa-filter-dropdown:focus {
+    outline: none;
+    border-color: var(--oa-accent);
+}
+
+.oa-filter-search {
+    padding: var(--oa-space-sm) var(--oa-space-md);
+    background: var(--oa-bg-tertiary);
+    border: 1px solid var(--oa-border-color);
+    border-radius: var(--oa-border-radius);
+    color: var(--oa-text-primary);
+    font-size: var(--oa-font-size-sm);
+    min-width: 200px;
+}
+
+.oa-filter-search::placeholder {
+    color: var(--oa-text-muted);
+}
+
+/* === List View === */
+.oa-list {
+    background: var(--oa-bg-secondary);
+    border-radius: var(--oa-border-radius-lg);
+    border: 1px solid var(--oa-border-color);
+    overflow: hidden;
+}
+
+.oa-list-header {
+    padding: var(--oa-space-md);
+    border-bottom: 1px solid var(--oa-border-color);
+}
+
+.oa-list-title {
+    font-weight: 600;
+    color: var(--oa-text-primary);
+}
+
+.oa-list-subtitle {
+    font-size: var(--oa-font-size-sm);
+    color: var(--oa-text-secondary);
+    margin-top: var(--oa-space-xs);
+}
+
+.oa-list-items {
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.oa-list-item {
+    padding: var(--oa-space-md);
+    border-bottom: 1px solid var(--oa-border-color);
+    cursor: pointer;
+    transition: background var(--oa-transition-fast);
+}
+
+.oa-list-item:last-child {
+    border-bottom: none;
+}
+
+.oa-list-item:hover {
+    background: var(--oa-bg-tertiary);
+}
+
+.oa-list-item.oa-list-item-selected {
+    background: var(--oa-accent-dim);
+    border-left: 4px solid var(--oa-accent);
+}
+
+.oa-list-item-content {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--oa-space-sm);
+}
+
+.oa-list-item-title {
+    font-weight: 500;
+    color: var(--oa-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.oa-list-item-subtitle {
+    font-size: var(--oa-font-size-sm);
+    color: var(--oa-text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* === Status Badges === */
+.oa-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--oa-space-xs) var(--oa-space-sm);
+    border-radius: 9999px;
+    font-size: var(--oa-font-size-xs);
+    font-weight: 600;
+}
+
+.oa-badge-success {
+    background: var(--oa-success-bg);
+    color: var(--oa-success);
+}
+
+.oa-badge-error {
+    background: var(--oa-error-bg);
+    color: var(--oa-error);
+}
+
+.oa-badge-warning {
+    background: var(--oa-warning-bg);
+    color: var(--oa-warning);
+}
+
+.oa-badge-info {
+    background: var(--oa-info-bg);
+    color: var(--oa-info);
+}
+
+/* === Chart Container === */
+.oa-chart-container {
+    background: var(--oa-bg-secondary);
+    border-radius: var(--oa-border-radius-lg);
+    border: 1px solid var(--oa-border-color);
+    padding: var(--oa-space-md);
+}
+
+.oa-chart-title {
+    font-size: var(--oa-font-size-md);
+    font-weight: 600;
+    color: var(--oa-text-primary);
+    margin-bottom: var(--oa-space-md);
+}
+
+/* === Utility Classes === */
+.oa-hidden { display: none !important; }
+.oa-flex { display: flex; }
+.oa-flex-col { flex-direction: column; }
+.oa-items-center { align-items: center; }
+.oa-justify-between { justify-content: space-between; }
+.oa-gap-sm { gap: var(--oa-space-sm); }
+.oa-gap-md { gap: var(--oa-space-md); }
+.oa-gap-lg { gap: var(--oa-space-lg); }
+.oa-p-md { padding: var(--oa-space-md); }
+.oa-mb-md { margin-bottom: var(--oa-space-md); }
+.oa-text-center { text-align: center; }
+.oa-text-muted { color: var(--oa-text-muted); }
+
+        
+    </style>
+</head>
+<body style="background: var(--oa-bg-primary); color: var(--oa-text-primary); font-family: var(--oa-font-sans); min-height: 100vh; margin: 0;">
+    
+        <header style="padding: 16px 24px; background: var(--oa-bg-secondary); border-bottom: 1px solid var(--oa-border-color); margin-bottom: 24px;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                    <h1 style="font-size: 1.25rem; font-weight: 600; margin: 0;">Viewer Component Migration Example</h1>
+                    <p style="font-size: 0.85rem; color: var(--oa-text-secondary);">Demonstrating Phase 1 Foundation</p>
+                </div>
+                <div style="display: flex; align-items: center; gap: 16px;">
+                    
+                    
+        <button onclick="document.body.classList.toggle('oa-light')"
+                style="padding: 8px; border-radius: 8px; background: var(--oa-bg-tertiary); border: none; cursor: pointer; color: var(--oa-text-primary);"
+                title="Toggle dark/light mode">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+            </svg>
+        </button>
+        
+                </div>
+            </div>
+        </header>
+        
+    
+        <nav style="display: flex; gap: 4px; padding: 8px 24px; background: var(--oa-bg-secondary); border-bottom: 1px solid var(--oa-border-color); margin-bottom: 24px;">
+            
+            <a href="#" style="
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-size: 0.85rem;
+                font-weight: 500;
+                text-decoration: none;
+                color: var(--oa-text-secondary);
+                transition: all 0.2s;
+                
+            ">Training</a>
+            
+            <a href="#" style="
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-size: 0.85rem;
+                font-weight: 500;
+                text-decoration: none;
+                color: var(--oa-text-secondary);
+                transition: all 0.2s;
+                background: var(--oa-accent); color: var(--oa-bg-primary);
+            ">Viewer</a>
+            
+        </nav>
+        
+    <main style="max-width: 1400px; margin: 0 auto; padding: 0 24px 24px;">
+        
+        <section class="oa-section" style="margin-bottom: 24px;">
+            <h2 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 16px;">Training Metrics</h2>
+            <div class="oa-metrics-grid" style="grid-template-columns: repeat(4, 1fr);">
+    <div class="oa-metrics-card">
+    
+    <div class="oa-metrics-card-label">Epoch</div>
+    <div class="oa-metrics-card-value">3</div>
+    
+</div>
+<div class="oa-metrics-card">
+    
+    <div class="oa-metrics-card-label">Loss</div>
+    <div class="oa-metrics-card-value oa-metrics-success">0.0450</div>
+    
+</div>
+<div class="oa-metrics-card">
+    
+    <div class="oa-metrics-card-label">Accuracy</div>
+    <div class="oa-metrics-card-value oa-metrics-success">95.00%</div>
+    
+</div>
+<div class="oa-metrics-card">
+    
+    <div class="oa-metrics-card-label">Elapsed</div>
+    <div class="oa-metrics-card-value">1h 0m 0s</div>
+    
+</div>
+<div class="oa-metrics-card">
+    
+    <div class="oa-metrics-card-label">LR</div>
+    <div class="oa-metrics-card-value">1.00e-04</div>
+    
+</div>
+</div>
+        </section>
+        
+
+        <section class="oa-section" style="margin-bottom: 24px;">
+            <h2 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 16px;">Model Comparison Summary</h2>
+            <div class="oa-metrics-grid" style="grid-template-columns: repeat(4, 1fr);">
+    <div class="oa-metrics-card">
+    
+    <div class="oa-metrics-card-label">Model</div>
+    <div class="oa-metrics-card-value">qwen3-vl-2b</div>
+    
+</div>
+<div class="oa-metrics-card">
+    
+    <div class="oa-metrics-card-label">Total Steps</div>
+    <div class="oa-metrics-card-value">20</div>
+    
+</div>
+<div class="oa-metrics-card">
+    
+    <div class="oa-metrics-card-label">Correct</div>
+    <div class="oa-metrics-card-value oa-metrics-success">18</div>
+    
+</div>
+<div class="oa-metrics-card">
+    
+    <div class="oa-metrics-card-label">Incorrect</div>
+    <div class="oa-metrics-card-value oa-metrics-error">2</div>
+    
+</div>
+<div class="oa-metrics-card">
+    
+    <div class="oa-metrics-card-label">Accuracy</div>
+    <div class="oa-metrics-card-value oa-metrics-warning">90.0%</div>
+    
+</div>
+</div>
+        </section>
+        
+
+        <section class="oa-section" style="margin-bottom: 24px;">
+            <h2 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 16px;">Playback Controls</h2>
+            <div class="oa-playback-controls"
+     x-data="{
+         currentStep: 0,
+         isPlaying: false,
+         playbackSpeed: 1.0,
+         playbackInterval: null,
+         totalSteps: 20,
+
+         prevStep() {
+             if (this.currentStep > 0) this.currentStep--;
+         },
+         nextStep() {
+             if (this.currentStep < this.totalSteps - 1) this.currentStep++;
+         },
+         goToStart() {
+             this.currentStep = 0;
+         },
+         goToEnd() {
+             this.currentStep = this.totalSteps - 1;
+         },
+         togglePlayback() {
+             if (this.isPlaying) {
+                 this.stopPlayback();
+             } else {
+                 this.startPlayback();
+             }
+         },
+         startPlayback() {
+             this.isPlaying = true;
+             const interval = 1000 / this.playbackSpeed;
+             this.playbackInterval = setInterval(() => {
+                 if (this.currentStep < this.totalSteps - 1) {
+                     this.currentStep++;
+                 } else {
+                     this.stopPlayback();
+                 }
+             }, interval);
+         },
+         stopPlayback() {
+             this.isPlaying = false;
+             if (this.playbackInterval) {
+                 clearInterval(this.playbackInterval);
+                 this.playbackInterval = null;
+             }
+         }
+     }"
+     @keydown.space.window.prevent="togglePlayback()"
+     @keydown.left.window="prevStep()"
+     @keydown.right.window="nextStep()"
+     @keydown.home.window="goToStart()"
+     @keydown.end.window="goToEnd()">
+
+    <!-- Rewind -->
+    <button class="oa-playback-btn" @click="goToStart()" :disabled="currentStep === 0" title="Go to start (Home)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z"/>
+        </svg>
+    </button>
+
+    <!-- Previous -->
+    <button class="oa-playback-btn" @click="prevStep()" :disabled="currentStep === 0" title="Previous step (Left arrow)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+        </svg>
+    </button>
+
+    <!-- Play/Pause -->
+    <button class="oa-playback-btn oa-playback-btn-primary" @click="togglePlayback()" title="Play/Pause (Space)">
+        <svg x-show="!isPlaying" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z"/>
+        </svg>
+        <svg x-show="isPlaying" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+        </svg>
+    </button>
+
+    <!-- Next -->
+    <button class="oa-playback-btn" @click="nextStep()" :disabled="currentStep >= totalSteps - 1" title="Next step (Right arrow)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
+        </svg>
+    </button>
+
+    <!-- End -->
+    <button class="oa-playback-btn" @click="goToEnd()" :disabled="currentStep >= totalSteps - 1" title="Go to end (End)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 18l8.5-6L6 6v12zm2-12v12h2V6h-2z" transform="scale(-1, 1) translate(-24, 0)"/>
+        </svg>
+    </button>
+
+    <!-- Step Counter -->
+    
+        <span class="oa-playback-counter"
+              x-text="'Step ' + (playback.currentStep + 1) + ' of ' + 20">
+            Step 1 of 20
+        </span>
+        
+
+    <!-- Speed Selector -->
+    <select class="oa-playback-speed"
+            x-model.number="playbackSpeed"
+            @change="if (isPlaying) { stopPlayback(); startPlayback(); }"
+            title="Playback speed">
+        <option value="0.5" >0.5x</option>
+<option value="1" selected>1x</option>
+<option value="2" >2x</option>
+<option value="4" >4x</option>
+    </select>
+</div>
+        </section>
+        
+    </main>
+    <footer style="text-align: center; padding: 24px; font-size: 0.8rem; color: var(--oa-text-muted);">
+        Generated by <a href="https://github.com/OpenAdaptAI/openadapt-viewer" style="color: var(--oa-accent);">openadapt-viewer</a>
+    </footer>
+    
+    
+</body>
+</html>

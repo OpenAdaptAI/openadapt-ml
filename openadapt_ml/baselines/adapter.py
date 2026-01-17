@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Any
 
-from openadapt_ml.baselines.config import BaselineConfig, TrackConfig, get_model_spec
+from openadapt_ml.baselines.config import BaselineConfig, TrackConfig
 from openadapt_ml.baselines.parser import ParsedAction, UnifiedResponseParser
 from openadapt_ml.baselines.prompts import PromptBuilder
 from openadapt_ml.config import settings

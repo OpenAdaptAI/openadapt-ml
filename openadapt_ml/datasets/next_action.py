@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
-import torch
 from torch.utils.data import Dataset
 
 from openadapt_ml.schema import Action, ActionType, Episode, Step, UIElement
@@ -269,8 +268,6 @@ def _generate_thought_for_step(
     actions back to the stated objective.
     """
 
-    action = step.action
-    t = action.type
 
     if scenario == "registration":
         return _generate_registration_thought(step_index, step, goal, total_steps)

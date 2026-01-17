@@ -8,11 +8,10 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 import click
 
-from openadapt_ml.baselines.config import MODELS, TrackConfig, TrackType
+from openadapt_ml.baselines.config import MODELS
 
 
 @click.group()

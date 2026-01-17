@@ -51,7 +51,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from openadapt_ml.benchmarks.data_collection import ExecutionStep
 from openadapt_ml.benchmarks.viewer import (
     load_benchmark_metadata,
     load_benchmark_summary,
@@ -122,7 +121,7 @@ class TraceExporter:
         """
         # Load benchmark data
         metadata = load_benchmark_metadata(self.benchmark_dir)
-        summary = load_benchmark_summary(self.benchmark_dir)
+        load_benchmark_summary(self.benchmark_dir)
         tasks = load_task_results(self.benchmark_dir)
 
         logger.info(

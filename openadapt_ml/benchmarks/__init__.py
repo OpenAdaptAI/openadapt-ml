@@ -69,17 +69,9 @@ Example:
     print(f"Success rate: {metrics['success_rate']:.1%}")
     ```
 """
+from __future__ import annotations
 
 import warnings
-
-# Emit deprecation warning on import
-warnings.warn(
-    "openadapt_ml.benchmarks is deprecated. "
-    "Please use openadapt_evals for standalone benchmark evaluation. "
-    "See CLAUDE.md for migration guide.",
-    DeprecationWarning,
-    stacklevel=2,
-)
 
 from openadapt_ml.benchmarks.agent import (
     APIBenchmarkAgent,
@@ -108,6 +100,15 @@ from openadapt_ml.benchmarks.runner import (
 from openadapt_ml.benchmarks.waa import WAAAdapter, WAAConfig, WAAMockAdapter
 from openadapt_ml.benchmarks.waa_live import WAALiveAdapter, WAALiveConfig
 from openadapt_ml.benchmarks.viewer import generate_benchmark_viewer
+
+# Emit deprecation warning on import
+warnings.warn(
+    "openadapt_ml.benchmarks is deprecated. "
+    "Please use openadapt_evals for standalone benchmark evaluation. "
+    "See CLAUDE.md for migration guide.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 # Azure orchestration (lazy import to avoid requiring azure-ai-ml)
 def _get_azure_classes():

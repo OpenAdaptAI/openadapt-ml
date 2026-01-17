@@ -8,14 +8,12 @@ from __future__ import annotations
 import argparse
 import base64
 import json
-import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from openadapt_ml.experiments.demo_prompt.format_demo import (
-    format_episode_as_demo,
     format_episode_verbose,
     generate_length_matched_control,
     get_demo_screenshot_paths,

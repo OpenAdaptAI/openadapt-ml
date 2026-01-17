@@ -4,9 +4,9 @@ import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List
 
-from openadapt_ml.schema import Episode, Step, Action, ActionType
+from openadapt_ml.schema import ActionType
 from openadapt_ml.training.shared_ui import (
     get_shared_header_css as _get_shared_header_css,
     generate_shared_header_html as _generate_shared_header_html,
@@ -386,10 +386,10 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
 
     # Calculate stats
     if state.losses:
-        min_loss = min(l["loss"] for l in state.losses)
-        avg_loss = sum(l["loss"] for l in state.losses) / len(state.losses)
+        min_loss = min(loss_entry["loss"] for loss_entry in state.losses)
+        sum(loss_entry["loss"] for loss_entry in state.losses) / len(state.losses)
         recent_losses = state.losses[-10:] if len(state.losses) >= 10 else state.losses
-        recent_avg = sum(l["loss"] for l in recent_losses) / len(recent_losses)
+        recent_avg = sum(loss_entry["loss"] for loss_entry in recent_losses) / len(recent_losses)
         # Calculate step times
         step_times = []
         for i in range(1, len(state.losses)):
@@ -397,16 +397,16 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
         avg_step_time = sum(step_times) / len(step_times) if step_times else 0
         # Loss by epoch
         epoch_losses: dict = {}
-        for l in state.losses:
-            ep = l["epoch"]
+        for loss_entry in state.losses:
+            ep = loss_entry["epoch"]
             if ep not in epoch_losses:
                 epoch_losses[ep] = []
-            epoch_losses[ep].append(l["loss"])
+            epoch_losses[ep].append(loss_entry["loss"])
         epoch_avg = {ep: sum(losses)/len(losses) for ep, losses in epoch_losses.items()}
         # Estimate ETA
         # Steps per epoch = steps in completed epochs / completed epochs
         completed_epochs = state.epoch
-        steps_in_completed = sum(1 for l in state.losses if l["epoch"] < completed_epochs)
+        steps_in_completed = sum(1 for loss_entry in state.losses if loss_entry["epoch"] < completed_epochs)
         if completed_epochs > 0 and steps_in_completed > 0:
             steps_per_epoch = steps_in_completed / completed_epochs
         else:
@@ -420,7 +420,7 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
         # Check if training is complete (all steps done)
         is_training_complete = remaining_steps == 0 and len(state.losses) > 0
     else:
-        min_loss = avg_loss = recent_avg = avg_step_time = 0.0
+        min_loss = recent_avg = avg_step_time = 0.0
         epoch_avg = {}
         eta_seconds = 0
         steps_per_epoch = 0
@@ -431,10 +431,9 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
     epoch_avg_json = json.dumps(list(epoch_avg.items()))
 
     # Generate comparison viewer preview if capture path available
-    comparison_viewer_path = ""
     if state.capture_path:
         try:
-            from openadapt_ml.scripts.compare import generate_comparison_html, generate_comparison_data
+            from openadapt_ml.scripts.compare import generate_comparison_html
             from openadapt_ml.ingest.capture import capture_to_episode
 
             capture_path = Path(state.capture_path)
@@ -469,8 +468,7 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
                 output_dir.mkdir(parents=True, exist_ok=True)
                 comparison_output = output_dir / "comparison_preview.html"
                 generate_comparison_html(capture_path, episode, comparison_data, comparison_output)
-                comparison_viewer_path = str(comparison_output.name)  # Relative path
-        except Exception as e:
+        except Exception:
             pass  # Fail silently if comparison viewer can't be generated
 
     html = f'''<!DOCTYPE html>

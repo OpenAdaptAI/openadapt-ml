@@ -743,7 +743,7 @@ def _draw_registration_screen(
         layout = _compute_registration_layout(jitter=jitter)
 
     label_x = 180
-    box_w, box_h = 400, 36
+    _box_w, _box_h = 400, 36
     start_y = 100
     field_spacing = 70
 

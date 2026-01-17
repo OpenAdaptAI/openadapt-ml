@@ -27,7 +27,6 @@ import http.server
 import json
 import os
 import shutil
-import signal
 import socketserver
 import subprocess
 import sys
@@ -274,7 +273,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     print(f"Output: {current_dir}")
 
     if status.get("epoch"):
-        print(f"\nProgress:")
+        print("\nProgress:")
         print(f"  Epoch: {status['epoch']}")
         print(f"  Step: {status['step']}")
         if status.get("loss"):
@@ -381,7 +380,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         min_loss = min(losses)
         max_loss = max(losses)
 
-        print(f"\nLoss progression:")
+        print("\nLoss progression:")
         print(f"  First: {first_loss:.4f}")
         print(f"  Last: {last_loss:.4f}")
         print(f"  Min: {min_loss:.4f}")
@@ -394,7 +393,7 @@ def cmd_check(args: argparse.Namespace) -> int:
             recent_avg = sum(recent) / len(recent)
             recent_std = (sum((x - recent_avg) ** 2 for x in recent) / len(recent)) ** 0.5
 
-            print(f"\nRecent stability (last 10 steps):")
+            print("\nRecent stability (last 10 steps):")
             print(f"  Avg loss: {recent_avg:.4f}")
             print(f"  Std dev: {recent_std:.4f}")
 
@@ -542,7 +541,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
                         print(f"Stderr: {result.stderr}")
 
                     if result.returncode == 0:
-                        print(f"✅ Benchmark complete. Regenerating viewer...")
+                        print("✅ Benchmark complete. Regenerating viewer...")
                         progress_file.write_text(json.dumps({
                             "status": "complete",
                             "provider": provider,
@@ -873,7 +872,6 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 dict with disk_usage_gb, memory_usage_mb, setup_script_phase, probe_response, qmp_connected, dependencies
             """
             import subprocess
-            import re
 
             metadata = {
                 "disk_usage_gb": None,
@@ -1049,8 +1047,6 @@ def cmd_serve(args: argparse.Namespace) -> int:
         def _fetch_background_tasks(self):
             """Fetch status of all background tasks: Azure VM, Docker containers, benchmarks."""
             import subprocess
-            from datetime import datetime
-            import time
 
             tasks = []
 
@@ -1144,7 +1140,6 @@ def cmd_serve(args: argparse.Namespace) -> int:
                             if len(parts) >= 3:
                                 container_name, status, image = parts[0], parts[1], parts[2]
                                 # Parse "Up X minutes" to determine if healthy
-                                is_healthy = "Up" in status
 
                                 # Check for Windows VM specifically
                                 if "windows" in image.lower() or container_name == "winarena":
@@ -1251,7 +1246,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
                                             "dependencies": vm_metadata["dependencies"],
                                         }
                                     })
-                except Exception as e:
+                except Exception:
                     # SSH failed, VM might still be starting
                     pass
 
@@ -1443,7 +1438,6 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 - elapsed_minutes: int
             """
             import subprocess
-            from datetime import datetime
             import re
 
             result = {
@@ -1603,7 +1597,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
                         if step_match:
                             result["progress"]["current_step"] = int(step_match.group(1))
 
-            except Exception as e:
+            except Exception:
                 # SSH or parsing failed - leave defaults
                 pass
 
@@ -2052,7 +2046,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
                     print(f"[Benchmark] Stderr: {result.stderr}")
 
                 if result.returncode == 0:
-                    print(f"[Benchmark] Complete. Regenerating viewer...")
+                    print("[Benchmark] Complete. Regenerating viewer...")
                     progress_file.write_text(json.dumps({
                         "status": "complete",
                         "model": model,
@@ -2173,7 +2167,7 @@ def cmd_viewer(args: argparse.Namespace) -> int:
 
         dashboard_html = generate_training_dashboard(state, config)
         (current_dir / "dashboard.html").write_text(dashboard_html)
-        print(f"  Regenerated: dashboard.html")
+        print("  Regenerated: dashboard.html")
 
     # Generate unified viewer using consolidated function
     viewer_path = generate_unified_viewer_from_output_dir(current_dir)

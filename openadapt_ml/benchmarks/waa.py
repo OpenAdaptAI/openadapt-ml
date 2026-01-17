@@ -717,7 +717,7 @@ class WAAMockAdapter(BenchmarkAdapter):
     def _generate_mock_screenshot(self, path: Path) -> None:
         """Generate a simple mock screenshot image."""
         try:
-            from PIL import Image, ImageDraw, ImageFont
+            from PIL import Image, ImageDraw
 
             # Create a simple gray image with some UI elements
             img = Image.new("RGB", (1920, 1200), color=(240, 240, 240))

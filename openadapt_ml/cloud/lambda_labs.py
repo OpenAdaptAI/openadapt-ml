@@ -54,8 +54,6 @@ def start_dashboard_server(output_dir: Path, port: int = DEFAULT_SERVER_PORT) ->
     Returns:
         (process, url): The server process and the dashboard URL
     """
-    import webbrowser
-    import threading
 
     # Start simple HTTP server in background thread
     server_proc = subprocess.Popen(
@@ -714,7 +712,7 @@ export PATH="$HOME/.local/bin:$PATH"
             if result.returncode == 0:
                 print("    Training logs downloaded to training_output_lambda/")
             else:
-                print(f"    Warning: Failed to download logs")
+                print("    Warning: Failed to download logs")
                 success = False
 
         # Download checkpoint
@@ -730,7 +728,7 @@ export PATH="$HOME/.local/bin:$PATH"
             if result.returncode == 0:
                 print("    Checkpoint downloaded to checkpoints_lambda/")
             else:
-                print(f"    Warning: Failed to download checkpoint (may not exist yet)")
+                print("    Warning: Failed to download checkpoint (may not exist yet)")
 
         # Regenerate all dashboards with static navigation and correct status
         if include_logs:
@@ -755,7 +753,7 @@ export PATH="$HOME/.local/bin:$PATH"
         try:
             import json
             return json.loads(result.stdout.strip())
-        except:
+        except (json.JSONDecodeError, ValueError):
             return {}
 
 
@@ -797,10 +795,10 @@ def main():
     subparsers = parser.add_subparsers(dest="command", help="Command")
 
     # List instances command
-    list_parser = subparsers.add_parser("list", help="List available instance types")
+    subparsers.add_parser("list", help="List available instance types")
 
     # Status command
-    status_parser = subparsers.add_parser("status", help="Show running instances")
+    subparsers.add_parser("status", help="Show running instances")
 
     # Launch command
     launch_parser = subparsers.add_parser("launch", help="Launch a GPU instance")
@@ -836,7 +834,7 @@ def main():
     rsync_parser.add_argument("--delete", action="store_true", help="Delete extraneous files from dest")
 
     # Setup command
-    setup_parser = subparsers.add_parser("setup", help="Set up SSH key for Lambda Labs")
+    subparsers.add_parser("setup", help="Set up SSH key for Lambda Labs")
 
     # Train command - full automated training pipeline
     train_parser = subparsers.add_parser("train", help="Run training on Lambda GPU")
@@ -942,7 +940,6 @@ def main():
         print("Available GPU instances:\n")
         types = client.list_instance_types()
         for t in types:
-            avail = "available" if t.available_regions else "no capacity"
             print(f"  {t}")
         print(f"\nTotal: {len(types)} instance types")
         print("\nLaunch with: python -m openadapt_ml.cloud.lambda_labs launch --type <name>")
@@ -968,7 +965,7 @@ def main():
             ssh_key_names=[ssh_key],
             name=args.name,
         )
-        print(f"\nInstance launched!")
+        print("\nInstance launched!")
         print(f"  ID: {instance.id}")
         print(f"  IP: {instance.ip}")
         print(f"  Type: {instance.instance_type}")
@@ -1056,7 +1053,6 @@ def main():
 
         instance = None
         start_time = time_module.time()
-        launched_new = False
         training_completed = False  # Track if training actually finished
 
         # Instance pricing (approximate $/hr)
@@ -1091,7 +1087,6 @@ def main():
                     name="openadapt-training",
                 )
                 print(f"Instance launched: {instance.id[:8]}... at {instance.ip}")
-                launched_new = True
 
         price_per_hour = INSTANCE_PRICES.get(instance.instance_type, 1.00)
         print(f"  Instance type: {instance.instance_type} (~${price_per_hour:.2f}/hr)")
@@ -1184,7 +1179,7 @@ def main():
             # Upload capture if provided
             remote_capture = None
             if args.capture:
-                setup_logs.append(f"Uploading capture data...")
+                setup_logs.append("Uploading capture data...")
                 update_dashboard("installing", setup_logs)
                 if client.upload_capture(instance, args.capture, "~/capture"):
                     remote_capture = "~/capture"
@@ -1207,7 +1202,7 @@ def main():
             print("Starting training...")
             print("=" * 50 + "\n")
 
-            proc = client.run_training(
+            client.run_training(
                 instance,
                 config=args.config,
                 capture=remote_capture,
@@ -1342,7 +1337,7 @@ def main():
                     if result.returncode == 0:
                         print(f"  Comparison generated: {output_name}")
                     else:
-                        print(f"  Warning: Comparison generation failed")
+                        print("  Warning: Comparison generation failed")
                         if result.stderr:
                             print(f"  Error: {result.stderr}")
                 else:
@@ -1362,7 +1357,7 @@ def main():
             print(f"\nInstance still running: {instance.ip}")
             print(f"  Current cost: ~${cost:.2f}")
             if not training_completed:
-                print(f"  (Not terminating - training did not complete successfully)")
+                print("  (Not terminating - training did not complete successfully)")
             print(f"Terminate with: python -m openadapt_ml.cloud.lambda_labs terminate {instance.id}")
 
     elif args.command == "train-status":
@@ -1977,13 +1972,13 @@ def main():
             return
 
         total_steps = len(losses)
-        epochs = sorted(set(l["epoch"] for l in losses))
+        epochs = sorted(set(loss_entry["epoch"] for loss_entry in losses))
         total_epochs = data.get("total_epochs", 5)
-        min_loss = min(l["loss"] for l in losses)
+        min_loss = min(loss_entry["loss"] for loss_entry in losses)
         current_loss = losses[-1]["loss"]
 
         print(f"\n{'='*50}")
-        print(f"TRAINING STATUS")
+        print("TRAINING STATUS")
         print(f"{'='*50}")
         print(f"Steps: {total_steps}")
         print(f"Epochs: {max(epochs)+1}/{total_epochs}")
@@ -1999,17 +1994,17 @@ def main():
         is_running = int(proc_result.stdout.strip()) > 0
 
         if is_running:
-            print(f"Status: RUNNING")
+            print("Status: RUNNING")
         else:
-            print(f"Status: STOPPED")
+            print("Status: STOPPED")
 
         # Early stopping analysis
         window = min(args.window, len(losses))
         if window < 2:
             print("\nNot enough data for early stopping analysis.")
         else:
-            recent_losses = [l["loss"] for l in losses[-window:]]
-            older_losses = [l["loss"] for l in losses[-window*2:-window]] if len(losses) >= window*2 else [l["loss"] for l in losses[:window]]
+            recent_losses = [loss_entry["loss"] for loss_entry in losses[-window:]]
+            older_losses = [loss_entry["loss"] for loss_entry in losses[-window*2:-window]] if len(losses) >= window*2 else [loss_entry["loss"] for loss_entry in losses[:window]]
 
             recent_avg = sum(recent_losses) / len(recent_losses)
             older_avg = sum(older_losses) / len(older_losses) if older_losses else recent_avg
@@ -2027,14 +2022,14 @@ def main():
 
             should_stop = improvement < args.threshold and loss_variance < 0.1
             if should_stop:
-                print(f"\n⚠️  EARLY STOPPING RECOMMENDED")
+                print("\n⚠️  EARLY STOPPING RECOMMENDED")
                 print(f"   Loss has plateaued (improvement < {args.threshold*100}%)")
                 if not is_running:
-                    print(f"   (Training already stopped)")
+                    print("   (Training already stopped)")
                 else:
-                    print(f"\n   To stop: uv run python -m openadapt_ml.cloud.lambda_labs kill")
+                    print("\n   To stop: uv run python -m openadapt_ml.cloud.lambda_labs kill")
             else:
-                print(f"\n✓ Training still improving, continue.")
+                print("\n✓ Training still improving, continue.")
 
         # Time estimate
         if is_running and len(losses) >= 2:
@@ -2046,7 +2041,7 @@ def main():
             eta_mins = eta_seconds / 60
 
             print(f"\n{'='*50}")
-            print(f"TIME ESTIMATE")
+            print("TIME ESTIMATE")
             print(f"{'='*50}")
             print(f"Remaining epochs: {remaining_epochs}")
             print(f"Est. remaining steps: {remaining_steps:.0f}")
@@ -2202,7 +2197,6 @@ def main():
         # Start web server for live dashboard with stop button support
         import http.server
         import socketserver
-        import threading
         import time as time_module
         from pathlib import Path
 
@@ -2421,7 +2415,7 @@ def main():
                                         screenshots_link.symlink_to(screenshots_dir)
                                         print(f"  Linked: {screenshots_link} -> {screenshots_dir}")
                                         break
-            except Exception as e:
+            except Exception:
                 pass  # Silently continue if auto-link fails
 
         print(f"Regenerating viewer from {output_dir}...")
@@ -2435,7 +2429,7 @@ def main():
             target = output_dir / "viewer.html"
 
         print(f"\nGenerated: {target.absolute()}")
-        print(f"View with: uv run python -m openadapt_ml.cloud.lambda_labs serve --open")
+        print("View with: uv run python -m openadapt_ml.cloud.lambda_labs serve --open")
 
         if args.open:
             subprocess.run(["open", str(target)], capture_output=True)

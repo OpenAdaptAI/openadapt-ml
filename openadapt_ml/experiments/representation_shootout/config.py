@@ -142,13 +142,13 @@ class ConditionConfig:
         )
 
     @classmethod
-    def marks(cls, **kwargs: Any) -> ConditionConfig:
+    def marks(cls, **kwargs: Any) -> ConditionConfig:  # noqa: F811
         """Create Condition C (Marks/Element IDs) config."""
-        marks = kwargs.pop("marks", None) or MarksConfig()
+        marks_config = kwargs.pop("marks", None) or MarksConfig()
         return cls(
             name=ConditionName.MARKS,
             output_format=OutputFormat.ELEMENT_ID,
-            marks=marks,
+            marks=marks_config,
             loss_type="cross_entropy",
             **kwargs,
         )

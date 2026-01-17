@@ -20,7 +20,7 @@ from openadapt_ml.config import settings
 from openadapt_ml.grounding.base import GroundingModule, RegionCandidate
 
 if TYPE_CHECKING:
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image
 
 
 class GeminiGrounder(GroundingModule):

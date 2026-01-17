@@ -6,7 +6,6 @@ and convert them to the Episode/Step format used by openadapt-ml for training.
 
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -101,7 +100,7 @@ def capture_to_episode(
     """
     try:
         from openadapt_capture import Capture
-        from openadapt_capture.events import (
+        from openadapt_capture.events import (  # noqa: F401
             EventType,
             KeyTypeEvent,
             MouseClickEvent,
