@@ -69,6 +69,7 @@ Example:
     print(f"Success rate: {metrics['success_rate']:.1%}")
     ```
 """
+
 from __future__ import annotations
 
 import warnings
@@ -110,6 +111,7 @@ warnings.warn(
     stacklevel=2,
 )
 
+
 # Azure orchestration (lazy import to avoid requiring azure-ai-ml)
 def _get_azure_classes():
     from openadapt_ml.benchmarks.azure import (
@@ -117,6 +119,7 @@ def _get_azure_classes():
         AzureWAAOrchestrator,
         estimate_cost,
     )
+
     return AzureConfig, AzureWAAOrchestrator, estimate_cost
 
 
@@ -165,5 +168,10 @@ def __getattr__(name: str):
             AzureWAAOrchestrator,
             estimate_cost,
         )
-        return {"AzureConfig": AzureConfig, "AzureWAAOrchestrator": AzureWAAOrchestrator, "estimate_cost": estimate_cost}[name]
+
+        return {
+            "AzureConfig": AzureConfig,
+            "AzureWAAOrchestrator": AzureWAAOrchestrator,
+            "estimate_cost": estimate_cost,
+        }[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -177,7 +177,9 @@ class SafetyGate:
 
         # Pre-compile regex patterns for efficiency
         self._blocklist_re = self._compile_patterns(self.config.blocklist_patterns)
-        self._irreversible_re = self._compile_patterns(self.config.irreversible_patterns)
+        self._irreversible_re = self._compile_patterns(
+            self.config.irreversible_patterns
+        )
         self._credential_re = self._compile_patterns(self.config.credential_patterns)
         self._credential_allowlist_re = self._compile_patterns(
             self.config.credential_allowlist
@@ -387,9 +389,7 @@ class SafetyGate:
             )
         return None
 
-    def _check_confidence_threshold(
-        self, action: Action
-    ) -> Optional[SafetyAssessment]:
+    def _check_confidence_threshold(self, action: Action) -> Optional[SafetyAssessment]:
         """Check if action confidence is below threshold."""
         confidence = self._get_action_confidence(action)
 

@@ -15,10 +15,15 @@ class MilestoneSpec:
     A milestone is achieved when, at a specific step, the predicted action
     matches certain criteria (type match + optional coord threshold).
     """
+
     name: str
     step_index: int  # Which step in the episode (0-indexed)
-    expected_type: str  # Expected ground truth action type ("click", "type", "done", etc.)
-    coord_threshold: Optional[float] = None  # If set, coord error must be < this for clicks
+    expected_type: (
+        str  # Expected ground truth action type ("click", "type", "done", etc.)
+    )
+    coord_threshold: Optional[float] = (
+        None  # If set, coord error must be < this for clicks
+    )
 
 
 # Predefined milestone specs per scenario
@@ -28,7 +33,9 @@ class MilestoneSpec:
 LOGIN_MILESTONES = [
     MilestoneSpec("typed_username", step_index=1, expected_type="type"),
     MilestoneSpec("typed_password", step_index=3, expected_type="type"),
-    MilestoneSpec("clicked_login", step_index=4, expected_type="click", coord_threshold=0.10),
+    MilestoneSpec(
+        "clicked_login", step_index=4, expected_type="click", coord_threshold=0.10
+    ),
     MilestoneSpec("emitted_done", step_index=5, expected_type="done"),
 ]
 
@@ -81,14 +88,22 @@ class AggregateMetrics:
     action_type_accuracy: float
     mean_coord_error: Optional[float]
     coord_error_count: int
-    episode_success_rate: Optional[float]  # Strict: all steps must match (renamed from success_pred)
+    episode_success_rate: Optional[
+        float
+    ]  # Strict: all steps must match (renamed from success_pred)
     click_hit_rate: Optional[float]  # Point-based: within 5% of center
-    mean_episode_progress: Optional[float]  # Partial credit: avg(step_matches/step_total)
+    mean_episode_progress: Optional[
+        float
+    ]  # Partial credit: avg(step_matches/step_total)
     # New partial-credit metrics
-    mean_episode_step_score: Optional[float]  # Strict partial: avg(full_step_correct/step_total)
+    mean_episode_step_score: Optional[
+        float
+    ]  # Strict partial: avg(full_step_correct/step_total)
     weak_episode_success_rate: Optional[float]  # Semantic milestones all achieved
     state_success_rate: Optional[float] = None  # From model's State: {"success": true}
-    bbox_hit_rate: Optional[float] = None  # Bbox-based: click anywhere in element bounds
+    bbox_hit_rate: Optional[float] = (
+        None  # Bbox-based: click anywhere in element bounds
+    )
     element_accuracy: Optional[float] = None  # SoM element index accuracy
 
 
@@ -122,12 +137,7 @@ def compute_coordinate_error(pred_action: Action, gt_action: Action) -> Optional
     pred_x, pred_y = _get_normalized_coords(pred_action)
     gt_x, gt_y = _get_normalized_coords(gt_action)
 
-    if (
-        pred_x is None
-        or pred_y is None
-        or gt_x is None
-        or gt_y is None
-    ):
+    if pred_x is None or pred_y is None or gt_x is None or gt_y is None:
         return None
 
     dx = pred_x - gt_x
@@ -212,7 +222,9 @@ def evaluate_episode(
         sample = samples[sample_idx]
         sample_idx += 1
 
-        pred_action, _thought, pred_state, raw_text = policy.predict_action_from_sample(sample)
+        pred_action, _thought, pred_state, raw_text = policy.predict_action_from_sample(
+            sample
+        )
         gt_action = step.action
 
         # Get action types as strings for comparison
@@ -289,11 +301,17 @@ def evaluate_episode(
 
         # Track semantic milestones using the milestone spec
         for milestone in milestones:
-            if step_idx == milestone.step_index and gt_type_str == milestone.expected_type:
+            if (
+                step_idx == milestone.step_index
+                and gt_type_str == milestone.expected_type
+            ):
                 if pred_type_str == milestone.expected_type:
                     # Check coord threshold if specified (for click actions)
                     if milestone.coord_threshold is not None:
-                        if coord_error is not None and coord_error < milestone.coord_threshold:
+                        if (
+                            coord_error is not None
+                            and coord_error < milestone.coord_threshold
+                        ):
                             milestones_achieved[milestone.name] = True
                     else:
                         # No coord threshold - type match is sufficient
@@ -426,18 +444,16 @@ def aggregate_metrics(episodes_metrics: List[EpisodeMetrics]) -> AggregateMetric
 
     # Partial credit: average episode progress (step_matches / step_total per episode)
     if eval_episodes:
-        episode_progress_scores = [
-            m.step_matches / m.step_total for m in eval_episodes
-        ]
-        mean_episode_progress = sum(episode_progress_scores) / len(episode_progress_scores)
+        episode_progress_scores = [m.step_matches / m.step_total for m in eval_episodes]
+        mean_episode_progress = sum(episode_progress_scores) / len(
+            episode_progress_scores
+        )
     else:
         mean_episode_progress = None
 
     # Strict partial: avg(full_step_correct / step_total) - requires type match + click hit
     if eval_episodes:
-        step_scores = [
-            m.full_step_correct / m.step_total for m in eval_episodes
-        ]
+        step_scores = [m.full_step_correct / m.step_total for m in eval_episodes]
         mean_episode_step_score = sum(step_scores) / len(step_scores)
     else:
         mean_episode_step_score = None
@@ -445,7 +461,8 @@ def aggregate_metrics(episodes_metrics: List[EpisodeMetrics]) -> AggregateMetric
     # Weak episode success: all milestones achieved
     if eval_episodes:
         weak_success_count = sum(
-            1 for m in eval_episodes
+            1
+            for m in eval_episodes
             if m.milestones_achieved and all(m.milestones_achieved.values())
         )
         weak_episode_success_rate = weak_success_count / len(eval_episodes)

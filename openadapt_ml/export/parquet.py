@@ -72,7 +72,11 @@ def to_parquet(
             # Extract action type value (enum -> string)
             action_type = None
             if step.action:
-                action_type = step.action.type.value if hasattr(step.action.type, 'value') else step.action.type
+                action_type = (
+                    step.action.type.value
+                    if hasattr(step.action.type, "value")
+                    else step.action.type
+                )
 
             row = {
                 "episode_id": episode.episode_id,
@@ -83,8 +87,12 @@ def to_parquet(
                 "action_type": action_type,
                 "x": x,
                 "y": y,
-                "end_x": step.action.normalized_end[0] if step.action and step.action.normalized_end else None,
-                "end_y": step.action.normalized_end[1] if step.action and step.action.normalized_end else None,
+                "end_x": step.action.normalized_end[0]
+                if step.action and step.action.normalized_end
+                else None,
+                "end_y": step.action.normalized_end[1]
+                if step.action and step.action.normalized_end
+                else None,
                 "text": getattr(step.action, "text", None) if step.action else None,
                 "key": getattr(step.action, "key", None) if step.action else None,
                 "scroll_direction": (
@@ -130,33 +138,37 @@ def _write_summary(episodes: list[Episode], output_path: str) -> None:
     for episode in episodes:
         first_t = episode.steps[0].timestamp if episode.steps else None
         last_t = episode.steps[-1].timestamp if episode.steps else None
-        duration = (last_t - first_t) if first_t is not None and last_t is not None else None
+        duration = (
+            (last_t - first_t) if first_t is not None and last_t is not None else None
+        )
 
         # Extract action type values (enum -> string)
         first_action_type = None
         last_action_type = None
         if episode.steps and episode.steps[0].action:
             t = episode.steps[0].action.type
-            first_action_type = t.value if hasattr(t, 'value') else t
+            first_action_type = t.value if hasattr(t, "value") else t
         if episode.steps and episode.steps[-1].action:
             t = episode.steps[-1].action.type
-            last_action_type = t.value if hasattr(t, 'value') else t
+            last_action_type = t.value if hasattr(t, "value") else t
 
-        summary_rows.append({
-            "episode_id": episode.episode_id,
-            "instruction": episode.instruction,
-            "task_id": getattr(episode, "task_id", None),
-            "step_count": len(episode.steps),
-            "duration": duration,
-            "success": getattr(episode, "success", None),
-            "first_action_type": first_action_type,
-            "last_action_type": last_action_type,
-            "metadata": (
-                json.dumps(episode.metadata)
-                if hasattr(episode, "metadata") and episode.metadata
-                else None
-            ),
-        })
+        summary_rows.append(
+            {
+                "episode_id": episode.episode_id,
+                "instruction": episode.instruction,
+                "task_id": getattr(episode, "task_id", None),
+                "step_count": len(episode.steps),
+                "duration": duration,
+                "success": getattr(episode, "success", None),
+                "first_action_type": first_action_type,
+                "last_action_type": last_action_type,
+                "metadata": (
+                    json.dumps(episode.metadata)
+                    if hasattr(episode, "metadata") and episode.metadata
+                    else None
+                ),
+            }
+        )
 
     summary_table = pa.Table.from_pylist(summary_rows)
     summary_path = str(output_path).replace(".parquet", "_summary.parquet")
@@ -254,7 +266,8 @@ def from_parquet(parquet_path: str) -> list[Episode]:
 
         episode = Episode(
             episode_id=str(episode_id),
-            instruction=group.iloc[0].get("instruction") or group.iloc[0].get("goal", ""),
+            instruction=group.iloc[0].get("instruction")
+            or group.iloc[0].get("goal", ""),
             steps=steps,
             task_id=group.iloc[0].get("task_id"),
             metadata=metadata,

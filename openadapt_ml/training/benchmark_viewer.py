@@ -12,7 +12,7 @@ from pathlib import Path
 
 def _get_background_tasks_panel_css() -> str:
     """Return CSS for background tasks panel."""
-    return '''
+    return """
         .tasks-panel {
             background: linear-gradient(135deg, rgba(100, 100, 255, 0.1) 0%, rgba(100, 100, 255, 0.05) 100%);
             border: 1px solid rgba(100, 100, 255, 0.3);
@@ -287,12 +287,12 @@ def _get_background_tasks_panel_css() -> str:
             border-radius: 3px;
             transition: width 0.5s ease;
         }
-    '''
+    """
 
 
 def _get_background_tasks_panel_html() -> str:
     """Return HTML for background tasks panel with JS polling and improved styling."""
-    return '''
+    return """
     <div class="tasks-panel" id="tasks-panel">
         <div class="tasks-header">
             <div class="tasks-title">
@@ -701,12 +701,12 @@ def _get_background_tasks_panel_html() -> str:
         fetchBackgroundTasks();
         setInterval(fetchBackgroundTasks, 10000);
     </script>
-    '''
+    """
 
 
 def _get_live_evaluation_panel_css() -> str:
     """Return CSS for live evaluation progress panel."""
-    return '''
+    return """
         .live-eval-panel {
             background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(139, 92, 246, 0.05) 100%);
             border: 1px solid rgba(139, 92, 246, 0.3);
@@ -859,12 +859,12 @@ def _get_live_evaluation_panel_css() -> str:
             0%, 100% { opacity: 1; }
             50% { opacity: 0.3; }
         }
-    '''
+    """
 
 
 def _get_live_evaluation_panel_html() -> str:
     """Return HTML for live evaluation panel with SSE and polling fallback."""
-    return '''
+    return """
     <div class="live-eval-panel" id="live-eval-panel">
         <div class="live-eval-header">
             <div class="live-eval-title">
@@ -1237,12 +1237,12 @@ def _get_live_evaluation_panel_html() -> str:
             if (window.sseManager) window.sseManager.disconnect();
         });
     </script>
-    '''
+    """
 
 
 def _get_azure_jobs_panel_css() -> str:
     """Return CSS for the Azure jobs status panel with color-coded status indicators."""
-    return '''
+    return """
         .azure-jobs-panel {
             background: linear-gradient(135deg, rgba(0, 120, 212, 0.15) 0%, rgba(0, 120, 212, 0.05) 100%);
             border: 1px solid rgba(0, 120, 212, 0.3);
@@ -1535,7 +1535,7 @@ def _get_azure_jobs_panel_css() -> str:
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
-    '''
+    """
 
 
 def _get_azure_jobs_panel_html() -> str:
@@ -1545,7 +1545,7 @@ def _get_azure_jobs_panel_html() -> str:
     is used for training jobs, not for WAA benchmarks (which require nested virtualization
     that managed compute doesn't support).
     """
-    return '''
+    return """
     <div class="azure-jobs-panel collapsed" id="azure-jobs-panel">
         <div class="azure-jobs-header" onclick="toggleAzureJobsPanel()" title="Azure ML training jobs">
             <div class="azure-jobs-title">
@@ -1928,12 +1928,12 @@ def _get_azure_jobs_panel_html() -> str:
         setInterval(fetchAzureJobs, 30000);
         setInterval(fetchJobLogs, 5000);  // Poll logs every 5 seconds
     </script>
-    '''
+    """
 
 
 def _get_vm_discovery_panel_css() -> str:
     """Return CSS for VM Discovery panel with prominent VNC button."""
-    return '''
+    return """
         .vm-discovery-panel {
             background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.05) 100%);
             border: 1px solid rgba(16, 185, 129, 0.3);
@@ -2262,12 +2262,12 @@ def _get_vm_discovery_panel_css() -> str:
             cursor: pointer;
             font-size: 0.85rem;
         }
-    '''
+    """
 
 
 def _get_vm_discovery_panel_html() -> str:
     """Return HTML for VM Discovery panel with prominent VNC button and loading states."""
-    return '''
+    return """
     <div class="vm-discovery-panel" id="vm-discovery-panel">
         <div class="vm-discovery-header">
             <div class="vm-discovery-title">
@@ -2571,12 +2571,12 @@ def _get_vm_discovery_panel_html() -> str:
         fetchVMs();
         setInterval(fetchVMs, 10000);
     </script>
-    '''
+    """
 
 
 def _get_run_benchmark_panel_css() -> str:
     """Return CSS for the Run Benchmark configuration panel."""
-    return '''
+    return """
         .run-benchmark-panel {
             background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%);
             border: 1px solid rgba(16, 185, 129, 0.3);
@@ -2742,12 +2742,12 @@ def _get_run_benchmark_panel_css() -> str:
             color: #6ee7b7;
             border: 1px solid rgba(16, 185, 129, 0.3);
         }
-    '''
+    """
 
 
 def _get_run_benchmark_panel_html() -> str:
     """Return HTML for the Run Benchmark configuration panel."""
-    return '''
+    return """
     <div class="run-benchmark-panel" id="run-benchmark-panel">
         <div class="run-benchmark-header">
             <div class="run-benchmark-title">
@@ -2828,7 +2828,7 @@ def _get_run_benchmark_panel_html() -> str:
 
         <div class="run-benchmark-status" id="run-benchmark-status"></div>
     </div>
-    '''
+    """
 
 
 def _get_run_benchmark_panel_js(include_script_tags: bool = True) -> str:
@@ -2838,7 +2838,7 @@ def _get_run_benchmark_panel_js(include_script_tags: bool = True) -> str:
         include_script_tags: If True, wrap JS in <script> tags. Set to False when
             inserting into an existing script block.
     """
-    js_code = '''
+    js_code = """
         // Handle model dropdown change to show/hide custom input
         function handleModelChange() {
             const select = document.getElementById('benchmark-model');
@@ -2958,9 +2958,9 @@ def _get_run_benchmark_panel_js(include_script_tags: bool = True) -> str:
         document.addEventListener('DOMContentLoaded', function() {
             updateTaskSelectionState();
         });
-    '''
+    """
     if include_script_tags:
-        return f'<script>{js_code}</script>'
+        return f"<script>{js_code}</script>"
     return js_code
 
 
@@ -3045,7 +3045,10 @@ def generate_benchmark_viewer(
             task_results.append(task_result)
 
     # Import shared header components from trainer
-    from openadapt_ml.training.trainer import _get_shared_header_css, _generate_shared_header_html
+    from openadapt_ml.training.trainer import (
+        _get_shared_header_css,
+        _generate_shared_header_html,
+    )
 
     # Generate HTML
     html = _generate_benchmark_viewer_html(
@@ -3127,21 +3130,26 @@ def generate_multi_run_benchmark_viewer(
                 }
                 task_results.append(task_result)
 
-        all_runs.append({
-            "run_name": metadata.get("run_name", benchmark_dir.name),
-            "model_id": metadata.get("model_id", "unknown"),
-            "created_at": metadata.get("created_at", ""),
-            "benchmark_name": metadata.get("benchmark_name", ""),
-            "dir_name": benchmark_dir.name,  # For screenshot paths
-            "summary": summary,
-            "tasks": task_results,
-        })
+        all_runs.append(
+            {
+                "run_name": metadata.get("run_name", benchmark_dir.name),
+                "model_id": metadata.get("model_id", "unknown"),
+                "created_at": metadata.get("created_at", ""),
+                "benchmark_name": metadata.get("benchmark_name", ""),
+                "dir_name": benchmark_dir.name,  # For screenshot paths
+                "summary": summary,
+                "tasks": task_results,
+            }
+        )
 
     if not all_runs:
         return generate_empty_benchmark_viewer(output_path)
 
     # Import shared header components from trainer
-    from openadapt_ml.training.trainer import _get_shared_header_css, _generate_shared_header_html
+    from openadapt_ml.training.trainer import (
+        _get_shared_header_css,
+        _generate_shared_header_html,
+    )
 
     # Generate HTML
     html = _generate_multi_run_benchmark_viewer_html(
@@ -3167,7 +3175,10 @@ def generate_empty_benchmark_viewer(output_path: Path | str) -> Path:
     output_path = Path(output_path)
 
     # Import shared header components from trainer
-    from openadapt_ml.training.trainer import _get_shared_header_css, _generate_shared_header_html
+    from openadapt_ml.training.trainer import (
+        _get_shared_header_css,
+        _generate_shared_header_html,
+    )
 
     shared_header_css = _get_shared_header_css()
     shared_header_html = _generate_shared_header_html("benchmarks")
@@ -3182,7 +3193,7 @@ def generate_empty_benchmark_viewer(output_path: Path | str) -> Path:
     vm_discovery_css = _get_vm_discovery_panel_css()
     vm_discovery_html = _get_vm_discovery_panel_html()
 
-    html = f'''<!DOCTYPE html>
+    html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -3331,7 +3342,7 @@ uv run python -m openadapt_ml.benchmarks.cli run-azure --workers 4</code>
         </div>
     </div>
 </body>
-</html>'''
+</html>"""
 
     output_path.write_text(html)
     return output_path
@@ -3368,7 +3379,7 @@ def _generate_benchmark_viewer_html(
     domains_json = json.dumps(domains)
 
     # Generate HTML
-    html = f'''<!DOCTYPE html>
+    html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -3987,7 +3998,7 @@ def _generate_benchmark_viewer_html(
         init();
     </script>
 </body>
-</html>'''
+</html>"""
 
     return html
 
@@ -4039,7 +4050,7 @@ def _generate_multi_run_benchmark_viewer_html(
     run_options_html = "\n".join(run_options)
 
     # Generate HTML
-    html = f'''<!DOCTYPE html>
+    html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -4758,6 +4769,6 @@ def _generate_multi_run_benchmark_viewer_html(
         init();
     </script>
 </body>
-</html>'''
+</html>"""
 
     return html

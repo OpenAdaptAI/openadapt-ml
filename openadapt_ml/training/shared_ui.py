@@ -13,7 +13,7 @@ def get_shared_header_css() -> str:
     This CSS is used by both the Training Dashboard and the Viewer.
     Any changes here will affect all dashboards consistently.
     """
-    return '''
+    return """
     .unified-header {
         display: flex;
         align-items: center;
@@ -101,7 +101,7 @@ def get_shared_header_css() -> str:
         color: var(--text-muted);
         font-family: "SF Mono", Monaco, monospace;
     }
-    '''
+    """
 
 
 def generate_shared_header_html(
@@ -125,14 +125,14 @@ def generate_shared_header_html(
 
     controls_section = ""
     if controls_html or meta_html:
-        controls_section = f'''
+        controls_section = f"""
         <div class="controls-section">
             {controls_html}
-            {f'<span class="header-meta">{meta_html}</span>' if meta_html else ''}
+            {f'<span class="header-meta">{meta_html}</span>' if meta_html else ""}
         </div>
-        '''
+        """
 
-    return f'''
+    return f"""
     <div class="unified-header">
         <div class="nav-tabs">
             <a href="dashboard.html" class="nav-tab {training_active}">Training</a>
@@ -141,7 +141,7 @@ def generate_shared_header_html(
         </div>
         {controls_section}
     </div>
-    '''
+    """
 
 
 def build_nav_links() -> list[tuple[str, str]]:

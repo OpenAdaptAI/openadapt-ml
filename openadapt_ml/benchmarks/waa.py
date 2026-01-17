@@ -218,7 +218,9 @@ class WAAAdapter(BenchmarkAdapter):
         task_map = {t.task_id: t for t in tasks}
 
         if task_id not in task_map:
-            raise KeyError(f"Task '{task_id}' not found. Available: {list(task_map.keys())[:10]}...")
+            raise KeyError(
+                f"Task '{task_id}' not found. Available: {list(task_map.keys())[:10]}..."
+            )
 
         return task_map[task_id]
 
@@ -375,7 +377,9 @@ class WAAAdapter(BenchmarkAdapter):
 
         return self._load_task_from_file(task_file, domain)
 
-    def _load_task_from_file(self, task_file: Path, domain: str) -> BenchmarkTask | None:
+    def _load_task_from_file(
+        self, task_file: Path, domain: str
+    ) -> BenchmarkTask | None:
         """Load a task from a JSON file."""
         try:
             with open(task_file, encoding="utf-8") as f:
@@ -428,6 +432,7 @@ class WAAAdapter(BenchmarkAdapter):
             if hasattr(screenshot, "tobytes"):
                 # PIL Image - convert to PNG bytes
                 import io
+
                 buf = io.BytesIO()
                 screenshot.save(buf, format="PNG")
                 screenshot_bytes = buf.getvalue()
@@ -675,7 +680,9 @@ class WAAMockAdapter(BenchmarkAdapter):
             score = 1.0
         elif typed_text or clicked_ids:
             # Partial credit for taking meaningful actions
-            score = 0.3 + (0.1 * min(len(clicked_ids), 3)) + (0.2 if typed_text else 0.0)
+            score = (
+                0.3 + (0.1 * min(len(clicked_ids), 3)) + (0.2 if typed_text else 0.0)
+            )
 
         return BenchmarkResult(
             task_id=task.task_id,
@@ -747,15 +754,78 @@ class WAAMockAdapter(BenchmarkAdapter):
         except ImportError:
             # Fallback: create a minimal valid PNG if PIL not available
             # This is a 1x1 gray PNG
-            minimal_png = bytes([
-                0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,  # PNG signature
-                0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,  # IHDR chunk
-                0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-                0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
-                0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41,  # IDAT chunk
-                0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
-                0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x05, 0xFE,
-                0xD4, 0xEF, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,  # IEND chunk
-                0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82
-            ])
+            minimal_png = bytes(
+                [
+                    0x89,
+                    0x50,
+                    0x4E,
+                    0x47,
+                    0x0D,
+                    0x0A,
+                    0x1A,
+                    0x0A,  # PNG signature
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x0D,
+                    0x49,
+                    0x48,
+                    0x44,
+                    0x52,  # IHDR chunk
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x01,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x01,
+                    0x08,
+                    0x02,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x90,
+                    0x77,
+                    0x53,
+                    0xDE,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x0C,
+                    0x49,
+                    0x44,
+                    0x41,  # IDAT chunk
+                    0x54,
+                    0x08,
+                    0xD7,
+                    0x63,
+                    0xF8,
+                    0xCF,
+                    0xC0,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x03,
+                    0x00,
+                    0x01,
+                    0x00,
+                    0x05,
+                    0xFE,
+                    0xD4,
+                    0xEF,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x49,
+                    0x45,  # IEND chunk
+                    0x4E,
+                    0x44,
+                    0xAE,
+                    0x42,
+                    0x60,
+                    0x82,
+                ]
+            )
             path.write_bytes(minimal_png)

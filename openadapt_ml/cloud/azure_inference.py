@@ -378,9 +378,7 @@ def main():
     submit_parser.add_argument(
         "--checkpoint", "-c", required=True, help="Path to checkpoint directory"
     )
-    submit_parser.add_argument(
-        "--capture", required=True, help="Path to capture data"
-    )
+    submit_parser.add_argument("--capture", required=True, help="Path to capture data")
     submit_parser.add_argument(
         "--epoch", "-e", type=int, default=0, help="Epoch number"
     )

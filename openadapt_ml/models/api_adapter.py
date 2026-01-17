@@ -50,7 +50,9 @@ class ApiVLMAdapter(BaseVLMAdapter):
                     "Install with `uv sync --extra api`."
                 ) from exc
 
-            key = api_key or settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
+            key = (
+                api_key or settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
+            )
             if not key:
                 raise RuntimeError(
                     "ANTHROPIC_API_KEY is required but not found. "
@@ -87,10 +89,14 @@ class ApiVLMAdapter(BaseVLMAdapter):
         super().__init__(model=model, processor=processor, device=device)
 
     def prepare_inputs(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:  # type: ignore[override]
-        raise NotImplementedError("ApiVLMAdapter does not support training (prepare_inputs)")
+        raise NotImplementedError(
+            "ApiVLMAdapter does not support training (prepare_inputs)"
+        )
 
     def compute_loss(self, inputs: Dict[str, Any]) -> torch.Tensor:  # type: ignore[override]
-        raise NotImplementedError("ApiVLMAdapter does not support training (compute_loss)")
+        raise NotImplementedError(
+            "ApiVLMAdapter does not support training (compute_loss)"
+        )
 
     def generate(self, sample: Dict[str, Any], max_new_tokens: int = 64) -> str:  # type: ignore[override]
         images = sample.get("images", [])
@@ -138,7 +144,11 @@ class ApiVLMAdapter(BaseVLMAdapter):
 
             # Anthropic messages API returns a list of content blocks.
             parts = getattr(resp, "content", [])
-            texts = [getattr(p, "text", "") for p in parts if getattr(p, "type", "") == "text"]
+            texts = [
+                getattr(p, "text", "")
+                for p in parts
+                if getattr(p, "type", "") == "text"
+            ]
             return "\n".join([t for t in texts if t]).strip()
 
         if self.provider == "openai":

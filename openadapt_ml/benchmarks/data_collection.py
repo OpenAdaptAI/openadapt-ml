@@ -203,7 +203,9 @@ class ExecutionTraceCollector:
             screenshot_path = self._save_screenshot(step_idx, observation.screenshot)
         elif observation.screenshot_path is not None:
             # Copy existing screenshot
-            screenshot_path = self._copy_screenshot(step_idx, observation.screenshot_path)
+            screenshot_path = self._copy_screenshot(
+                step_idx, observation.screenshot_path
+            )
 
         # Create execution step record
         step = ExecutionStep(
@@ -265,10 +267,19 @@ class ExecutionTraceCollector:
             "model_id": self.model_id,
             "num_tasks": len(all_results),
             "num_success": sum(1 for r in all_results if r.success),
-            "success_rate": sum(1 for r in all_results if r.success) / len(all_results) if all_results else 0.0,
-            "avg_score": sum(r.score for r in all_results) / len(all_results) if all_results else 0.0,
-            "avg_steps": sum(r.num_steps for r in all_results) / len(all_results) if all_results else 0.0,
-            "avg_time_seconds": sum(r.total_time_seconds for r in all_results) / len(all_results) if all_results else 0.0,
+            "success_rate": sum(1 for r in all_results if r.success) / len(all_results)
+            if all_results
+            else 0.0,
+            "avg_score": sum(r.score for r in all_results) / len(all_results)
+            if all_results
+            else 0.0,
+            "avg_steps": sum(r.num_steps for r in all_results) / len(all_results)
+            if all_results
+            else 0.0,
+            "avg_time_seconds": sum(r.total_time_seconds for r in all_results)
+            / len(all_results)
+            if all_results
+            else 0.0,
             "tasks": [
                 {
                     "task_id": r.task_id,
@@ -330,6 +341,7 @@ class ExecutionTraceCollector:
 
         # Copy file
         import shutil
+
         shutil.copy2(source_path, dest_path)
 
         return f"screenshots/{filename}"

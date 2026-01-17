@@ -33,10 +33,12 @@ try:
         load_captures_as_sessions,
     )
 
-    __all__.extend([
-        "capture_to_episode",
-        "capture_to_session",
-        "load_captures_as_sessions",
-    ])
+    __all__.extend(
+        [
+            "capture_to_episode",
+            "capture_to_session",
+            "load_captures_as_sessions",
+        ]
+    )
 except ImportError:
     pass

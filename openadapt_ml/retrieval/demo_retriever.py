@@ -205,11 +205,15 @@ class DemoRetriever:
             platform = self._detect_platform(episode, app_name, domain)
 
         # Extract action types
-        action_types = list(set(
-            step.action.type.value if hasattr(step.action.type, 'value') else str(step.action.type)
-            for step in episode.steps
-            if step.action
-        ))
+        action_types = list(
+            set(
+                step.action.type.value
+                if hasattr(step.action.type, "value")
+                else str(step.action.type)
+                for step in episode.steps
+                if step.action
+            )
+        )
 
         # Extract key elements
         key_elements = self._extract_key_elements(episode)
@@ -296,9 +300,13 @@ class DemoRetriever:
             return
 
         if not self._demos:
-            raise ValueError("Cannot build index: no demos added. Use add_demo() first.")
+            raise ValueError(
+                "Cannot build index: no demos added. Use add_demo() first."
+            )
 
-        logger.info(f"Building index for {len(self._demos)} demos using {self.embedding_method}...")
+        logger.info(
+            f"Building index for {len(self._demos)} demos using {self.embedding_method}..."
+        )
 
         # Initialize embedder if needed
         if self._embedder is None:
@@ -357,16 +365,21 @@ class DemoRetriever:
             }
 
         with open(path / "index.json", "w") as f:
-            json.dump({
-                "embedding_method": self.embedding_method,
-                "embedding_model": self.embedding_model,
-                "demos": metadata,
-                "embedder_state": embedder_state,
-            }, f, indent=2)
+            json.dump(
+                {
+                    "embedding_method": self.embedding_method,
+                    "embedding_model": self.embedding_model,
+                    "demos": metadata,
+                    "embedder_state": embedder_state,
+                },
+                f,
+                indent=2,
+            )
 
         # Save embeddings as numpy array
         try:
             import numpy as np
+
             if self._embeddings_matrix is not None:
                 np.save(path / "embeddings.npy", self._embeddings_matrix)
         except ImportError:
@@ -374,7 +387,11 @@ class DemoRetriever:
 
         logger.info(f"Index saved to {path}")
 
-    def load_index(self, path: Union[str, Path], episode_loader: Optional[Callable[[str], Episode]] = None) -> None:
+    def load_index(
+        self,
+        path: Union[str, Path],
+        episode_loader: Optional[Callable[[str], Episode]] = None,
+    ) -> None:
         """Load index from disk.
 
         Args:
@@ -394,6 +411,7 @@ class DemoRetriever:
         embeddings = None
         try:
             import numpy as np
+
             embeddings_path = path / "embeddings.npy"
             if embeddings_path.exists():
                 embeddings = np.load(embeddings_path)
@@ -408,11 +426,14 @@ class DemoRetriever:
                 try:
                     episode = episode_loader(meta["file_path"])
                 except Exception as e:
-                    logger.warning(f"Failed to load episode from {meta['file_path']}: {e}")
+                    logger.warning(
+                        f"Failed to load episode from {meta['file_path']}: {e}"
+                    )
 
             # Create placeholder episode if not loaded
             if episode is None:
                 from openadapt_ml.schema import Action, ActionType, Observation, Step
+
                 episode = Episode(
                     episode_id=meta["demo_id"],
                     instruction=meta["goal"],
@@ -453,6 +474,7 @@ class DemoRetriever:
         embedder_state = data.get("embedder_state", {})
         if embedder_state and self.embedding_method == "tfidf":
             from openadapt_ml.retrieval.embeddings import TFIDFEmbedder
+
             self._embedder = TFIDFEmbedder()
             self._embedder.vocab = embedder_state.get("vocab", [])
             self._embedder.vocab_to_idx = embedder_state.get("vocab_to_idx", {})
@@ -511,12 +533,14 @@ class DemoRetriever:
             bonus = self._compute_context_bonus(demo, app_context, domain_context)
             total_score = text_score + bonus
 
-            results.append(RetrievalResult(
-                demo=demo,
-                score=total_score,
-                text_score=text_score,
-                domain_bonus=bonus,
-            ))
+            results.append(
+                RetrievalResult(
+                    demo=demo,
+                    score=total_score,
+                    text_score=text_score,
+                    domain_bonus=bonus,
+                )
+            )
 
         # Sort by score (descending)
         results.sort(key=lambda r: r.score, reverse=True)
@@ -617,6 +641,7 @@ class DemoRetriever:
     def _format_action_minimal(self, action: Any) -> str:
         """Format action as minimal string."""
         from openadapt_ml.experiments.demo_prompt.format_demo import format_action
+
         return format_action(action)
 
     # =========================================================================
@@ -627,10 +652,12 @@ class DemoRetriever:
         """Initialize the embedding backend."""
         if self.embedding_method == "tfidf":
             from openadapt_ml.retrieval.embeddings import TFIDFEmbedder
+
             self._embedder = TFIDFEmbedder()
 
         elif self.embedding_method == "sentence_transformers":
             from openadapt_ml.retrieval.embeddings import SentenceTransformerEmbedder
+
             self._embedder = SentenceTransformerEmbedder(
                 model_name=self.embedding_model,
                 cache_dir=self.cache_dir / "st_cache",
@@ -638,6 +665,7 @@ class DemoRetriever:
 
         elif self.embedding_method == "openai":
             from openadapt_ml.retrieval.embeddings import OpenAIEmbedder
+
             self._embedder = OpenAIEmbedder(
                 model_name=self.embedding_model,
                 cache_dir=self.cache_dir / "openai_cache",
@@ -738,8 +766,7 @@ class DemoRetriever:
         if filter_tags:
             filter_tags_set = set(filter_tags)
             candidates = [
-                d for d in candidates
-                if filter_tags_set.issubset(set(d.tags))
+                d for d in candidates if filter_tags_set.issubset(set(d.tags))
             ]
 
         return candidates

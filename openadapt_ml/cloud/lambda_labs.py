@@ -44,7 +44,9 @@ API_BASE = "https://cloud.lambdalabs.com/api/v1"
 DEFAULT_SERVER_PORT = 8765
 
 
-def start_dashboard_server(output_dir: Path, port: int = DEFAULT_SERVER_PORT) -> tuple[subprocess.Popen, str]:
+def start_dashboard_server(
+    output_dir: Path, port: int = DEFAULT_SERVER_PORT
+) -> tuple[subprocess.Popen, str]:
     """Start a background HTTP server for the dashboard.
 
     Args:
@@ -94,7 +96,9 @@ def open_dashboard_in_browser(output_dir: Path, port: int = DEFAULT_SERVER_PORT)
         return None
 
 
-def setup_capture_screenshots_symlink(output_dir: Path, capture_path: str | Path) -> bool:
+def setup_capture_screenshots_symlink(
+    output_dir: Path, capture_path: str | Path
+) -> bool:
     """Create symlink from output_dir/screenshots to capture's screenshots folder.
 
     This allows the dashboard to serve screenshots via relative paths.
@@ -126,7 +130,9 @@ def setup_capture_screenshots_symlink(output_dir: Path, capture_path: str | Path
         return False
 
 
-def rewrite_evaluation_paths(evaluations: list[dict], remote_prefix: str = "/home/ubuntu/capture/") -> list[dict]:
+def rewrite_evaluation_paths(
+    evaluations: list[dict], remote_prefix: str = "/home/ubuntu/capture/"
+) -> list[dict]:
     """Rewrite Lambda paths in evaluations to relative paths.
 
     Converts: /home/ubuntu/capture/screenshots/foo.png -> screenshots/foo.png
@@ -144,7 +150,9 @@ def rewrite_evaluation_paths(evaluations: list[dict], remote_prefix: str = "/hom
     return evaluations
 
 
-def download_checkpoints_from_instance(instance_ip: str, output_dir: Path, ssh_key: str | None = None) -> bool:
+def download_checkpoints_from_instance(
+    instance_ip: str, output_dir: Path, ssh_key: str | None = None
+) -> bool:
     """Download checkpoints from Lambda instance.
 
     Args:
@@ -159,7 +167,9 @@ def download_checkpoints_from_instance(instance_ip: str, output_dir: Path, ssh_k
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
 
     ssh_key = ssh_key or str(Path.home() / ".ssh" / "lambda_id_ed25519")
-    ssh_opts = f"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {ssh_key}"
+    ssh_opts = (
+        f"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {ssh_key}"
+    )
 
     # Download checkpoints from remote
     remote_path = f"ubuntu@{instance_ip}:~/openadapt-ml/checkpoints/"
@@ -185,6 +195,7 @@ def check_stop_signal(output_dir: Path) -> bool:
 @dataclass
 class InstanceType:
     """Lambda Labs instance type."""
+
     name: str
     price_cents_per_hour: int
     description: str
@@ -214,6 +225,7 @@ class InstanceType:
 @dataclass
 class Instance:
     """Running Lambda Labs instance."""
+
     id: str
     name: str
     instance_type: str
@@ -234,6 +246,7 @@ class LambdaLabsClient:
         # Try provided key, then settings, then env var
         if not api_key:
             from openadapt_ml.config import settings
+
             api_key = settings.lambda_api_key or os.environ.get("LAMBDA_API_KEY")
 
         self.api_key = api_key
@@ -266,19 +279,25 @@ class LambdaLabsClient:
 
         for name, info in data.get("data", {}).items():
             specs = info.get("instance_type", {}).get("specs", {})
-            regions = [r["name"] for r in info.get("regions_with_capacity_available", [])]
+            regions = [
+                r["name"] for r in info.get("regions_with_capacity_available", [])
+            ]
 
-            types.append(InstanceType(
-                name=name,
-                price_cents_per_hour=info.get("instance_type", {}).get("price_cents_per_hour", 0),
-                description=info.get("instance_type", {}).get("description", ""),
-                gpu_count=specs.get("gpus", 0),
-                gpu_type=info.get("instance_type", {}).get("gpu_description", ""),
-                vcpus=specs.get("vcpus", 0),
-                memory_gb=specs.get("memory_gib", 0),
-                storage_gb=specs.get("storage_gib", 0),
-                available_regions=regions,
-            ))
+            types.append(
+                InstanceType(
+                    name=name,
+                    price_cents_per_hour=info.get("instance_type", {}).get(
+                        "price_cents_per_hour", 0
+                    ),
+                    description=info.get("instance_type", {}).get("description", ""),
+                    gpu_count=specs.get("gpus", 0),
+                    gpu_type=info.get("instance_type", {}).get("gpu_description", ""),
+                    vcpus=specs.get("vcpus", 0),
+                    memory_gb=specs.get("memory_gib", 0),
+                    storage_gb=specs.get("storage_gib", 0),
+                    available_regions=regions,
+                )
+            )
 
         # Sort by price
         types.sort(key=lambda t: t.price_cents_per_hour)
@@ -307,15 +326,17 @@ class LambdaLabsClient:
             else:
                 ssh_key_names = ssh_keys  # Already list of strings
 
-            instances.append(Instance(
-                id=inst["id"],
-                name=inst.get("name", ""),
-                instance_type=inst.get("instance_type", {}).get("name", "unknown"),
-                status=inst.get("status", "unknown"),
-                ip=inst.get("ip"),
-                region=inst.get("region", {}).get("name", "unknown"),
-                ssh_key_names=ssh_key_names,
-            ))
+            instances.append(
+                Instance(
+                    id=inst["id"],
+                    name=inst.get("name", ""),
+                    instance_type=inst.get("instance_type", {}).get("name", "unknown"),
+                    status=inst.get("status", "unknown"),
+                    ip=inst.get("ip"),
+                    region=inst.get("region", {}).get("name", "unknown"),
+                    ssh_key_names=ssh_key_names,
+                )
+            )
 
         return instances
 
@@ -391,9 +412,18 @@ class LambdaLabsClient:
         for attempt in range(60):  # Wait up to 5 minutes for SSH
             try:
                 result = subprocess.run(
-                    ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
-                     f"ubuntu@{instance.ip}", "echo ready"],
-                    capture_output=True, text=True, timeout=20
+                    [
+                        "ssh",
+                        "-o",
+                        "StrictHostKeyChecking=no",
+                        "-o",
+                        "ConnectTimeout=10",
+                        f"ubuntu@{instance.ip}",
+                        "echo ready",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
                 )
                 if result.returncode == 0:
                     print("SSH ready!")
@@ -401,7 +431,7 @@ class LambdaLabsClient:
             except subprocess.TimeoutExpired:
                 pass
             if attempt % 6 == 5:  # Log progress every 30 seconds
-                print(f"  Still waiting for SSH ({(attempt+1)*5}s elapsed)...")
+                print(f"  Still waiting for SSH ({(attempt + 1) * 5}s elapsed)...")
             time.sleep(5)
 
         print("Warning: SSH may not be ready yet, continuing anyway...")
@@ -409,7 +439,9 @@ class LambdaLabsClient:
 
     def terminate_instance(self, instance_id: str) -> bool:
         """Terminate an instance."""
-        data = self._post("/instance-operations/terminate", {"instance_ids": [instance_id]})
+        data = self._post(
+            "/instance-operations/terminate", {"instance_ids": [instance_id]}
+        )
         terminated = data.get("data", {}).get("terminated_instances", [])
         return any(t.get("id") == instance_id for t in terminated)
 
@@ -419,7 +451,13 @@ class LambdaLabsClient:
             return "# Instance IP not yet available"
         return f"ssh {user}@{instance.ip}"
 
-    def ssh_run(self, instance: Instance, command: str, timeout: int | None = None, retries: int = 3) -> subprocess.CompletedProcess:
+    def ssh_run(
+        self,
+        instance: Instance,
+        command: str,
+        timeout: int | None = None,
+        retries: int = 3,
+    ) -> subprocess.CompletedProcess:
         """Run a command on an instance via SSH.
 
         Args:
@@ -435,12 +473,17 @@ class LambdaLabsClient:
             raise RuntimeError("Instance has no IP address")
 
         ssh_cmd = [
-            "ssh", "-o", "StrictHostKeyChecking=no",
-            "-o", "ConnectTimeout=30",  # Increased from 10
-            "-o", "ServerAliveInterval=60",  # Keep connection alive
-            "-o", "ServerAliveCountMax=3",
+            "ssh",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "ConnectTimeout=30",  # Increased from 10
+            "-o",
+            "ServerAliveInterval=60",  # Keep connection alive
+            "-o",
+            "ServerAliveCountMax=3",
             f"ubuntu@{instance.ip}",
-            command
+            command,
         ]
 
         last_error = None
@@ -460,7 +503,12 @@ class LambdaLabsClient:
 
         raise last_error if last_error else RuntimeError("SSH failed")
 
-    def setup_instance(self, instance: Instance, repo_url: str = "https://github.com/OpenAdaptAI/openadapt-ml.git", clean_gpu: bool = True) -> bool:
+    def setup_instance(
+        self,
+        instance: Instance,
+        repo_url: str = "https://github.com/OpenAdaptAI/openadapt-ml.git",
+        clean_gpu: bool = True,
+    ) -> bool:
         """Set up training environment on instance.
 
         Clones repo, installs uv, syncs dependencies.
@@ -473,7 +521,9 @@ class LambdaLabsClient:
         if clean_gpu:
             print("  Clearing GPU memory...")
             try:
-                self.ssh_run(instance, '''
+                self.ssh_run(
+                    instance,
+                    """
 python3 -c "
 import torch
 if torch.cuda.is_available():
@@ -483,11 +533,13 @@ if torch.cuda.is_available():
 " 2>/dev/null || true
 # Kill any stale python processes using GPU
 pkill -f "python.*train" 2>/dev/null || true
-''', timeout=60)
+""",
+                    timeout=60,
+                )
             except Exception as e:
                 print(f"  GPU cleanup skipped: {e}")
 
-        setup_script = f'''
+        setup_script = f"""
 set -e
 cd ~
 
@@ -507,10 +559,12 @@ fi
 cd openadapt-ml
 uv sync
 echo "SETUP_COMPLETE"
-'''
+"""
 
         try:
-            result = self.ssh_run(instance, setup_script, timeout=900)  # 15 min timeout for setup
+            result = self.ssh_run(
+                instance, setup_script, timeout=900
+            )  # 15 min timeout for setup
 
             if "SETUP_COMPLETE" in result.stdout:
                 print("  Environment ready")
@@ -526,7 +580,9 @@ echo "SETUP_COMPLETE"
             print(f"  Setup failed: {e}")
             return False
 
-    def sync_local_code(self, instance: Instance, local_repo_path: str = ".", retries: int = 3) -> bool:
+    def sync_local_code(
+        self, instance: Instance, local_repo_path: str = ".", retries: int = 3
+    ) -> bool:
         """Sync local code changes to remote instance.
 
         Uses rsync to push local code, excluding .venv, .git, etc.
@@ -549,19 +605,30 @@ echo "SETUP_COMPLETE"
         ssh_opts = "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=60"
 
         rsync_cmd = [
-            "rsync", "-avz", "--progress",
+            "rsync",
+            "-avz",
+            "--progress",
             "--timeout=120",  # 2 minute timeout per file
-            "--exclude", ".venv",
-            "--exclude", ".git",
-            "--exclude", "__pycache__",
-            "--exclude", "*.pyc",
-            "--exclude", ".env",
-            "--exclude", "training_output",
-            "--exclude", "checkpoints",
-            "--exclude", "synthetic*",
-            "-e", ssh_opts,
+            "--exclude",
+            ".venv",
+            "--exclude",
+            ".git",
+            "--exclude",
+            "__pycache__",
+            "--exclude",
+            "*.pyc",
+            "--exclude",
+            ".env",
+            "--exclude",
+            "training_output",
+            "--exclude",
+            "checkpoints",
+            "--exclude",
+            "synthetic*",
+            "-e",
+            ssh_opts,
             f"{local_repo_path}/",
-            f"ubuntu@{instance.ip}:~/openadapt-ml/"
+            f"ubuntu@{instance.ip}:~/openadapt-ml/",
         ]
 
         for attempt in range(retries):
@@ -575,7 +642,13 @@ echo "SETUP_COMPLETE"
 
         return False
 
-    def upload_capture(self, instance: Instance, local_path: str, remote_path: str = "~/capture", retries: int = 3) -> bool:
+    def upload_capture(
+        self,
+        instance: Instance,
+        local_path: str,
+        remote_path: str = "~/capture",
+        retries: int = 3,
+    ) -> bool:
         """Upload a capture directory to instance via rsync.
 
         Args:
@@ -596,11 +669,14 @@ echo "SETUP_COMPLETE"
         ssh_opts = "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=60"
 
         rsync_cmd = [
-            "rsync", "-avz", "--progress",
+            "rsync",
+            "-avz",
+            "--progress",
             "--timeout=120",  # 2 minute timeout per file
-            "-e", ssh_opts,
+            "-e",
+            ssh_opts,
             f"{local_path}/",
-            f"ubuntu@{instance.ip}:{remote_path}/"
+            f"ubuntu@{instance.ip}:{remote_path}/",
         ]
 
         for attempt in range(retries):
@@ -644,16 +720,18 @@ echo "SETUP_COMPLETE"
             train_cmd += f' --goal "{goal}"'
 
         # Full script with environment setup
-        script = f'''
+        script = f"""
 cd ~/openadapt-ml
 export PATH="$HOME/.local/bin:$PATH"
 {train_cmd}
-'''
+"""
 
         ssh_cmd = [
-            "ssh", "-o", "StrictHostKeyChecking=no",
+            "ssh",
+            "-o",
+            "StrictHostKeyChecking=no",
             f"ubuntu@{instance.ip}",
-            script
+            script,
         ]
 
         print(f"Running training on {instance.ip}...")
@@ -703,10 +781,12 @@ export PATH="$HOME/.local/bin:$PATH"
         if include_logs:
             print("  Downloading training logs...")
             rsync_cmd = [
-                "rsync", "-avz",
-                "-e", "ssh -o StrictHostKeyChecking=no",
+                "rsync",
+                "-avz",
+                "-e",
+                "ssh -o StrictHostKeyChecking=no",
                 f"ubuntu@{instance.ip}:{remote_path}/training_output/",
-                f"{local_path}/training_output_lambda/"
+                f"{local_path}/training_output_lambda/",
             ]
             result = subprocess.run(rsync_cmd, capture_output=True)
             if result.returncode == 0:
@@ -719,10 +799,12 @@ export PATH="$HOME/.local/bin:$PATH"
         if include_checkpoint:
             print("  Downloading checkpoint...")
             rsync_cmd = [
-                "rsync", "-avz",
-                "-e", "ssh -o StrictHostKeyChecking=no",
+                "rsync",
+                "-avz",
+                "-e",
+                "ssh -o StrictHostKeyChecking=no",
                 f"ubuntu@{instance.ip}:{remote_path}/checkpoints/",
-                f"{local_path}/checkpoints_lambda/"
+                f"{local_path}/checkpoints_lambda/",
             ]
             result = subprocess.run(rsync_cmd, capture_output=True)
             if result.returncode == 0:
@@ -734,6 +816,7 @@ export PATH="$HOME/.local/bin:$PATH"
         if include_logs:
             try:
                 from openadapt_ml.training.trainer import regenerate_all_dashboards
+
                 output_dir = Path(local_path) / "training_output_lambda"
                 if output_dir.exists():
                     print("  Regenerating dashboards with static navigation...")
@@ -752,6 +835,7 @@ export PATH="$HOME/.local/bin:$PATH"
         )
         try:
             import json
+
             return json.loads(result.stdout.strip())
         except (json.JSONDecodeError, ValueError):
             return {}
@@ -803,11 +887,14 @@ def main():
     # Launch command
     launch_parser = subparsers.add_parser("launch", help="Launch a GPU instance")
     launch_parser.add_argument(
-        "--type", "-t",
+        "--type",
+        "-t",
         default="gpu_1x_a100",
         help="Instance type (default: gpu_1x_a100)",
     )
-    launch_parser.add_argument("--region", "-r", help="Region (auto-selects if not specified)")
+    launch_parser.add_argument(
+        "--region", "-r", help="Region (auto-selects if not specified)"
+    )
     launch_parser.add_argument("--name", "-n", help="Instance name")
 
     # Terminate command
@@ -815,23 +902,52 @@ def main():
     term_parser.add_argument("instance_id", help="Instance ID to terminate")
 
     # SSH command - run commands or get interactive shell
-    ssh_parser = subparsers.add_parser("ssh", help="SSH into Lambda instance or run command")
-    ssh_parser.add_argument("instance_id", nargs="?", help="Instance ID (uses first if not specified)")
-    ssh_parser.add_argument("--cmd", "-c", help="Command to run (opens shell if not specified)")
-    ssh_parser.add_argument("--timeout", "-t", type=int, default=60, help="Command timeout in seconds")
+    ssh_parser = subparsers.add_parser(
+        "ssh", help="SSH into Lambda instance or run command"
+    )
+    ssh_parser.add_argument(
+        "instance_id", nargs="?", help="Instance ID (uses first if not specified)"
+    )
+    ssh_parser.add_argument(
+        "--cmd", "-c", help="Command to run (opens shell if not specified)"
+    )
+    ssh_parser.add_argument(
+        "--timeout", "-t", type=int, default=60, help="Command timeout in seconds"
+    )
 
     # Serve command - start dashboard server with stop button support
-    serve_parser = subparsers.add_parser("serve", help="Start dashboard server with stop button support")
-    serve_parser.add_argument("--output", "-o", default="training_output", help="Output directory (default: training_output)")
-    serve_parser.add_argument("--port", "-p", type=int, default=8765, help="Port (default: 8765)")
-    serve_parser.add_argument("--open", action="store_true", help="Open dashboard in browser")
+    serve_parser = subparsers.add_parser(
+        "serve", help="Start dashboard server with stop button support"
+    )
+    serve_parser.add_argument(
+        "--output",
+        "-o",
+        default="training_output",
+        help="Output directory (default: training_output)",
+    )
+    serve_parser.add_argument(
+        "--port", "-p", type=int, default=8765, help="Port (default: 8765)"
+    )
+    serve_parser.add_argument(
+        "--open", action="store_true", help="Open dashboard in browser"
+    )
 
     # Rsync command - copy files to/from Lambda instance
-    rsync_parser = subparsers.add_parser("rsync", help="Rsync files to/from Lambda instance")
-    rsync_parser.add_argument("source", help="Source path (prefix with 'remote:' for remote paths)")
-    rsync_parser.add_argument("dest", help="Destination path (prefix with 'remote:' for remote paths)")
-    rsync_parser.add_argument("instance_id", nargs="?", help="Instance ID (uses first if not specified)")
-    rsync_parser.add_argument("--delete", action="store_true", help="Delete extraneous files from dest")
+    rsync_parser = subparsers.add_parser(
+        "rsync", help="Rsync files to/from Lambda instance"
+    )
+    rsync_parser.add_argument(
+        "source", help="Source path (prefix with 'remote:' for remote paths)"
+    )
+    rsync_parser.add_argument(
+        "dest", help="Destination path (prefix with 'remote:' for remote paths)"
+    )
+    rsync_parser.add_argument(
+        "instance_id", nargs="?", help="Instance ID (uses first if not specified)"
+    )
+    rsync_parser.add_argument(
+        "--delete", action="store_true", help="Delete extraneous files from dest"
+    )
 
     # Setup command
     subparsers.add_parser("setup", help="Set up SSH key for Lambda Labs")
@@ -840,87 +956,215 @@ def main():
     train_parser = subparsers.add_parser("train", help="Run training on Lambda GPU")
     train_parser.add_argument("--capture", "-c", help="Local path to capture directory")
     train_parser.add_argument("--goal", "-g", help="Task goal description")
-    train_parser.add_argument("--config", default="configs/qwen3vl_capture_4bit.yaml", help="Config file (default: 4bit for memory efficiency)")
-    train_parser.add_argument("--type", "-t", default="gpu_1x_a10", help="Instance type")
-    train_parser.add_argument("--instance", "-i", help="Use existing instance ID instead of launching new")
-    train_parser.add_argument("--no-terminate", action="store_true", help="Don't terminate instance after training")
-    train_parser.add_argument("--max-runtime", type=int, default=60, help="Max runtime in minutes before auto-terminate (default: 60)")
-    train_parser.add_argument("--open", action="store_true", help="Open dashboard in browser when training starts")
+    train_parser.add_argument(
+        "--config",
+        default="configs/qwen3vl_capture_4bit.yaml",
+        help="Config file (default: 4bit for memory efficiency)",
+    )
+    train_parser.add_argument(
+        "--type", "-t", default="gpu_1x_a10", help="Instance type"
+    )
+    train_parser.add_argument(
+        "--instance", "-i", help="Use existing instance ID instead of launching new"
+    )
+    train_parser.add_argument(
+        "--no-terminate",
+        action="store_true",
+        help="Don't terminate instance after training",
+    )
+    train_parser.add_argument(
+        "--max-runtime",
+        type=int,
+        default=60,
+        help="Max runtime in minutes before auto-terminate (default: 60)",
+    )
+    train_parser.add_argument(
+        "--open",
+        action="store_true",
+        help="Open dashboard in browser when training starts",
+    )
 
     # Training status command
-    train_status_parser = subparsers.add_parser("train-status", help="Check training status on instance")
+    train_status_parser = subparsers.add_parser(
+        "train-status", help="Check training status on instance"
+    )
     train_status_parser.add_argument("instance_id", nargs="?", help="Instance ID")
 
     # Monitor command - live dashboard for Lambda training
-    monitor_parser = subparsers.add_parser("monitor", help="Monitor Lambda training with live dashboard")
+    monitor_parser = subparsers.add_parser(
+        "monitor", help="Monitor Lambda training with live dashboard"
+    )
     monitor_parser.add_argument("instance_id", nargs="?", help="Instance ID")
-    monitor_parser.add_argument("--open", action="store_true", help="Open dashboard in browser")
-    monitor_parser.add_argument("--interval", type=int, default=5, help="Poll interval in seconds (default: 5)")
-    monitor_parser.add_argument("--capture", type=str, help="Local capture path for screenshot symlink")
-    monitor_parser.add_argument("--auto-stop-loss", type=float, default=0.5, help="Auto-terminate when loss drops below this (default: 0.5)")
-    monitor_parser.add_argument("--download-checkpoints", action="store_true", default=True, help="Auto-download checkpoints each epoch")
-    monitor_parser.add_argument("--no-download-checkpoints", action="store_false", dest="download_checkpoints", help="Disable checkpoint download")
-    monitor_parser.add_argument("--stub", action="store_true", help="Use stub training provider (no GPU, instant simulation)")
+    monitor_parser.add_argument(
+        "--open", action="store_true", help="Open dashboard in browser"
+    )
+    monitor_parser.add_argument(
+        "--interval", type=int, default=5, help="Poll interval in seconds (default: 5)"
+    )
+    monitor_parser.add_argument(
+        "--capture", type=str, help="Local capture path for screenshot symlink"
+    )
+    monitor_parser.add_argument(
+        "--auto-stop-loss",
+        type=float,
+        default=0.5,
+        help="Auto-terminate when loss drops below this (default: 0.5)",
+    )
+    monitor_parser.add_argument(
+        "--download-checkpoints",
+        action="store_true",
+        default=True,
+        help="Auto-download checkpoints each epoch",
+    )
+    monitor_parser.add_argument(
+        "--no-download-checkpoints",
+        action="store_false",
+        dest="download_checkpoints",
+        help="Disable checkpoint download",
+    )
+    monitor_parser.add_argument(
+        "--stub",
+        action="store_true",
+        help="Use stub training provider (no GPU, instant simulation)",
+    )
 
     # Refresh command - one-shot dashboard update
-    refresh_parser = subparsers.add_parser("refresh", help="One-shot refresh of training dashboard")
+    refresh_parser = subparsers.add_parser(
+        "refresh", help="One-shot refresh of training dashboard"
+    )
     refresh_parser.add_argument("instance_id", nargs="?", help="Instance ID")
-    refresh_parser.add_argument("--open", action="store_true", help="Open dashboard in browser")
-    refresh_parser.add_argument("--capture", type=str, help="Local capture path for screenshot preview")
+    refresh_parser.add_argument(
+        "--open", action="store_true", help="Open dashboard in browser"
+    )
+    refresh_parser.add_argument(
+        "--capture", type=str, help="Local capture path for screenshot preview"
+    )
 
     # Checkpoints command - list remote checkpoints
-    checkpoints_parser = subparsers.add_parser("checkpoints", help="List checkpoints on remote instance")
+    checkpoints_parser = subparsers.add_parser(
+        "checkpoints", help="List checkpoints on remote instance"
+    )
     checkpoints_parser.add_argument("instance_id", nargs="?", help="Instance ID")
 
     # Download results command
-    download_parser = subparsers.add_parser("download", help="Download training results from instance")
+    download_parser = subparsers.add_parser(
+        "download", help="Download training results from instance"
+    )
     download_parser.add_argument("instance_id", nargs="?", help="Instance ID")
-    download_parser.add_argument("--output", "-o", default=".", help="Local output directory")
+    download_parser.add_argument(
+        "--output", "-o", default=".", help="Local output directory"
+    )
 
     # Check files on instance
-    files_parser = subparsers.add_parser("files", help="List training files on instance")
+    files_parser = subparsers.add_parser(
+        "files", help="List training files on instance"
+    )
     files_parser.add_argument("instance_id", nargs="?", help="Instance ID")
-    files_parser.add_argument("--path", "-p", default="~/openadapt-ml", help="Path to check")
+    files_parser.add_argument(
+        "--path", "-p", default="~/openadapt-ml", help="Path to check"
+    )
 
     # Kill command - terminate training processes
-    kill_parser = subparsers.add_parser("kill", help="Kill training/inference processes on instance")
+    kill_parser = subparsers.add_parser(
+        "kill", help="Kill training/inference processes on instance"
+    )
     kill_parser.add_argument("instance_id", nargs="?", help="Instance ID")
-    kill_parser.add_argument("--local", action="store_true", help="Also kill local Lambda-related processes")
-    kill_parser.add_argument("--all", action="store_true", help="Kill all Python processes on instance (careful!)")
+    kill_parser.add_argument(
+        "--local", action="store_true", help="Also kill local Lambda-related processes"
+    )
+    kill_parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Kill all Python processes on instance (careful!)",
+    )
 
     # Check command - analyze training status and early stopping
-    check_parser = subparsers.add_parser("check", help="Check training health and early stopping status")
+    check_parser = subparsers.add_parser(
+        "check", help="Check training health and early stopping status"
+    )
     check_parser.add_argument("instance_id", nargs="?", help="Instance ID")
-    check_parser.add_argument("--threshold", "-t", type=float, default=0.01,
-                             help="Early stopping threshold (loss improvement over last N steps)")
-    check_parser.add_argument("--window", "-w", type=int, default=10,
-                             help="Number of recent steps to check for improvement")
+    check_parser.add_argument(
+        "--threshold",
+        "-t",
+        type=float,
+        default=0.01,
+        help="Early stopping threshold (loss improvement over last N steps)",
+    )
+    check_parser.add_argument(
+        "--window",
+        "-w",
+        type=int,
+        default=10,
+        help="Number of recent steps to check for improvement",
+    )
 
     # Compare command - run comparison on Lambda and sync back
-    compare_parser = subparsers.add_parser("compare", help="Run human vs AI comparison on Lambda")
+    compare_parser = subparsers.add_parser(
+        "compare", help="Run human vs AI comparison on Lambda"
+    )
     compare_parser.add_argument("instance_id", nargs="?", help="Instance ID")
-    compare_parser.add_argument("--checkpoint", "-c", help="Checkpoint to use (default: latest)")
-    compare_parser.add_argument("--epoch", "-e", type=int, help="Use checkpoint from specific epoch")
-    compare_parser.add_argument("--open", action="store_true", help="Open viewer after generation")
+    compare_parser.add_argument(
+        "--checkpoint", "-c", help="Checkpoint to use (default: latest)"
+    )
+    compare_parser.add_argument(
+        "--epoch", "-e", type=int, help="Use checkpoint from specific epoch"
+    )
+    compare_parser.add_argument(
+        "--open", action="store_true", help="Open viewer after generation"
+    )
 
     # Results viewer command - downloads and generates comparison viewer
-    results_parser = subparsers.add_parser("results", help="Download results and generate comparison viewer")
-    results_parser.add_argument("--capture", "-c", required=True, help="Local capture directory (for comparison)")
+    results_parser = subparsers.add_parser(
+        "results", help="Download results and generate comparison viewer"
+    )
+    results_parser.add_argument(
+        "--capture",
+        "-c",
+        required=True,
+        help="Local capture directory (for comparison)",
+    )
     results_parser.add_argument("--goal", "-g", help="Task goal description")
-    results_parser.add_argument("--open", action="store_true", help="Open viewer in browser")
+    results_parser.add_argument(
+        "--open", action="store_true", help="Open viewer in browser"
+    )
     results_parser.add_argument("instance_id", nargs="?", help="Instance ID")
 
     # Sync command - sync training output and regenerate navigation for file:// protocol
-    sync_parser = subparsers.add_parser("sync", help="Sync training output from Lambda and regenerate navigation")
+    sync_parser = subparsers.add_parser(
+        "sync", help="Sync training output from Lambda and regenerate navigation"
+    )
     sync_parser.add_argument("instance_id", nargs="?", help="Instance ID")
-    sync_parser.add_argument("--output", "-o", default="training_output", help="Local output directory (default: training_output)")
-    sync_parser.add_argument("--open", action="store_true", help="Open dashboard in browser after sync")
+    sync_parser.add_argument(
+        "--output",
+        "-o",
+        default="training_output",
+        help="Local output directory (default: training_output)",
+    )
+    sync_parser.add_argument(
+        "--open", action="store_true", help="Open dashboard in browser after sync"
+    )
 
     # Viewer command - regenerate local viewer (no Lambda required)
-    viewer_parser = subparsers.add_parser("viewer", help="Regenerate local viewer (no Lambda required)")
-    viewer_parser.add_argument("--output", "-o", default="training_output", help="Training output directory (default: training_output)")
-    viewer_parser.add_argument("--dashboard", "-d", action="store_true", help="Regenerate dashboard instead of viewer")
-    viewer_parser.add_argument("--open", action="store_true", help="Open in browser (use 'serve' instead for better experience)")
+    viewer_parser = subparsers.add_parser(
+        "viewer", help="Regenerate local viewer (no Lambda required)"
+    )
+    viewer_parser.add_argument(
+        "--output",
+        "-o",
+        default="training_output",
+        help="Training output directory (default: training_output)",
+    )
+    viewer_parser.add_argument(
+        "--dashboard",
+        "-d",
+        action="store_true",
+        help="Regenerate dashboard instead of viewer",
+    )
+    viewer_parser.add_argument(
+        "--open",
+        action="store_true",
+        help="Open in browser (use 'serve' instead for better experience)",
+    )
 
     args = parser.parse_args()
 
@@ -942,7 +1186,9 @@ def main():
         for t in types:
             print(f"  {t}")
         print(f"\nTotal: {len(types)} instance types")
-        print("\nLaunch with: python -m openadapt_ml.cloud.lambda_labs launch --type <name>")
+        print(
+            "\nLaunch with: python -m openadapt_ml.cloud.lambda_labs launch --type <name>"
+        )
 
     elif args.command == "status":
         instances = client.list_instances()
@@ -971,7 +1217,9 @@ def main():
         print(f"  Type: {instance.instance_type}")
         print(f"  Region: {instance.region}")
         print(f"\nConnect with: ssh ubuntu@{instance.ip}")
-        print(f"\nTerminate with: python -m openadapt_ml.cloud.lambda_labs terminate {instance.id}")
+        print(
+            f"\nTerminate with: python -m openadapt_ml.cloud.lambda_labs terminate {instance.id}"
+        )
 
     elif args.command == "terminate":
         if client.terminate_instance(args.instance_id):
@@ -986,14 +1234,16 @@ def main():
             return
 
         if args.instance_id:
-            instance = next((i for i in instances if i.id.startswith(args.instance_id)), None)
+            instance = next(
+                (i for i in instances if i.id.startswith(args.instance_id)), None
+            )
             if not instance:
                 print(f"Instance {args.instance_id} not found.")
                 return
         else:
             instance = instances[0]
 
-        if hasattr(args, 'cmd') and args.cmd:
+        if hasattr(args, "cmd") and args.cmd:
             # Run single command
             print(f"Running on {instance.ip}: {args.cmd}")
             result = client.ssh_run(instance, args.cmd, timeout=args.timeout)
@@ -1015,7 +1265,9 @@ def main():
             return
 
         if args.instance_id:
-            instance = next((i for i in instances if i.id.startswith(args.instance_id)), None)
+            instance = next(
+                (i for i in instances if i.id.startswith(args.instance_id)), None
+            )
             if not instance:
                 print(f"Instance {args.instance_id} not found.")
                 return
@@ -1032,8 +1284,11 @@ def main():
             dest = f"ubuntu@{instance.ip}:{dest[7:]}"
 
         rsync_cmd = [
-            "rsync", "-avz", "--progress",
-            "-e", "ssh -o StrictHostKeyChecking=no",
+            "rsync",
+            "-avz",
+            "--progress",
+            "-e",
+            "ssh -o StrictHostKeyChecking=no",
         ]
         if args.delete:
             rsync_cmd.append("--delete")
@@ -1067,7 +1322,9 @@ def main():
         # Get or launch instance
         if args.instance:
             instances = client.list_instances()
-            instance = next((i for i in instances if i.id.startswith(args.instance)), None)
+            instance = next(
+                (i for i in instances if i.id.startswith(args.instance)), None
+            )
             if not instance:
                 print(f"Error: Instance {args.instance} not found")
                 return
@@ -1095,16 +1352,21 @@ def main():
         # Generate initial dashboard with setup status
         from pathlib import Path
         from openadapt_ml.training.trainer import (
-            TrainingState, TrainingConfig, generate_training_dashboard,
-            setup_job_directory
+            TrainingState,
+            TrainingConfig,
+            generate_training_dashboard,
+            setup_job_directory,
         )
         import time as time_module
+
         job_id = time_module.strftime("%Y%m%d_%H%M%S")
         output_dir = setup_job_directory("training_output", job_id)
         dashboard_path = output_dir / "dashboard.html"
         log_path = output_dir / "training_log.json"
 
-        def update_dashboard(status: str, logs: list, step: int = 0, loss: float = 0.0, epoch: int = 0):
+        def update_dashboard(
+            status: str, logs: list, step: int = 0, loss: float = 0.0, epoch: int = 0
+        ):
             """Update dashboard with current setup/training status."""
             state = TrainingState(job_id=job_id)
             state.cloud_provider = "lambda"
@@ -1151,9 +1413,13 @@ def main():
                     update_dashboard("installing", setup_logs)
                     break
                 if setup_attempt < 2:
-                    setup_logs.append(f"Setup attempt {setup_attempt + 1} failed, retrying in 30s...")
+                    setup_logs.append(
+                        f"Setup attempt {setup_attempt + 1} failed, retrying in 30s..."
+                    )
                     update_dashboard("booting", setup_logs)
-                    print(f"  Setup attempt {setup_attempt + 1} failed, retrying in 30s...")
+                    print(
+                        f"  Setup attempt {setup_attempt + 1} failed, retrying in 30s..."
+                    )
                     time_module.sleep(30)
 
             if not setup_success:
@@ -1162,14 +1428,18 @@ def main():
                 print("\nError: Failed to set up instance after 3 attempts")
                 print(f"Instance still running: {instance.ip}")
                 print("Debug via: ssh ubuntu@" + instance.ip)
-                print(f"Terminate with: python -m openadapt_ml.cloud.lambda_labs terminate {instance.id}")
+                print(
+                    f"Terminate with: python -m openadapt_ml.cloud.lambda_labs terminate {instance.id}"
+                )
                 return  # Don't terminate - let user debug
 
             # Sync local code to ensure remote has latest changes
             setup_logs.append("Syncing local code to instance...")
             update_dashboard("installing", setup_logs)
             if not client.sync_local_code(instance):
-                setup_logs.append("Warning: Failed to sync local code, using remote repo version")
+                setup_logs.append(
+                    "Warning: Failed to sync local code, using remote repo version"
+                )
                 update_dashboard("installing", setup_logs)
                 print("Warning: Failed to sync local code, using remote repo version")
             else:
@@ -1192,7 +1462,9 @@ def main():
                     print("\nError: Failed to upload capture after retries")
                     print(f"Instance still running: {instance.ip}")
                     print("Debug via: ssh ubuntu@" + instance.ip)
-                    print(f"Terminate with: python -m openadapt_ml.cloud.lambda_labs terminate {instance.id}")
+                    print(
+                        f"Terminate with: python -m openadapt_ml.cloud.lambda_labs terminate {instance.id}"
+                    )
                     return  # Don't terminate - let user debug
 
             # Run training in background and poll for status
@@ -1214,7 +1486,9 @@ def main():
             poll_interval = 10  # seconds
             last_step = 0
             last_epoch = 0
-            print(f"Polling training status every {poll_interval}s (Ctrl+C to stop)...\n")
+            print(
+                f"Polling training status every {poll_interval}s (Ctrl+C to stop)...\n"
+            )
 
             while True:
                 try:
@@ -1229,7 +1503,9 @@ def main():
 
                         # Print progress when step changes
                         if step > last_step or epoch > last_epoch:
-                            print(f"  Epoch {epoch+1}/{total_epochs} | Step {step} | Loss: {loss:.4f} | Elapsed: {elapsed_training:.0f}s")
+                            print(
+                                f"  Epoch {epoch + 1}/{total_epochs} | Step {step} | Loss: {loss:.4f} | Elapsed: {elapsed_training:.0f}s"
+                            )
                             last_step = step
                             last_epoch = epoch
 
@@ -1241,7 +1517,9 @@ def main():
                             status["instance_type"] = instance.instance_type
                         # Add cloud provider info
                         status["cloud_provider"] = "lambda"
-                        status["cloud_dashboard_url"] = "https://cloud.lambda.ai/instances"
+                        status["cloud_dashboard_url"] = (
+                            "https://cloud.lambda.ai/instances"
+                        )
                         status["cloud_instance_id"] = instance.id
                         status["setup_status"] = "training"
                         status["setup_logs"] = setup_logs
@@ -1269,9 +1547,11 @@ def main():
 
                         config = TrainingConfig(
                             num_train_epochs=total_epochs,
-                            learning_rate=status.get("learning_rate", 5e-5)
+                            learning_rate=status.get("learning_rate", 5e-5),
                         )
-                        dashboard_path.write_text(generate_training_dashboard(state, config))
+                        dashboard_path.write_text(
+                            generate_training_dashboard(state, config)
+                        )
 
                         # Check if training is complete (all epochs done)
                         if epoch >= total_epochs - 1:
@@ -1313,13 +1593,15 @@ def main():
                 print("=" * 50)
 
                 # Determine the final checkpoint path (main checkpoint after training)
-                checkpoint_path = "/home/ubuntu/openadapt-ml/checkpoints/qwen3vl2b_capture_lora"
+                checkpoint_path = (
+                    "/home/ubuntu/openadapt-ml/checkpoints/qwen3vl2b_capture_lora"
+                )
 
                 # Check if checkpoint exists
                 result = client.ssh_run(
                     instance,
                     f"ls {checkpoint_path}/adapter_config.json 2>/dev/null && echo 'exists'",
-                    timeout=30
+                    timeout=30,
                 )
 
                 if "exists" in result.stdout:
@@ -1331,7 +1613,9 @@ def main():
                         --checkpoint {checkpoint_path} \
                         --output training_output/{output_name} 2>&1"""
 
-                    print("  Generating comparison viewer (this may take a few minutes)...")
+                    print(
+                        "  Generating comparison viewer (this may take a few minutes)..."
+                    )
                     result = client.ssh_run(instance, cmd, timeout=600)
 
                     if result.returncode == 0:
@@ -1352,13 +1636,15 @@ def main():
             print(f"\nTerminating instance {instance.id[:8]}...")
             client.terminate_instance(instance.id)
             print("Instance terminated.")
-            print(f"\nFinal cost: ~${cost:.2f} ({elapsed/60:.1f} minutes)")
+            print(f"\nFinal cost: ~${cost:.2f} ({elapsed / 60:.1f} minutes)")
         else:
             print(f"\nInstance still running: {instance.ip}")
             print(f"  Current cost: ~${cost:.2f}")
             if not training_completed:
                 print("  (Not terminating - training did not complete successfully)")
-            print(f"Terminate with: python -m openadapt_ml.cloud.lambda_labs terminate {instance.id}")
+            print(
+                f"Terminate with: python -m openadapt_ml.cloud.lambda_labs terminate {instance.id}"
+            )
 
     elif args.command == "train-status":
         instances = client.list_instances()
@@ -1367,7 +1653,9 @@ def main():
             return
 
         if args.instance_id:
-            instance = next((i for i in instances if i.id.startswith(args.instance_id)), None)
+            instance = next(
+                (i for i in instances if i.id.startswith(args.instance_id)), None
+            )
             if not instance:
                 print(f"Instance {args.instance_id} not found.")
                 return
@@ -1393,7 +1681,9 @@ def main():
             return
 
         if args.instance_id:
-            instance = next((i for i in instances if i.id.startswith(args.instance_id)), None)
+            instance = next(
+                (i for i in instances if i.id.startswith(args.instance_id)), None
+            )
             if not instance:
                 print(f"Instance {args.instance_id} not found.")
                 return
@@ -1403,10 +1693,14 @@ def main():
         print(f"Checking checkpoints on {instance.ip}...")
 
         ssh_cmd = [
-            "ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+            "ssh",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "ConnectTimeout=10",
             f"ubuntu@{instance.ip}",
             "ls -la ~/openadapt-ml/checkpoints/ 2>/dev/null && "
-            "du -sh ~/openadapt-ml/checkpoints/ 2>/dev/null || echo 'No checkpoints directory found'"
+            "du -sh ~/openadapt-ml/checkpoints/ 2>/dev/null || echo 'No checkpoints directory found'",
         ]
 
         result = subprocess.run(ssh_cmd, capture_output=True, text=True)
@@ -1421,7 +1715,11 @@ def main():
         # One-shot dashboard refresh
         import time as time_module
         from pathlib import Path
-        from openadapt_ml.training.trainer import TrainingState, TrainingConfig, generate_training_dashboard
+        from openadapt_ml.training.trainer import (
+            TrainingState,
+            TrainingConfig,
+            generate_training_dashboard,
+        )
 
         instances = client.list_instances()
         if not instances:
@@ -1429,7 +1727,9 @@ def main():
             return
 
         if args.instance_id:
-            instance = next((i for i in instances if i.id.startswith(args.instance_id)), None)
+            instance = next(
+                (i for i in instances if i.id.startswith(args.instance_id)), None
+            )
             if not instance:
                 print(f"Instance {args.instance_id} not found.")
                 return
@@ -1437,7 +1737,11 @@ def main():
             instance = instances[0]
 
         # Use current job directory via symlink
-        from openadapt_ml.training.trainer import get_current_job_directory, setup_job_directory
+        from openadapt_ml.training.trainer import (
+            get_current_job_directory,
+            setup_job_directory,
+        )
+
         base_dir = Path("training_output")
         base_dir.mkdir(exist_ok=True)
 
@@ -1454,7 +1758,9 @@ def main():
             log_path = output_dir / "training_log.json"
 
             # Setup screenshots symlink if local capture path provided
-            local_capture = args.capture if hasattr(args, 'capture') and args.capture else None
+            local_capture = (
+                args.capture if hasattr(args, "capture") and args.capture else None
+            )
             if local_capture:
                 setup_capture_screenshots_symlink(output_dir, local_capture)
 
@@ -1478,7 +1784,9 @@ def main():
             state.instance_type = instance.instance_type
             state.config_path = status.get("config_path", "")
             # Use local capture path for screenshots if provided, else remote path
-            state.capture_path = args.capture if args.capture else status.get("capture_path", "")
+            state.capture_path = (
+                args.capture if args.capture else status.get("capture_path", "")
+            )
             state.epoch = status.get("epoch", 0)
             state.step = status.get("step", 0)
             state.loss = status.get("loss", 0)
@@ -1496,7 +1804,7 @@ def main():
 
             config = TrainingConfig(
                 num_train_epochs=status.get("total_epochs", 5),
-                learning_rate=status.get("learning_rate", 5e-5)
+                learning_rate=status.get("learning_rate", 5e-5),
             )
 
             dashboard_path.write_text(generate_training_dashboard(state, config))
@@ -1504,6 +1812,7 @@ def main():
             # Regenerate navigation for file:// protocol
             try:
                 from openadapt_ml.training.trainer import regenerate_all_dashboards
+
                 regenerate_all_dashboards(output_dir)
             except Exception:
                 pass  # Silent fail for navigation
@@ -1512,11 +1821,14 @@ def main():
             step = status.get("step", 0)
             loss = status.get("loss", 0)
             elapsed = status.get("elapsed_time", 0)
-            print(f"Epoch {epoch+1}/{state.total_epochs} | Step {step} | Loss: {loss:.4f} | Elapsed: {elapsed:.0f}s")
+            print(
+                f"Epoch {epoch + 1}/{state.total_epochs} | Step {step} | Loss: {loss:.4f} | Elapsed: {elapsed:.0f}s"
+            )
             print(f"Dashboard: {dashboard_path.absolute()}")
 
             if args.open:
                 import subprocess as sp
+
                 sp.run(["open", str(dashboard_path)], capture_output=True)
         else:
             print("No training data yet")
@@ -1528,10 +1840,12 @@ def main():
         from pathlib import Path
 
         # Stub mode - simulate training without actual GPU
-        if getattr(args, 'stub', False):
+        if getattr(args, "stub", False):
             from openadapt_ml.training.stub_provider import StubTrainingProvider
             from openadapt_ml.training.trainer import (
-                TrainingState, TrainingConfig, generate_training_dashboard
+                TrainingState,
+                TrainingConfig,
+                generate_training_dashboard,
             )
 
             print("\n[Stub Mode] Simulating training without GPU...")
@@ -1569,7 +1883,7 @@ def main():
 
                 config = TrainingConfig(
                     num_train_epochs=status.get("total_epochs", 5),
-                    learning_rate=state.learning_rate
+                    learning_rate=state.learning_rate,
                 )
 
                 dashboard_path = output_dir / "dashboard.html"
@@ -1593,7 +1907,9 @@ def main():
             return
 
         if args.instance_id:
-            instance = next((i for i in instances if i.id.startswith(args.instance_id)), None)
+            instance = next(
+                (i for i in instances if i.id.startswith(args.instance_id)), None
+            )
             if not instance:
                 print(f"Instance {args.instance_id} not found.")
                 return
@@ -1616,9 +1932,13 @@ def main():
 
         # Use job-scoped directory structure
         from openadapt_ml.training.trainer import (
-            TrainingState, TrainingConfig, generate_training_dashboard,
-            setup_job_directory, get_current_job_directory
+            TrainingState,
+            TrainingConfig,
+            generate_training_dashboard,
+            setup_job_directory,
+            get_current_job_directory,
         )
+
         base_dir = Path("training_output")
         base_dir.mkdir(exist_ok=True)
 
@@ -1649,7 +1969,11 @@ def main():
             state.instance_ip = instance.ip or ""
             state.instance_type = instance.instance_type
             state.setup_status = "booting"
-            state.setup_logs = ["Starting Lambda Cloud instance...", f"Instance ID: {instance.id[:8]}...", f"Instance type: {instance.instance_type}"]
+            state.setup_logs = [
+                "Starting Lambda Cloud instance...",
+                f"Instance ID: {instance.id[:8]}...",
+                f"Instance type: {instance.instance_type}",
+            ]
             config = TrainingConfig(num_train_epochs=5, learning_rate=5e-5)
             dashboard_path.write_text(generate_training_dashboard(state, config))
 
@@ -1660,12 +1984,14 @@ def main():
 
         last_step = 0
         last_epoch = -1
-        auto_stop_loss = getattr(args, 'auto_stop_loss', 0.5)
-        download_checkpoints = getattr(args, 'download_checkpoints', True)
+        auto_stop_loss = getattr(args, "auto_stop_loss", 0.5)
+        download_checkpoints = getattr(args, "download_checkpoints", True)
         step_stall_count = 0  # Track how many times step hasn't increased
 
         print(f"  Auto-stop loss threshold: {auto_stop_loss}")
-        print(f"  Checkpoint download: {'enabled' if download_checkpoints else 'disabled'}")
+        print(
+            f"  Checkpoint download: {'enabled' if download_checkpoints else 'disabled'}"
+        )
 
         try:
             while True:
@@ -1679,10 +2005,11 @@ def main():
                     # Update status with termination info before terminating
                     termination_status = {
                         "termination_status": "user_stop",
-                        "termination_message": "Training stopped by user via dashboard"
+                        "termination_message": "Training stopped by user via dashboard",
                     }
                     current_log = log_path.read_text() if log_path.exists() else "{}"
                     import json as json_module
+
                     current_data = json_module.loads(current_log)
                     current_data.update(termination_status)
                     log_path.write_text(json_module.dumps(current_data, indent=2))
@@ -1706,8 +2033,14 @@ def main():
                         remote_job_id = status.get("job_id")
 
                         # Detect job_id change - clear old data if new job started
-                        if remote_job_id and current_job_id and remote_job_id != current_job_id:
-                            print(f"\n  New job detected: {remote_job_id} (was: {current_job_id})")
+                        if (
+                            remote_job_id
+                            and current_job_id
+                            and remote_job_id != current_job_id
+                        ):
+                            print(
+                                f"\n  New job detected: {remote_job_id} (was: {current_job_id})"
+                            )
                             print("  Clearing old job data...")
                             last_step = 0  # Reset step tracking
                             current_job_id = remote_job_id
@@ -1722,25 +2055,37 @@ def main():
                             status["instance_type"] = instance.instance_type
                         # Add cloud provider info
                         status["cloud_provider"] = "lambda"
-                        status["cloud_dashboard_url"] = "https://cloud.lambda.ai/instances"
+                        status["cloud_dashboard_url"] = (
+                            "https://cloud.lambda.ai/instances"
+                        )
                         status["cloud_instance_id"] = instance.id
                         status["setup_status"] = status.get("setup_status", "training")
 
                         # Setup screenshots symlink if local capture path provided
-                        local_capture = args.capture if hasattr(args, 'capture') and args.capture else None
+                        local_capture = (
+                            args.capture
+                            if hasattr(args, "capture") and args.capture
+                            else None
+                        )
                         if local_capture:
                             setup_capture_screenshots_symlink(output_dir, local_capture)
 
                         # Rewrite evaluation paths from Lambda to relative
                         if "evaluations" in status:
-                            status["evaluations"] = rewrite_evaluation_paths(status["evaluations"])
+                            status["evaluations"] = rewrite_evaluation_paths(
+                                status["evaluations"]
+                            )
 
                         log_path.write_text(json.dumps(status, indent=2))
 
                         if step > last_step:
-                            print(f"  Epoch {epoch+1} | Step {step} | Loss: {loss:.4f} | Elapsed: {elapsed:.0f}s")
+                            print(
+                                f"  Epoch {epoch + 1} | Step {step} | Loss: {loss:.4f} | Elapsed: {elapsed:.0f}s"
+                            )
                             last_step = step
-                            step_stall_count = 0  # Reset stall counter when step increases
+                            step_stall_count = (
+                                0  # Reset stall counter when step increases
+                            )
                             if not current_job_id:
                                 current_job_id = remote_job_id
 
@@ -1759,39 +2104,59 @@ def main():
                             state.start_time = time_module.time() - elapsed
                             # Cloud provider info
                             state.cloud_provider = "lambda"
-                            state.cloud_dashboard_url = "https://cloud.lambda.ai/instances"
+                            state.cloud_dashboard_url = (
+                                "https://cloud.lambda.ai/instances"
+                            )
                             state.cloud_instance_id = instance.id
                             state.setup_status = status.get("setup_status", "training")
                             state.setup_logs = status.get("setup_logs", [])
-                            state.termination_status = status.get("termination_status", "")
-                            state.termination_message = status.get("termination_message", "")
+                            state.termination_status = status.get(
+                                "termination_status", ""
+                            )
+                            state.termination_message = status.get(
+                                "termination_message", ""
+                            )
 
                             config = TrainingConfig(
                                 num_train_epochs=status.get("total_epochs", 5),
-                                learning_rate=status.get("learning_rate", 5e-5)
+                                learning_rate=status.get("learning_rate", 5e-5),
                             )
 
-                            dashboard_path.write_text(generate_training_dashboard(state, config))
+                            dashboard_path.write_text(
+                                generate_training_dashboard(state, config)
+                            )
 
                             # Download checkpoints on epoch change
                             if download_checkpoints and epoch > last_epoch:
-                                print(f"  Epoch {epoch+1} completed - downloading checkpoints...")
-                                if download_checkpoints_from_instance(instance.ip, output_dir):
-                                    print(f"  Checkpoints saved to {output_dir}/checkpoints/")
+                                print(
+                                    f"  Epoch {epoch + 1} completed - downloading checkpoints..."
+                                )
+                                if download_checkpoints_from_instance(
+                                    instance.ip, output_dir
+                                ):
+                                    print(
+                                        f"  Checkpoints saved to {output_dir}/checkpoints/"
+                                    )
                                 else:
                                     print("  Warning: checkpoint download failed")
                                 last_epoch = epoch
 
                             # Auto-terminate when loss is low enough
                             if loss < auto_stop_loss and loss > 0:
-                                print(f"\n  Loss {loss:.4f} < threshold {auto_stop_loss}")
+                                print(
+                                    f"\n  Loss {loss:.4f} < threshold {auto_stop_loss}"
+                                )
                                 print("  Downloading final checkpoints...")
                                 if download_checkpoints:
-                                    download_checkpoints_from_instance(instance.ip, output_dir)
+                                    download_checkpoints_from_instance(
+                                        instance.ip, output_dir
+                                    )
 
                                 # Update status with termination info
                                 status["termination_status"] = "auto_low_loss"
-                                status["termination_message"] = f"Training auto-stopped: loss {loss:.4f} < threshold {auto_stop_loss}"
+                                status["termination_message"] = (
+                                    f"Training auto-stopped: loss {loss:.4f} < threshold {auto_stop_loss}"
+                                )
                                 log_path.write_text(json.dumps(status, indent=2))
 
                                 print(f"  Auto-terminating instance {instance.id}...")
@@ -1805,14 +2170,20 @@ def main():
 
                             # If on last epoch and step hasn't increased for 3 polls, training is complete
                             if epoch >= total_epochs - 1 and step_stall_count >= 3:
-                                print(f"\n  Training complete (epoch {epoch+1}/{total_epochs}, step stopped increasing)")
+                                print(
+                                    f"\n  Training complete (epoch {epoch + 1}/{total_epochs}, step stopped increasing)"
+                                )
                                 print("  Downloading final checkpoints...")
                                 if download_checkpoints:
-                                    download_checkpoints_from_instance(instance.ip, output_dir)
+                                    download_checkpoints_from_instance(
+                                        instance.ip, output_dir
+                                    )
 
                                 # Update status with termination info
                                 status["termination_status"] = "auto_complete"
-                                status["termination_message"] = f"Training completed successfully ({epoch+1}/{total_epochs} epochs)"
+                                status["termination_message"] = (
+                                    f"Training completed successfully ({epoch + 1}/{total_epochs} epochs)"
+                                )
                                 log_path.write_text(json.dumps(status, indent=2))
 
                                 print(f"  Terminating instance {instance.id}...")
@@ -1844,7 +2215,9 @@ def main():
             return
 
         if args.instance_id:
-            instance = next((i for i in instances if i.id.startswith(args.instance_id)), None)
+            instance = next(
+                (i for i in instances if i.id.startswith(args.instance_id)), None
+            )
             if not instance:
                 print(f"Instance {args.instance_id} not found.")
                 return
@@ -1852,9 +2225,13 @@ def main():
             instance = instances[0]
 
         print(f"Files on {instance.ip} at {args.path}:")
-        result = client.ssh_run(instance, f"find {args.path} -type f -name '*.pt' -o -name '*.json' -o -name '*.bin' 2>/dev/null | head -20", timeout=30)
+        result = client.ssh_run(
+            instance,
+            f"find {args.path} -type f -name '*.pt' -o -name '*.json' -o -name '*.bin' 2>/dev/null | head -20",
+            timeout=30,
+        )
         if result.stdout:
-            for line in result.stdout.strip().split('\n'):
+            for line in result.stdout.strip().split("\n"):
                 print(f"  {line}")
         else:
             print("  (no checkpoint files found)")
@@ -1867,18 +2244,16 @@ def main():
             if args.local:
                 print("\nKilling local Lambda-related processes...")
                 subprocess.run(
-                    ["pkill", "-f", "ssh.*ubuntu@.*openadapt"],
-                    capture_output=True
+                    ["pkill", "-f", "ssh.*ubuntu@.*openadapt"], capture_output=True
                 )
-                subprocess.run(
-                    ["pkill", "-f", "lambda_labs"],
-                    capture_output=True
-                )
+                subprocess.run(["pkill", "-f", "lambda_labs"], capture_output=True)
                 print("Done.")
             return
 
         if args.instance_id:
-            instance = next((i for i in instances if i.id.startswith(args.instance_id)), None)
+            instance = next(
+                (i for i in instances if i.id.startswith(args.instance_id)), None
+            )
             if not instance:
                 print(f"Instance {args.instance_id} not found.")
                 return
@@ -1891,11 +2266,11 @@ def main():
         result = client.ssh_run(
             instance,
             "ps aux | grep python | grep -v grep | grep -v jupyter",
-            timeout=30
+            timeout=30,
         )
         if result.stdout.strip():
             print("Found Python processes:")
-            for line in result.stdout.strip().split('\n'):
+            for line in result.stdout.strip().split("\n"):
                 print(f"  {line[:100]}...")
         else:
             print("No training/inference Python processes found.")
@@ -1903,7 +2278,9 @@ def main():
 
         if args.all:
             print("\nKilling ALL Python processes (except jupyter)...")
-            cmd = "pkill -f 'python.*train\\|python.*compare\\|python.*openadapt' || true"
+            cmd = (
+                "pkill -f 'python.*train\\|python.*compare\\|python.*openadapt' || true"
+            )
         else:
             print("\nKilling training and inference processes...")
             cmd = "pkill -f 'python.*train' ; pkill -f 'python.*compare' || true"
@@ -1914,20 +2291,16 @@ def main():
         if args.local:
             print("\nKilling local Lambda-related processes...")
             subprocess.run(
-                ["pkill", "-f", "ssh.*ubuntu@.*openadapt"],
-                capture_output=True
+                ["pkill", "-f", "ssh.*ubuntu@.*openadapt"], capture_output=True
             )
-            subprocess.run(
-                ["pkill", "-f", "lambda_labs.*train"],
-                capture_output=True
-            )
+            subprocess.run(["pkill", "-f", "lambda_labs.*train"], capture_output=True)
             print("Local processes killed.")
 
         print("\nDone. Current status:")
         result = client.ssh_run(
             instance,
             "ps aux | grep python | grep -v grep | grep -v jupyter | wc -l",
-            timeout=30
+            timeout=30,
         )
         count = result.stdout.strip()
         print(f"  {count} Python processes remaining on instance")
@@ -1940,7 +2313,9 @@ def main():
             return
 
         if args.instance_id:
-            instance = next((i for i in instances if i.id.startswith(args.instance_id)), None)
+            instance = next(
+                (i for i in instances if i.id.startswith(args.instance_id)), None
+            )
             if not instance:
                 print(f"Instance {args.instance_id} not found.")
                 return
@@ -1953,7 +2328,7 @@ def main():
         result = client.ssh_run(
             instance,
             "cat ~/openadapt-ml/training_output/training_log.json 2>/dev/null",
-            timeout=30
+            timeout=30,
         )
 
         if not result.stdout.strip():
@@ -1977,19 +2352,17 @@ def main():
         min_loss = min(loss_entry["loss"] for loss_entry in losses)
         current_loss = losses[-1]["loss"]
 
-        print(f"\n{'='*50}")
+        print(f"\n{'=' * 50}")
         print("TRAINING STATUS")
-        print(f"{'='*50}")
+        print(f"{'=' * 50}")
         print(f"Steps: {total_steps}")
-        print(f"Epochs: {max(epochs)+1}/{total_epochs}")
+        print(f"Epochs: {max(epochs) + 1}/{total_epochs}")
         print(f"Current loss: {current_loss:.4f}")
         print(f"Min loss: {min_loss:.4f}")
 
         # Check if training is running
         proc_result = client.ssh_run(
-            instance,
-            "ps aux | grep 'python.*train' | grep -v grep | wc -l",
-            timeout=30
+            instance, "ps aux | grep 'python.*train' | grep -v grep | wc -l", timeout=30
         )
         is_running = int(proc_result.stdout.strip()) > 0
 
@@ -2004,45 +2377,57 @@ def main():
             print("\nNot enough data for early stopping analysis.")
         else:
             recent_losses = [loss_entry["loss"] for loss_entry in losses[-window:]]
-            older_losses = [loss_entry["loss"] for loss_entry in losses[-window*2:-window]] if len(losses) >= window*2 else [loss_entry["loss"] for loss_entry in losses[:window]]
+            older_losses = (
+                [loss_entry["loss"] for loss_entry in losses[-window * 2 : -window]]
+                if len(losses) >= window * 2
+                else [loss_entry["loss"] for loss_entry in losses[:window]]
+            )
 
             recent_avg = sum(recent_losses) / len(recent_losses)
-            older_avg = sum(older_losses) / len(older_losses) if older_losses else recent_avg
+            older_avg = (
+                sum(older_losses) / len(older_losses) if older_losses else recent_avg
+            )
 
             improvement = (older_avg - recent_avg) / older_avg if older_avg > 0 else 0
             loss_variance = max(recent_losses) - min(recent_losses)
 
-            print(f"\n{'='*50}")
+            print(f"\n{'=' * 50}")
             print(f"EARLY STOPPING ANALYSIS (window={window})")
-            print(f"{'='*50}")
+            print(f"{'=' * 50}")
             print(f"Recent avg loss: {recent_avg:.4f}")
             print(f"Prior avg loss: {older_avg:.4f}")
-            print(f"Improvement: {improvement*100:.2f}%")
+            print(f"Improvement: {improvement * 100:.2f}%")
             print(f"Loss variance: {loss_variance:.4f}")
 
             should_stop = improvement < args.threshold and loss_variance < 0.1
             if should_stop:
                 print("\n⚠️  EARLY STOPPING RECOMMENDED")
-                print(f"   Loss has plateaued (improvement < {args.threshold*100}%)")
+                print(f"   Loss has plateaued (improvement < {args.threshold * 100}%)")
                 if not is_running:
                     print("   (Training already stopped)")
                 else:
-                    print("\n   To stop: uv run python -m openadapt_ml.cloud.lambda_labs kill")
+                    print(
+                        "\n   To stop: uv run python -m openadapt_ml.cloud.lambda_labs kill"
+                    )
             else:
                 print("\n✓ Training still improving, continue.")
 
         # Time estimate
         if is_running and len(losses) >= 2:
-            avg_time_per_step = losses[-1].get("time", 0) / len(losses) if losses[-1].get("time") else 50
+            avg_time_per_step = (
+                losses[-1].get("time", 0) / len(losses)
+                if losses[-1].get("time")
+                else 50
+            )
             steps_per_epoch = len(losses) / (max(epochs) + 1)
             remaining_epochs = total_epochs - max(epochs) - 1
             remaining_steps = remaining_epochs * steps_per_epoch
             eta_seconds = remaining_steps * avg_time_per_step
             eta_mins = eta_seconds / 60
 
-            print(f"\n{'='*50}")
+            print(f"\n{'=' * 50}")
             print("TIME ESTIMATE")
-            print(f"{'='*50}")
+            print(f"{'=' * 50}")
             print(f"Remaining epochs: {remaining_epochs}")
             print(f"Est. remaining steps: {remaining_steps:.0f}")
             print(f"ETA: {eta_mins:.1f} minutes")
@@ -2055,7 +2440,9 @@ def main():
             return
 
         if args.instance_id:
-            instance = next((i for i in instances if i.id.startswith(args.instance_id)), None)
+            instance = next(
+                (i for i in instances if i.id.startswith(args.instance_id)), None
+            )
             if not instance:
                 print(f"Instance {args.instance_id} not found.")
                 return
@@ -2066,24 +2453,26 @@ def main():
         if args.checkpoint:
             checkpoint_path = args.checkpoint
         elif args.epoch is not None:
-            checkpoint_path = f"/home/ubuntu/openadapt-ml/checkpoints/epoch_{args.epoch}"
+            checkpoint_path = (
+                f"/home/ubuntu/openadapt-ml/checkpoints/epoch_{args.epoch}"
+            )
         else:
             # Use latest (main checkpoint)
-            checkpoint_path = "/home/ubuntu/openadapt-ml/checkpoints/qwen3vl2b_capture_lora"
+            checkpoint_path = (
+                "/home/ubuntu/openadapt-ml/checkpoints/qwen3vl2b_capture_lora"
+            )
 
         # Check if checkpoint exists
         result = client.ssh_run(
             instance,
             f"ls {checkpoint_path}/adapter_config.json 2>/dev/null && echo 'exists'",
-            timeout=30
+            timeout=30,
         )
         if "exists" not in result.stdout:
             print(f"Checkpoint not found at {checkpoint_path}")
             # List available checkpoints
             result = client.ssh_run(
-                instance,
-                "ls -la ~/openadapt-ml/checkpoints/",
-                timeout=30
+                instance, "ls -la ~/openadapt-ml/checkpoints/", timeout=30
             )
             print(f"Available checkpoints:\n{result.stdout}")
             return
@@ -2108,9 +2497,7 @@ def main():
 
         # Check if file was created
         result = client.ssh_run(
-            instance,
-            f"ls -la ~/openadapt-ml/training_output/{output_name}",
-            timeout=30
+            instance, f"ls -la ~/openadapt-ml/training_output/{output_name}", timeout=30
         )
         if result.returncode != 0:
             print("Comparison file not created.")
@@ -2123,11 +2510,15 @@ def main():
         local_output.parent.mkdir(parents=True, exist_ok=True)
 
         print(f"Syncing to {local_output}...")
-        subprocess.run([
-            "rsync", "-avz",
-            f"ubuntu@{instance.ip}:~/openadapt-ml/training_output/{output_name}",
-            str(local_output)
-        ], capture_output=True)
+        subprocess.run(
+            [
+                "rsync",
+                "-avz",
+                f"ubuntu@{instance.ip}:~/openadapt-ml/training_output/{output_name}",
+                str(local_output),
+            ],
+            capture_output=True,
+        )
 
         print(f"Done! Comparison saved to: {local_output}")
 
@@ -2142,7 +2533,9 @@ def main():
             return
 
         if args.instance_id:
-            instance = next((i for i in instances if i.id.startswith(args.instance_id)), None)
+            instance = next(
+                (i for i in instances if i.id.startswith(args.instance_id)), None
+            )
             if not instance:
                 print(f"Instance {args.instance_id} not found.")
                 return
@@ -2159,7 +2552,9 @@ def main():
             return
 
         if args.instance_id:
-            instance = next((i for i in instances if i.id.startswith(args.instance_id)), None)
+            instance = next(
+                (i for i in instances if i.id.startswith(args.instance_id)), None
+            )
             if not instance:
                 print(f"Instance {args.instance_id} not found.")
                 return
@@ -2175,10 +2570,17 @@ def main():
         checkpoint_path = "checkpoints_lambda/qwen3vl2b_capture_lora"
 
         import subprocess as sp
+
         cmd = [
-            "uv", "run", "python", "-m", "openadapt_ml.scripts.compare",
-            "--capture", args.capture,
-            "--checkpoint", checkpoint_path,
+            "uv",
+            "run",
+            "python",
+            "-m",
+            "openadapt_ml.scripts.compare",
+            "--capture",
+            args.capture,
+            "--checkpoint",
+            checkpoint_path,
         ]
         if args.goal:
             cmd.extend(["--goal", args.goal])
@@ -2200,7 +2602,9 @@ def main():
         import time as time_module
         from pathlib import Path
 
-        output_dir = Path(args.output) if hasattr(args, 'output') else Path("training_output")
+        output_dir = (
+            Path(args.output) if hasattr(args, "output") else Path("training_output")
+        )
         port = args.port
 
         if not output_dir.exists():
@@ -2213,13 +2617,13 @@ def main():
                 super().__init__(*args, directory=str(output_dir), **kwargs)
 
             def do_POST(self):
-                if self.path == '/api/stop':
+                if self.path == "/api/stop":
                     # Create stop signal file
                     stop_file = output_dir / "STOP_TRAINING"
                     stop_file.touch()
                     self.send_response(200)
-                    self.send_header('Content-Type', 'application/json')
-                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
                     self.end_headers()
                     self.wfile.write(b'{"status": "stop signal created"}')
                     print(f"  Stop signal created: {stop_file}")
@@ -2229,14 +2633,13 @@ def main():
             def do_OPTIONS(self):
                 # Handle CORS preflight
                 self.send_response(200)
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-                self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type")
                 self.end_headers()
 
             def log_message(self, format, *args):
                 pass  # Suppress log messages
-
 
         # Start web server
         with socketserver.TCPServer(("", port), Handler) as httpd:
@@ -2256,8 +2659,10 @@ def main():
         # Sync training output from Lambda and regenerate navigation for file:// protocol
         from pathlib import Path
         from openadapt_ml.training.trainer import (
-            TrainingState, TrainingConfig, generate_training_dashboard,
-            regenerate_all_dashboards
+            TrainingState,
+            TrainingConfig,
+            generate_training_dashboard,
+            regenerate_all_dashboards,
         )
 
         instances = client.list_instances()
@@ -2266,7 +2671,9 @@ def main():
             return
 
         if args.instance_id:
-            instance = next((i for i in instances if i.id.startswith(args.instance_id)), None)
+            instance = next(
+                (i for i in instances if i.id.startswith(args.instance_id)), None
+            )
             if not instance:
                 print(f"Instance {args.instance_id} not found.")
                 return
@@ -2280,10 +2687,13 @@ def main():
 
         # Sync all training output files
         rsync_cmd = [
-            "rsync", "-avz", "--progress",
-            "-e", "ssh -o StrictHostKeyChecking=no",
+            "rsync",
+            "-avz",
+            "--progress",
+            "-e",
+            "ssh -o StrictHostKeyChecking=no",
             f"ubuntu@{instance.ip}:~/openadapt-ml/training_output/",
-            str(output_dir) + "/"
+            str(output_dir) + "/",
         ]
         result = subprocess.run(rsync_cmd, capture_output=False)
 
@@ -2297,6 +2707,7 @@ def main():
         if log_path.exists():
             try:
                 import time as time_module
+
                 status = json.loads(log_path.read_text())
 
                 # Update with instance info
@@ -2330,7 +2741,7 @@ def main():
 
                 config = TrainingConfig(
                     num_train_epochs=status.get("total_epochs", 5),
-                    learning_rate=status.get("learning_rate", 5e-5)
+                    learning_rate=status.get("learning_rate", 5e-5),
                 )
 
                 dashboard_path.write_text(generate_training_dashboard(state, config))
@@ -2384,7 +2795,7 @@ def main():
                 # First try training log
                 log_data = json.loads((output_dir / "training_log.json").read_text())
                 capture_path = log_data.get("capture_path", "")
-                capture_match = re.search(r'capture_(\d+)', capture_path)
+                capture_match = re.search(r"capture_(\d+)", capture_path)
                 if capture_match:
                     capture_id = capture_match.group(1)
 
@@ -2395,25 +2806,35 @@ def main():
                         base_data = pred_data.get("base_data", [])
                         if base_data:
                             image_path = base_data[0].get("image_path", "")
-                            capture_match = re.search(r'capture_(\d+)', image_path)
+                            capture_match = re.search(r"capture_(\d+)", image_path)
                             if capture_match:
                                 capture_id = capture_match.group(1)
                                 break
 
                 if capture_id:
                     # Search for local screenshots in openadapt-capture
-                    openadapt_capture_dir = Path.home() / "oa" / "src" / "openadapt-capture"
+                    openadapt_capture_dir = (
+                        Path.home() / "oa" / "src" / "openadapt-capture"
+                    )
                     if openadapt_capture_dir.exists():
                         for capture_dir in openadapt_capture_dir.iterdir():
                             if capture_dir.is_dir():
                                 screenshots_dir = capture_dir / "screenshots"
                                 if screenshots_dir.exists():
                                     # Check if this capture has our screenshots
-                                    sample_file = list(screenshots_dir.glob(f"capture_{capture_id}_step_*.png"))
+                                    sample_file = list(
+                                        screenshots_dir.glob(
+                                            f"capture_{capture_id}_step_*.png"
+                                        )
+                                    )
                                     if sample_file:
-                                        print(f"Found local screenshots in {screenshots_dir}")
+                                        print(
+                                            f"Found local screenshots in {screenshots_dir}"
+                                        )
                                         screenshots_link.symlink_to(screenshots_dir)
-                                        print(f"  Linked: {screenshots_link} -> {screenshots_dir}")
+                                        print(
+                                            f"  Linked: {screenshots_link} -> {screenshots_dir}"
+                                        )
                                         break
             except Exception:
                 pass  # Silently continue if auto-link fails

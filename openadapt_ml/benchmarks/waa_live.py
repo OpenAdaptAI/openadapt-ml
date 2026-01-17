@@ -110,10 +110,7 @@ class WAALiveAdapter(BenchmarkAdapter):
             True if server responds to /probe endpoint.
         """
         try:
-            resp = requests.get(
-                f"{self.config.server_url}/probe",
-                timeout=5.0
-            )
+            resp = requests.get(f"{self.config.server_url}/probe", timeout=5.0)
             return resp.status_code == 200
         except requests.RequestException:
             return False
@@ -168,10 +165,7 @@ class WAALiveAdapter(BenchmarkAdapter):
 
         # Try to close all windows for clean state
         try:
-            requests.post(
-                f"{self.config.server_url}/setup/close_all",
-                timeout=30.0
-            )
+            requests.post(f"{self.config.server_url}/setup/close_all", timeout=30.0)
             logger.info("Closed all windows for clean state")
         except requests.RequestException as e:
             logger.warning(f"Failed to close windows: {e}")
@@ -212,7 +206,7 @@ class WAALiveAdapter(BenchmarkAdapter):
                 resp = requests.post(
                     f"{self.config.server_url}/execute_windows",
                     json={"command": command},
-                    timeout=self.config.timeout
+                    timeout=self.config.timeout,
                 )
                 if resp.status_code != 200:
                     logger.error(f"Execute failed ({resp.status_code}): {resp.text}")
@@ -228,10 +222,7 @@ class WAALiveAdapter(BenchmarkAdapter):
         time.sleep(self.config.action_delay)
 
         # Check if done
-        done = (
-            action.type == "done" or
-            self._step_count >= self.config.max_steps
-        )
+        done = action.type == "done" or self._step_count >= self.config.max_steps
 
         obs = self._get_observation()
         info = {
@@ -286,10 +277,7 @@ class WAALiveAdapter(BenchmarkAdapter):
 
         # Get screenshot
         try:
-            resp = requests.get(
-                f"{self.config.server_url}/screenshot",
-                timeout=30.0
-            )
+            resp = requests.get(f"{self.config.server_url}/screenshot", timeout=30.0)
             if resp.status_code == 200:
                 screenshot = resp.content
                 self._current_screenshot = screenshot
@@ -304,7 +292,7 @@ class WAALiveAdapter(BenchmarkAdapter):
             resp = requests.get(
                 f"{self.config.server_url}/accessibility",
                 params={"backend": self.config.a11y_backend},
-                timeout=30.0
+                timeout=30.0,
             )
             if resp.status_code == 200:
                 result = resp.json()
@@ -312,7 +300,9 @@ class WAALiveAdapter(BenchmarkAdapter):
                 self._current_a11y = a11y_tree
                 # Extract rects for element-based grounding
                 self._current_rects = self._extract_rects_from_a11y(a11y_tree)
-                logger.debug("Got accessibility tree with %d elements", len(self._current_rects))
+                logger.debug(
+                    "Got accessibility tree with %d elements", len(self._current_rects)
+                )
             else:
                 logger.warning(f"A11y request failed: {resp.status_code}")
         except requests.RequestException as e:
@@ -434,14 +424,16 @@ class WAALiveAdapter(BenchmarkAdapter):
 
         try:
             resp = requests.post(
-                f"{self.config.server_url}/update_computer",
-                json=payload,
-                timeout=30.0
+                f"{self.config.server_url}/update_computer", json=payload, timeout=30.0
             )
             if resp.status_code == 200:
-                logger.debug("Updated WAA computer with %d rects", len(self._current_rects))
+                logger.debug(
+                    "Updated WAA computer with %d rects", len(self._current_rects)
+                )
             else:
-                logger.warning(f"update_computer failed: {resp.status_code} - {resp.text}")
+                logger.warning(
+                    f"update_computer failed: {resp.status_code} - {resp.text}"
+                )
         except requests.RequestException as e:
             logger.error(f"update_computer request error: {e}")
 
@@ -462,7 +454,7 @@ class WAALiveAdapter(BenchmarkAdapter):
                     requests.post(
                         f"{self.config.server_url}/setup/launch",
                         json={"app": app},
-                        timeout=30.0
+                        timeout=30.0,
                     )
                     logger.info(f"Launched app: {app}")
                 except requests.RequestException as e:
@@ -475,7 +467,7 @@ class WAALiveAdapter(BenchmarkAdapter):
                         requests.post(
                             f"{self.config.server_url}/execute_windows",
                             json={"command": cmd, "shell": "powershell"},
-                            timeout=60.0
+                            timeout=60.0,
                         )
                         logger.info(f"Ran setup command: {cmd[:50]}...")
                     except requests.RequestException as e:
@@ -547,7 +539,9 @@ class WAALiveAdapter(BenchmarkAdapter):
         logger.warning(f"Unknown action type: {action.type}")
         return None
 
-    def _translate_click_action(self, action: BenchmarkAction, click_method: str) -> str:
+    def _translate_click_action(
+        self, action: BenchmarkAction, click_method: str
+    ) -> str:
         """Translate click-type action to element-based command.
 
         Args:
@@ -563,7 +557,9 @@ class WAALiveAdapter(BenchmarkAdapter):
             if elem_id in self._current_rects:
                 return f"computer.mouse.move_id('{elem_id}'); computer.mouse.{click_method}()"
             else:
-                logger.warning(f"Element ID '{elem_id}' not found in rects, falling back to coordinates")
+                logger.warning(
+                    f"Element ID '{elem_id}' not found in rects, falling back to coordinates"
+                )
 
         # Fallback: use coordinates if provided (less precise)
         x = action.x if action.x is not None else 0
@@ -600,9 +596,18 @@ class WAALiveAdapter(BenchmarkAdapter):
             "End": "end",
             "PageUp": "pageup",
             "PageDown": "pagedown",
-            "F1": "f1", "F2": "f2", "F3": "f3", "F4": "f4",
-            "F5": "f5", "F6": "f6", "F7": "f7", "F8": "f8",
-            "F9": "f9", "F10": "f10", "F11": "f11", "F12": "f12",
+            "F1": "f1",
+            "F2": "f2",
+            "F3": "f3",
+            "F4": "f4",
+            "F5": "f5",
+            "F6": "f6",
+            "F7": "f7",
+            "F8": "f8",
+            "F9": "f9",
+            "F10": "f10",
+            "F11": "f11",
+            "F12": "f12",
         }
         key = key_map.get(key, key.lower())
 

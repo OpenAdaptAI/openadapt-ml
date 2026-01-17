@@ -108,9 +108,10 @@ class TrainingConfig:
 @dataclass
 class TrainingState:
     """Tracks training progress for visualization."""
+
     # Job identification
     job_id: str = field(default_factory=lambda: time.strftime("%Y%m%d_%H%M%S"))
-    hostname: str = field(default_factory=lambda: __import__('socket').gethostname())
+    hostname: str = field(default_factory=lambda: __import__("socket").gethostname())
     capture_path: str = ""
     config_path: str = ""
     goal: str = ""  # Task goal/description for the training run
@@ -142,7 +143,9 @@ class TrainingState:
     setup_status: str = ""  # e.g. "booting", "installing", "training", "complete"
     setup_logs: List[str] = field(default_factory=list)  # Setup progress messages
     # Termination tracking
-    termination_status: str = ""  # e.g. "auto_low_loss", "auto_complete", "user_stop", "running"
+    termination_status: str = (
+        ""  # e.g. "auto_low_loss", "auto_complete", "user_stop", "running"
+    )
     termination_message: str = ""  # Human-readable termination reason
 
     def log_step(self, epoch: int, step: int, loss: float, lr: float = 0.0) -> None:
@@ -151,33 +154,46 @@ class TrainingState:
         self.step = step
         self.loss = loss
         self.learning_rate = lr
-        self.losses.append({
-            "epoch": epoch,
-            "step": step,
-            "loss": loss,
-            "lr": lr,
-            "time": time.time() - self.start_time,
-        })
+        self.losses.append(
+            {
+                "epoch": epoch,
+                "step": step,
+                "loss": loss,
+                "lr": lr,
+                "time": time.time() - self.start_time,
+            }
+        )
 
-    def log_evaluation(self, epoch: int, sample_idx: int, image_path: str,
-                       human_action: Dict, predicted_action: Dict) -> None:
+    def log_evaluation(
+        self,
+        epoch: int,
+        sample_idx: int,
+        image_path: str,
+        human_action: Dict,
+        predicted_action: Dict,
+    ) -> None:
         """Log an evaluation sample."""
         # Calculate distance for click actions
         distance = 0.0
-        if human_action.get("type") == "click" and predicted_action.get("type") == "click":
+        if (
+            human_action.get("type") == "click"
+            and predicted_action.get("type") == "click"
+        ):
             hx, hy = human_action.get("x", 0), human_action.get("y", 0)
             px, py = predicted_action.get("x", 0), predicted_action.get("y", 0)
             distance = ((hx - px) ** 2 + (hy - py) ** 2) ** 0.5
 
-        self.evaluations.append({
-            "epoch": epoch,
-            "sample_idx": sample_idx,
-            "image_path": image_path,
-            "human_action": human_action,
-            "predicted_action": predicted_action,
-            "distance": distance,
-            "correct": distance < 50,  # Within 50 pixels is "correct"
-        })
+        self.evaluations.append(
+            {
+                "epoch": epoch,
+                "sample_idx": sample_idx,
+                "image_path": image_path,
+                "human_action": human_action,
+                "predicted_action": predicted_action,
+                "distance": distance,
+                "correct": distance < 50,  # Within 50 pixels is "correct"
+            }
+        )
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert state to serializable dict."""
@@ -195,7 +211,9 @@ class TrainingState:
             "load_in_4bit": self.load_in_4bit,
             "instance_type": self.instance_type,
             "instance_ip": self.instance_ip,
-            "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self.start_time)),
+            "started_at": time.strftime(
+                "%Y-%m-%dT%H:%M:%SZ", time.gmtime(self.start_time)
+            ),
             # Cloud provider info
             "cloud_provider": self.cloud_provider,
             "cloud_dashboard_url": self.cloud_dashboard_url,
@@ -316,6 +334,7 @@ class TrainingLogger:
     def _save_config_snapshot(self) -> None:
         """Save training config snapshot to JSON."""
         from dataclasses import asdict
+
         config_file = self.output_dir / "config.json"
         config_dict = asdict(self.config)
         with open(config_file, "w") as f:
@@ -333,32 +352,45 @@ class TrainingLogger:
         dashboard_path.write_text(html)
 
 
-def _generate_termination_status_html(state: TrainingState, is_training_complete: bool) -> str:
+def _generate_termination_status_html(
+    state: TrainingState, is_training_complete: bool
+) -> str:
     """Generate HTML for termination status section."""
     # Check if we have termination info
     if state.termination_status:
         # Map termination status to colors and icons
         status_styles = {
-            "auto_complete": {"color": "#22c55e", "icon": "✓", "label": "Training Complete"},
-            "auto_low_loss": {"color": "#22c55e", "icon": "✓", "label": "Auto-Stopped (Low Loss)"},
+            "auto_complete": {
+                "color": "#22c55e",
+                "icon": "✓",
+                "label": "Training Complete",
+            },
+            "auto_low_loss": {
+                "color": "#22c55e",
+                "icon": "✓",
+                "label": "Auto-Stopped (Low Loss)",
+            },
             "user_stop": {"color": "#f59e0b", "icon": "■", "label": "Stopped by User"},
         }
-        style = status_styles.get(state.termination_status, {"color": "#22c55e", "icon": "✓", "label": "Complete"})
+        style = status_styles.get(
+            state.termination_status,
+            {"color": "#22c55e", "icon": "✓", "label": "Complete"},
+        )
 
-        return f'''<div style="display: flex; flex-direction: column; gap: 8px;">
-            <div style="display: flex; align-items: center; gap: 8px; color: {style['color']};">
-                <span style="font-size: 1.2rem;">{style['icon']}</span>
-                <span style="font-weight: 600;">{style['label']}</span>
+        return f"""<div style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px; color: {style["color"]};">
+                <span style="font-size: 1.2rem;">{style["icon"]}</span>
+                <span style="font-weight: 600;">{style["label"]}</span>
             </div>
-            {f'<div style="font-size: 0.85rem; color: var(--text-muted); margin-left: 28px;">{state.termination_message}</div>' if state.termination_message else ''}
-        </div>'''
+            {f'<div style="font-size: 0.85rem; color: var(--text-muted); margin-left: 28px;">{state.termination_message}</div>' if state.termination_message else ""}
+        </div>"""
     elif is_training_complete:
-        return '''<div style="display: flex; align-items: center; gap: 8px; color: #22c55e;">
+        return """<div style="display: flex; align-items: center; gap: 8px; color: #22c55e;">
             <span style="font-size: 1.2rem;">✓</span>
             <span style="font-weight: 600;">Training Complete</span>
-        </div>'''
+        </div>"""
     else:
-        return '''<button id="stop-training-btn" onclick="stopTraining()" style="
+        return """<button id="stop-training-btn" onclick="stopTraining()" style="
             background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
             color: white;
             border: none;
@@ -374,14 +406,16 @@ def _generate_termination_status_html(state: TrainingState, is_training_complete
         ">
             <span style="font-size: 1.1rem;">■</span> Stop Training
         </button>
-        <p id="stop-status" style="margin-top: 8px; font-size: 0.75rem; color: var(--text-muted);"></p>'''
+        <p id="stop-status" style="margin-top: 8px; font-size: 0.75rem; color: var(--text-muted);"></p>"""
 
 
 def generate_training_dashboard(state: TrainingState, config: TrainingConfig) -> str:
     """Generate an HTML dashboard for training visualization."""
     losses_json = json.dumps(state.losses)
     # Use stored elapsed_time if available (historical data), otherwise calculate
-    elapsed = state.elapsed_time if state.elapsed_time > 0 else time.time() - state.start_time
+    elapsed = (
+        state.elapsed_time if state.elapsed_time > 0 else time.time() - state.start_time
+    )
     elapsed_str = f"{int(elapsed // 60)}m {int(elapsed % 60)}s"
 
     # Calculate stats
@@ -389,11 +423,13 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
         min_loss = min(loss_entry["loss"] for loss_entry in state.losses)
         sum(loss_entry["loss"] for loss_entry in state.losses) / len(state.losses)
         recent_losses = state.losses[-10:] if len(state.losses) >= 10 else state.losses
-        recent_avg = sum(loss_entry["loss"] for loss_entry in recent_losses) / len(recent_losses)
+        recent_avg = sum(loss_entry["loss"] for loss_entry in recent_losses) / len(
+            recent_losses
+        )
         # Calculate step times
         step_times = []
         for i in range(1, len(state.losses)):
-            step_times.append(state.losses[i]["time"] - state.losses[i-1]["time"])
+            step_times.append(state.losses[i]["time"] - state.losses[i - 1]["time"])
         avg_step_time = sum(step_times) / len(step_times) if step_times else 0
         # Loss by epoch
         epoch_losses: dict = {}
@@ -402,18 +438,28 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
             if ep not in epoch_losses:
                 epoch_losses[ep] = []
             epoch_losses[ep].append(loss_entry["loss"])
-        epoch_avg = {ep: sum(losses)/len(losses) for ep, losses in epoch_losses.items()}
+        epoch_avg = {
+            ep: sum(losses) / len(losses) for ep, losses in epoch_losses.items()
+        }
         # Estimate ETA
         # Steps per epoch = steps in completed epochs / completed epochs
         completed_epochs = state.epoch
-        steps_in_completed = sum(1 for loss_entry in state.losses if loss_entry["epoch"] < completed_epochs)
+        steps_in_completed = sum(
+            1 for loss_entry in state.losses if loss_entry["epoch"] < completed_epochs
+        )
         if completed_epochs > 0 and steps_in_completed > 0:
             steps_per_epoch = steps_in_completed / completed_epochs
         else:
             # Estimate from current epoch progress
-            steps_per_epoch = len(state.losses) / (state.epoch + 1) if state.epoch >= 0 else len(state.losses)
+            steps_per_epoch = (
+                len(state.losses) / (state.epoch + 1)
+                if state.epoch >= 0
+                else len(state.losses)
+            )
 
-        total_epochs = state.total_epochs if state.total_epochs > 0 else config.num_train_epochs
+        total_epochs = (
+            state.total_epochs if state.total_epochs > 0 else config.num_train_epochs
+        )
         total_steps_estimate = steps_per_epoch * total_epochs
         remaining_steps = max(0, total_steps_estimate - len(state.losses))
         eta_seconds = remaining_steps * avg_step_time if avg_step_time > 0 else 0
@@ -453,7 +499,9 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
                         "time": step.step_index,
                         "image_path": step.observation.screenshot_path,
                         "human_action": {
-                            "type": step.action.type.value if isinstance(step.action.type, ActionType) else step.action.type,
+                            "type": step.action.type.value
+                            if isinstance(step.action.type, ActionType)
+                            else step.action.type,
                             "x": action_x,
                             "y": action_y,
                             "text": step.action.text,
@@ -464,14 +512,20 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
                     comparison_data.append(step_data)
 
                 # Generate comparison HTML
-                output_dir = Path(config.output_dir) if hasattr(config, 'output_dir') else Path("training_output")
+                output_dir = (
+                    Path(config.output_dir)
+                    if hasattr(config, "output_dir")
+                    else Path("training_output")
+                )
                 output_dir.mkdir(parents=True, exist_ok=True)
                 comparison_output = output_dir / "comparison_preview.html"
-                generate_comparison_html(capture_path, episode, comparison_data, comparison_output)
+                generate_comparison_html(
+                    capture_path, episode, comparison_data, comparison_output
+                )
         except Exception:
             pass  # Fail silently if comparison viewer can't be generated
 
-    html = f'''<!DOCTYPE html>
+    html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -1130,10 +1184,10 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
     <div class="container">
         <header>
             <div>
-                <h1>Training Dashboard{f' <a href="{state.cloud_dashboard_url}" target="_blank" class="cloud-link cloud-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>{state.cloud_provider.title()} Cloud</a>' if state.cloud_dashboard_url else ''}</h1>
+                <h1>Training Dashboard{f' <a href="{state.cloud_dashboard_url}" target="_blank" class="cloud-link cloud-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>{state.cloud_provider.title()} Cloud</a>' if state.cloud_dashboard_url else ""}</h1>
                 <div class="job-info" id="job-info">
-                    <span class="job-host">{state.hostname or 'stub-local'} @ {state.instance_ip or '127.0.0.1'}</span>
-                    {f'<span class="job-config">{state.instance_type}</span>' if state.instance_type else ''}
+                    <span class="job-host">{state.hostname or "stub-local"} @ {state.instance_ip or "127.0.0.1"}</span>
+                    {f'<span class="job-config">{state.instance_type}</span>' if state.instance_type else ""}
                 </div>
             </div>
             <div class="status" id="status">
@@ -1142,13 +1196,13 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
             </div>
         </header>
 
-        <div class="setup-panel{' hidden' if not state.setup_logs else ''}" id="setup-panel">
+        <div class="setup-panel{" hidden" if not state.setup_logs else ""}" id="setup-panel">
             <div class="setup-header">
                 <h2>Setup Progress</h2>
-                <span class="setup-status-badge {state.setup_status}" id="setup-status-badge">{state.setup_status or 'initializing'}</span>
+                <span class="setup-status-badge {state.setup_status}" id="setup-status-badge">{state.setup_status or "initializing"}</span>
             </div>
             <div class="setup-logs" id="setup-logs">
-                {''.join(f'<div class="setup-log-line{" current" if i == len(state.setup_logs) - 1 else ""}">{log}</div>' for i, log in enumerate(state.setup_logs)) if state.setup_logs else '<div class="setup-log-line">Waiting for setup logs...</div>'}
+                {"".join(f'<div class="setup-log-line{" current" if i == len(state.setup_logs) - 1 else ""}">{log}</div>' for i, log in enumerate(state.setup_logs)) if state.setup_logs else '<div class="setup-log-line">Waiting for setup logs...</div>'}
             </div>
         </div>
 
@@ -1158,23 +1212,23 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
             <div class="config-grid">
                 <div class="config-item">
                     <span class="config-label">Model</span>
-                    <span class="config-value model" id="config-model">{state.model_name or 'Not specified'}</span>
+                    <span class="config-value model" id="config-model">{state.model_name or "Not specified"}</span>
                 </div>
                 <div class="config-item">
                     <span class="config-label">Goal</span>
-                    <span class="config-value goal" id="config-goal">{state.goal or 'Not specified'}</span>
+                    <span class="config-value goal" id="config-goal">{state.goal or "Not specified"}</span>
                 </div>
                 <div class="config-item">
                     <span class="config-label">LoRA</span>
-                    <span class="config-value" id="config-lora">{f'r={state.lora_r}, α={state.lora_alpha}' if state.lora_r else 'Not specified'}</span>
+                    <span class="config-value" id="config-lora">{f"r={state.lora_r}, α={state.lora_alpha}" if state.lora_r else "Not specified"}</span>
                 </div>
                 <div class="config-item">
                     <span class="config-label">Quantization</span>
-                    <span class="config-value" id="config-quant">{'4-bit' if state.load_in_4bit else 'None'}</span>
+                    <span class="config-value" id="config-quant">{"4-bit" if state.load_in_4bit else "None"}</span>
                 </div>
                 <div class="config-item">
                     <span class="config-label">Config</span>
-                    <span class="config-value" id="config-path">{state.config_path or 'Not specified'}</span>
+                    <span class="config-value" id="config-path">{state.config_path or "Not specified"}</span>
                 </div>
             </div>
         </div>
@@ -1521,7 +1575,7 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
         let etaSeconds = {eta_seconds};
         let avgStepTime = {avg_step_time};
         let remainingSteps = {remaining_steps};
-        let isTrainingComplete = {'true' if is_training_complete else 'false'};
+        let isTrainingComplete = {"true" if is_training_complete else "false"};
 
         // Auto-stop when loss <= threshold (INVARIANT: training should stop when loss <= 1.0)
         const AUTO_STOP_LOSS_THRESHOLD = 1.0;
@@ -2020,7 +2074,7 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
         setInterval(updateStatusIndicator, 1000);  // Update LIVE/STALE indicator every second
     </script>
 </body>
-</html>'''
+</html>"""
     return html
 
 
@@ -2058,6 +2112,7 @@ def regenerate_all_dashboards(output_dir: str | Path) -> list[Path]:
     except Exception as e:
         print(f"Warning: Failed to generate unified viewer: {e}")
         import traceback
+
         traceback.print_exc()
 
     return regenerated
@@ -2100,7 +2155,9 @@ def regenerate_local_dashboard(
     state = TrainingState(
         job_id=data.get("job_id", "unknown"),
         hostname=data.get("hostname", ""),
-        capture_path=str(capture_path) if capture_path else data.get("capture_path", ""),
+        capture_path=str(capture_path)
+        if capture_path
+        else data.get("capture_path", ""),
         config_path=data.get("config_path", ""),
         epoch=data.get("epoch", 0),
         step=data.get("step", 0),
@@ -2143,30 +2200,33 @@ def regenerate_local_dashboard(
     if training_status == "COMPLETED":
         html = html.replace(
             '<div class="status" id="status">',
-            '<div class="status complete" id="status">'
+            '<div class="status complete" id="status">',
         )
         html = html.replace(
             '<span id="status-text">Training in progress</span>',
-            '<span id="status-text">COMPLETED</span>'
+            '<span id="status-text">COMPLETED</span>',
         )
     elif training_status == "STOPPED":
         html = html.replace(
-            '<div class="status" id="status">',
-            '<div class="status stale" id="status">'
+            '<div class="status" id="status">', '<div class="status stale" id="status">'
         )
         html = html.replace(
             '<span id="status-text">Training in progress</span>',
-            '<span id="status-text">STOPPED (Epoch {}/{})'.format(current_epoch + 1, total_epochs) + '</span>'
+            '<span id="status-text">STOPPED (Epoch {}/{})'.format(
+                current_epoch + 1, total_epochs
+            )
+            + "</span>",
         )
 
     # Fix ETA display for completed/stopped training
     import re
+
     if training_status in ("COMPLETED", "STOPPED"):
         # Replace "calculating..." with appropriate status
         html = re.sub(
             r'(<div class="stat-value" id="stat-eta">)[^<]*(</div>)',
-            r'\1—\2' if training_status == "STOPPED" else r'\1complete\2',
-            html
+            r"\1—\2" if training_status == "STOPPED" else r"\1complete\2",
+            html,
         )
 
     # Replace dynamic nav with static unified header
@@ -2177,20 +2237,20 @@ def regenerate_local_dashboard(
     # This is critical for file:// protocol where fetch() doesn't work
     html = html.replace(
         "setInterval(fetchAndUpdate, 3000);",
-        "// fetchAndUpdate disabled for static dashboard"
+        "// fetchAndUpdate disabled for static dashboard",
     )
     html = html.replace(
         "setInterval(updateElapsedDisplay, 1000);",
-        "// updateElapsedDisplay disabled for static dashboard"
+        "// updateElapsedDisplay disabled for static dashboard",
     )
     html = html.replace(
         "setInterval(updateStatusIndicator, 1000);",
-        "// updateStatusIndicator disabled for static dashboard"
+        "// updateStatusIndicator disabled for static dashboard",
     )
     # CRITICAL: Disable discoverDashboards() - it overwrites static nav on file:// protocol
     html = html.replace(
         "discoverDashboards();",
-        "// discoverDashboards disabled - using static nav for file:// protocol"
+        "// discoverDashboards disabled - using static nav for file:// protocol",
     )
 
     # Write output

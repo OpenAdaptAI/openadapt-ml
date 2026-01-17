@@ -199,7 +199,9 @@ def main(
                 "mean_episode_step_score": metrics.mean_episode_step_score,
                 "weak_episode_success_rate": metrics.weak_episode_success_rate,
                 "state_success_rate": metrics.state_success_rate,
-                "element_accuracy": metrics.element_accuracy if hasattr(metrics, 'element_accuracy') else None,
+                "element_accuracy": metrics.element_accuracy
+                if hasattr(metrics, "element_accuracy")
+                else None,
             },
         }
         out_path = Path(output_json)
@@ -210,8 +212,12 @@ def main(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Evaluate a policy on synthetic episodes.")
-    parser.add_argument("--config", type=str, required=True, help="Path to YAML config file.")
+    parser = argparse.ArgumentParser(
+        description="Evaluate a policy on synthetic episodes."
+    )
+    parser.add_argument(
+        "--config", type=str, required=True, help="Path to YAML config file."
+    )
     parser.add_argument(
         "--backend",
         type=str,
@@ -248,19 +254,19 @@ if __name__ == "__main__":
         choices=["coord", "som"],
         default="coord",
         help="DSL mode: 'coord' for coordinate-based (CLICK(x=..., y=...)), "
-             "'som' for Set-of-Marks index-based (CLICK([1])). Default: coord.",
+        "'som' for Set-of-Marks index-based (CLICK([1])). Default: coord.",
     )
     parser.add_argument(
         "--overfit",
         action="store_true",
         help="Evaluate on training data to check memorization/overfitting. "
-             "If not set, generates fresh data to test generalization.",
+        "If not set, generates fresh data to test generalization.",
     )
     parser.add_argument(
         "--no-jitter",
         action="store_true",
         help="Disable jitter for deterministic UI layouts. "
-             "Useful for testing memorization of fixed layouts.",
+        "Useful for testing memorization of fixed layouts.",
     )
     parser.add_argument(
         "--scenario",
@@ -268,7 +274,7 @@ if __name__ == "__main__":
         choices=["login", "registration"],
         default=None,
         help="Scenario type: 'login' (6 steps, 3 elements) or 'registration' (12 steps, 6 elements). "
-             "Overrides config if provided.",
+        "Overrides config if provided.",
     )
     args = parser.parse_args()
 

@@ -154,7 +154,9 @@ class BoundingBox(BaseModel):
 class UIElement(BaseModel):
     """UI element information from accessibility tree or DOM."""
 
-    role: Optional[str] = Field(None, description="Element role (button, textbox, etc.)")
+    role: Optional[str] = Field(
+        None, description="Element role (button, textbox, etc.)"
+    )
     name: Optional[str] = Field(None, description="Element accessible name")
     value: Optional[str] = Field(None, description="Element value (for inputs)")
     bounds: Optional[BoundingBox] = Field(None, description="Element bounding box")
@@ -199,9 +201,15 @@ class Action(BaseModel):
     # Additional parameters
     url: Optional[str] = Field(None, description="URL for goto action")
     app_name: Optional[str] = Field(None, description="Application name for open/close")
-    duration: Optional[float] = Field(None, description="Duration in seconds (for wait)")
-    monitor_id: Optional[int] = Field(None, description="Monitor ID for select_monitor action")
-    window_title: Optional[str] = Field(None, description="Window title for window_focus action")
+    duration: Optional[float] = Field(
+        None, description="Duration in seconds (for wait)"
+    )
+    monitor_id: Optional[int] = Field(
+        None, description="Monitor ID for select_monitor action"
+    )
+    window_title: Optional[str] = Field(
+        None, description="Window title for window_focus action"
+    )
 
     # Normalized coordinates (0.0-1.0) - alternative to pixel coordinates
     # Useful for resolution-independent recordings
@@ -223,7 +231,11 @@ class Action(BaseModel):
     @model_validator(mode="after")
     def validate_action_params(self) -> "Action":
         """Validate that required parameters are present for action type."""
-        if self.type in {ActionType.CLICK, ActionType.DOUBLE_CLICK, ActionType.RIGHT_CLICK}:
+        if self.type in {
+            ActionType.CLICK,
+            ActionType.DOUBLE_CLICK,
+            ActionType.RIGHT_CLICK,
+        }:
             if self.coordinates is None and self.element is None:
                 # Allow missing coordinates - can be inferred from context
                 pass
@@ -259,7 +271,9 @@ class Observation(BaseModel):
 
     # Window/screen info
     window_title: Optional[str] = Field(None, description="Active window title")
-    app_name: Optional[str] = Field(None, description="Application name (e.g., 'Chrome', 'System Settings')")
+    app_name: Optional[str] = Field(
+        None, description="Application name (e.g., 'Chrome', 'System Settings')"
+    )
     url: Optional[str] = Field(None, description="Current URL (for web apps)")
     screen_size: Optional[tuple[int, int]] = Field(
         None, description="Screen dimensions (width, height)"
@@ -293,7 +307,9 @@ class Step(BaseModel):
 
     # Outcome
     reward: Optional[float] = Field(None, description="Reward signal (if available)")
-    done: Optional[bool] = Field(None, description="Whether episode ended after this step")
+    done: Optional[bool] = Field(
+        None, description="Whether episode ended after this step"
+    )
 
     # Timing
     timestamp: Optional[float] = Field(None, description="Unix timestamp of action")
@@ -311,8 +327,7 @@ class Episode(BaseModel):
 
     # Schema metadata
     schema_version: str = Field(
-        default=SCHEMA_VERSION,
-        description="Schema version for compatibility checking"
+        default=SCHEMA_VERSION, description="Schema version for compatibility checking"
     )
 
     # Episode identification
@@ -329,21 +344,20 @@ class Episode(BaseModel):
     steps: list[Step] = Field(..., description="Sequence of steps in the episode")
 
     # Outcome
-    success: Optional[bool] = Field(None, description="Whether task was completed successfully")
+    success: Optional[bool] = Field(
+        None, description="Whether task was completed successfully"
+    )
     final_reward: Optional[float] = Field(None, description="Final reward/score")
 
     # Provenance
     source: Optional[BenchmarkSource] = Field(
         None, description="Source benchmark/dataset"
     )
-    source_file: Optional[str] = Field(
-        None, description="Original source file path"
-    )
+    source_file: Optional[str] = Field(None, description="Original source file path")
 
     # Metadata
     created_at: Optional[datetime] = Field(
-        default_factory=datetime.utcnow,
-        description="When episode was created/recorded"
+        default_factory=datetime.utcnow, description="When episode was created/recorded"
     )
     agent_model: Optional[str] = Field(
         None, description="Model that generated this episode (e.g., 'gpt-4o')"
@@ -351,9 +365,7 @@ class Episode(BaseModel):
     environment: Optional[str] = Field(
         None, description="Environment info (OS, browser, etc.)"
     )
-    tags: Optional[list[str]] = Field(
-        None, description="Tags for categorization"
-    )
+    tags: Optional[list[str]] = Field(None, description="Tags for categorization")
 
     # Extension point for benchmark-specific data
     metadata: Optional[dict[str, Any]] = Field(
@@ -388,6 +400,7 @@ class Episode(BaseModel):
 # ============================================================================
 # Utility Functions
 # ============================================================================
+
 
 def validate_episode(data: dict[str, Any]) -> tuple[bool, Optional[str]]:
     """Validate episode data against schema.

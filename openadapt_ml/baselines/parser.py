@@ -72,9 +72,7 @@ class ElementRegistry:
     ) -> None:
         """Add an element to the registry."""
         eid = int(element_id) if isinstance(element_id, str) else element_id
-        self.elements[eid] = UIElement(
-            element_id=eid, role=role, name=name, bbox=bbox
-        )
+        self.elements[eid] = UIElement(element_id=eid, role=role, name=name, bbox=bbox)
 
     def get_element(self, element_id: int) -> UIElement | None:
         """Get element by ID."""
@@ -137,7 +135,9 @@ class ElementRegistry:
             node_id = node.get("id", node.get("node_id", node.get("element_id")))
             if node_id is not None:
                 try:
-                    eid = int(str(node_id).replace("e", "").replace("[", "").replace("]", ""))
+                    eid = int(
+                        str(node_id).replace("e", "").replace("[", "").replace("]", "")
+                    )
                     bbox = node.get("bbox", node.get("bounds"))
                     if bbox and len(bbox) >= 4:
                         registry.add_element(
@@ -277,7 +277,9 @@ class ParsedAction:
                 py = int(self.y * screen_height)
                 return f"pyautogui.click({px}, {py})"
             elif self.element_id is not None:
-                return f"# CLICK element {self.element_id} (needs coordinate conversion)"
+                return (
+                    f"# CLICK element {self.element_id} (needs coordinate conversion)"
+                )
         elif self.action_type == "type":
             text = self.text or ""
             return f"pyautogui.write('{text}')"
@@ -444,10 +446,10 @@ class UnifiedResponseParser:
         """Try to extract and parse JSON from response."""
         # Try to find JSON object in response
         json_patterns = [
-            r'```json\s*(\{[^`]*\})\s*```',  # Markdown code block
-            r'```\s*(\{[^`]*\})\s*```',       # Plain code block
-            r'(\{[^{}]*\})',                  # Simple JSON object
-            r'(\{[^{}]*\{[^{}]*\}[^{}]*\})',  # Nested JSON (max 1 level)
+            r"```json\s*(\{[^`]*\})\s*```",  # Markdown code block
+            r"```\s*(\{[^`]*\})\s*```",  # Plain code block
+            r"(\{[^{}]*\})",  # Simple JSON object
+            r"(\{[^{}]*\{[^{}]*\}[^{}]*\})",  # Nested JSON (max 1 level)
         ]
 
         for pattern in json_patterns:
@@ -621,7 +623,7 @@ class UnifiedResponseParser:
         """Try to parse PyAutoGUI-style code."""
         # pyautogui.click(x, y)
         click_match = re.search(
-            r'pyautogui\.click\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)',
+            r"pyautogui\.click\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)",
             response,
             re.IGNORECASE,
         )
@@ -633,7 +635,7 @@ class UnifiedResponseParser:
 
         # pyautogui.doubleClick(x, y)
         dclick_match = re.search(
-            r'pyautogui\.doubleClick\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)',
+            r"pyautogui\.doubleClick\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)",
             response,
             re.IGNORECASE,
         )
@@ -668,7 +670,7 @@ class UnifiedResponseParser:
 
         # pyautogui.hotkey('key1', 'key2')
         hotkey_match = re.search(
-            r'pyautogui\.hotkey\s*\(\s*(.+?)\s*\)',
+            r"pyautogui\.hotkey\s*\(\s*(.+?)\s*\)",
             response,
             re.IGNORECASE,
         )
@@ -687,7 +689,7 @@ class UnifiedResponseParser:
 
         # pyautogui.scroll(amount)
         scroll_match = re.search(
-            r'pyautogui\.scroll\s*\(\s*(-?\d+)\s*\)',
+            r"pyautogui\.scroll\s*\(\s*(-?\d+)\s*\)",
             response,
             re.IGNORECASE,
         )
@@ -700,13 +702,15 @@ class UnifiedResponseParser:
                 amount=abs(clicks),
             )
 
-        return ParsedAction(action_type="unknown", parse_error="No PyAutoGUI pattern matched")
+        return ParsedAction(
+            action_type="unknown", parse_error="No PyAutoGUI pattern matched"
+        )
 
     def _try_regex_parse(self, response: str) -> ParsedAction:
         """Try regex patterns for function-style actions."""
         # CLICK(x, y) - normalized coordinates
         click_norm = re.search(
-            r'CLICK\s*\(\s*(0?\.\d+)\s*,\s*(0?\.\d+)\s*\)',
+            r"CLICK\s*\(\s*(0?\.\d+)\s*,\s*(0?\.\d+)\s*\)",
             response,
             re.IGNORECASE,
         )
@@ -719,7 +723,7 @@ class UnifiedResponseParser:
 
         # CLICK(x, y) - larger numbers (pixels)
         click_pixel = re.search(
-            r'CLICK\s*\(\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*\)',
+            r"CLICK\s*\(\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*\)",
             response,
             re.IGNORECASE,
         )
@@ -731,7 +735,7 @@ class UnifiedResponseParser:
 
         # CLICK([id]) - element ID
         click_element = re.search(
-            r'CLICK\s*\(\s*\[\s*(\d+)\s*\]\s*\)',
+            r"CLICK\s*\(\s*\[\s*(\d+)\s*\]\s*\)",
             response,
             re.IGNORECASE,
         )
@@ -743,7 +747,7 @@ class UnifiedResponseParser:
 
         # CLICK(id) without brackets
         click_id = re.search(
-            r'CLICK\s*\(\s*(\d+)\s*\)',
+            r"CLICK\s*\(\s*(\d+)\s*\)",
             response,
             re.IGNORECASE,
         )
@@ -764,14 +768,14 @@ class UnifiedResponseParser:
 
         # KEY(key) or KEY(mod+key)
         key_match = re.search(
-            r'KEY\s*\(\s*([a-zA-Z0-9_+]+)\s*\)',
+            r"KEY\s*\(\s*([a-zA-Z0-9_+]+)\s*\)",
             response,
             re.IGNORECASE,
         )
         if key_match:
             key_str = key_match.group(1).lower()
-            if '+' in key_str:
-                parts = key_str.split('+')
+            if "+" in key_str:
+                parts = key_str.split("+")
                 modifiers = parts[:-1]
                 key = parts[-1]
                 return ParsedAction(action_type="key", key=key, modifiers=modifiers)
@@ -779,35 +783,50 @@ class UnifiedResponseParser:
 
         # SCROLL(direction) or SCROLL(direction, amount)
         scroll_match = re.search(
-            r'SCROLL\s*\(\s*([a-zA-Z]+)(?:\s*,\s*(\d+))?\s*\)',
+            r"SCROLL\s*\(\s*([a-zA-Z]+)(?:\s*,\s*(\d+))?\s*\)",
             response,
             re.IGNORECASE,
         )
         if scroll_match:
             direction = scroll_match.group(1).lower()
             amount = int(scroll_match.group(2)) if scroll_match.group(2) else 3
-            return ParsedAction(action_type="scroll", direction=direction, amount=amount)
+            return ParsedAction(
+                action_type="scroll", direction=direction, amount=amount
+            )
 
-        return ParsedAction(action_type="unknown", parse_error="No regex pattern matched")
+        return ParsedAction(
+            action_type="unknown", parse_error="No regex pattern matched"
+        )
 
     def _try_keyword_parse(self, response: str) -> ParsedAction:
         """Try special keywords."""
         response_upper = response.upper().strip()
 
         # DONE() or just DONE
-        if re.search(r'\bDONE\s*\(\s*\)\s*$', response, re.IGNORECASE) or response_upper == "DONE":
+        if (
+            re.search(r"\bDONE\s*\(\s*\)\s*$", response, re.IGNORECASE)
+            or response_upper == "DONE"
+        ):
             return ParsedAction(action_type="done")
 
         # WAIT() or WAIT
-        if re.search(r'\bWAIT\s*\(\s*\)\s*$', response, re.IGNORECASE) or response_upper == "WAIT":
+        if (
+            re.search(r"\bWAIT\s*\(\s*\)\s*$", response, re.IGNORECASE)
+            or response_upper == "WAIT"
+        ):
             return ParsedAction(action_type="wait")
 
         # FAIL() or FAIL
-        if re.search(r'\bFAIL\s*\(\s*\)\s*$', response, re.IGNORECASE) or response_upper == "FAIL":
+        if (
+            re.search(r"\bFAIL\s*\(\s*\)\s*$", response, re.IGNORECASE)
+            or response_upper == "FAIL"
+        ):
             return ParsedAction(action_type="fail")
 
         # Look for "task is complete" or similar phrases
-        if re.search(r'task\s+(?:is\s+)?(?:complete|done|finished)', response, re.IGNORECASE):
+        if re.search(
+            r"task\s+(?:is\s+)?(?:complete|done|finished)", response, re.IGNORECASE
+        ):
             return ParsedAction(
                 action_type="done",
                 confidence=0.7,
@@ -842,7 +861,7 @@ class UnifiedResponseParser:
 
         if isinstance(element_id, str):
             # Extract number from "e17", "[17]", "element_17" etc.
-            match = re.search(r'\d+', element_id)
+            match = re.search(r"\d+", element_id)
             if match:
                 return int(match.group())
 

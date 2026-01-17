@@ -231,7 +231,9 @@ class AzureMLClient:
                 resource_group_name=self.config.resource_group,
                 workspace_name=self.config.workspace_name,
             )
-            logger.info(f"Connected to Azure ML workspace: {self.config.workspace_name}")
+            logger.info(
+                f"Connected to Azure ML workspace: {self.config.workspace_name}"
+            )
         return self._client
 
     def _get_credential(self):
@@ -239,11 +241,13 @@ class AzureMLClient:
         from openadapt_ml.config import settings
 
         # Use service principal if credentials are configured
-        if all([
-            settings.azure_client_id,
-            settings.azure_client_secret,
-            settings.azure_tenant_id,
-        ]):
+        if all(
+            [
+                settings.azure_client_id,
+                settings.azure_client_secret,
+                settings.azure_tenant_id,
+            ]
+        ):
             logger.info("Using service principal authentication")
             return self._ClientSecretCredential(
                 tenant_id=settings.azure_tenant_id,
@@ -299,7 +303,10 @@ class AzureMLClient:
                 f"/providers/Microsoft.ManagedIdentity"
                 f"/userAssignedIdentities/{self.config.managed_identity_name}"
             )
-            compute.identity = {"type": "UserAssigned", "user_assigned_identities": [identity_id]}
+            compute.identity = {
+                "type": "UserAssigned",
+                "user_assigned_identities": [identity_id],
+            }
 
         print(f"      Creating VM: {name}...", end="", flush=True)
         self.client.compute.begin_create_or_update(compute).result()
@@ -379,6 +386,7 @@ class AzureMLClient:
 
         import time
         import uuid
+
         timestamp = int(time.time())
         unique_id = str(uuid.uuid4())[:8]
         job_name = f"waa-{compute_name}-{timestamp}-{unique_id}"
@@ -528,13 +536,17 @@ class AzureWAAOrchestrator:
 
         try:
             # Provision VMs in parallel
-            print(f"[2/4] Provisioning {num_workers} Azure VM(s)... (this takes 3-5 minutes)")
+            print(
+                f"[2/4] Provisioning {num_workers} Azure VM(s)... (this takes 3-5 minutes)"
+            )
             self._provision_workers(workers)
             print("      VM(s) ready")
 
             # Submit jobs to workers
             print("[3/4] Submitting evaluation jobs...")
-            self._submit_worker_jobs(workers, task_batches, agent, max_steps_per_task, timeout_hours)
+            self._submit_worker_jobs(
+                workers, task_batches, agent, max_steps_per_task, timeout_hours
+            )
             print("      Jobs submitted")
 
             # Wait for completion and collect results
