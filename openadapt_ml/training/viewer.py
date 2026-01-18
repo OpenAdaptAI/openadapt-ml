@@ -9,6 +9,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from openadapt_ml.shared_ui import (
+    get_keyboard_shortcuts_css,
+    get_keyboard_shortcuts_js,
+)
 from openadapt_ml.training.shared_ui import (
     get_shared_header_css as _get_shared_header_css,
     generate_shared_header_html as _generate_shared_header_html,
@@ -296,6 +300,10 @@ def _generate_unified_viewer_from_extracted_data(
     shared_header_css = _get_shared_header_css()
     shared_header_html = _generate_shared_header_html("viewer")
 
+    # Get keyboard shortcuts components
+    keyboard_shortcuts_css = get_keyboard_shortcuts_css()
+    keyboard_shortcuts_js = get_keyboard_shortcuts_js()
+
     # Build base HTML from extracted data (standalone, no openadapt-capture dependency)
     base_data_json = json.dumps(base_data)
     predictions_json = json.dumps(predictions_by_checkpoint)
@@ -390,6 +398,50 @@ def _generate_unified_viewer_from_extracted_data(
             margin-bottom: 16px;
             flex-wrap: wrap;
             align-items: center;
+        }}
+        .search-container {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 1;
+            max-width: 400px;
+        }}
+        .search-input {{
+            flex: 1;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            transition: all 0.2s;
+        }}
+        .search-input:focus {{
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px var(--accent-dim);
+        }}
+        .search-input::placeholder {{
+            color: var(--text-muted);
+        }}
+        .search-clear-btn {{
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: all 0.2s;
+        }}
+        .search-clear-btn:hover {{
+            border-color: var(--accent);
+            color: var(--text-primary);
+        }}
+        .search-count {{
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
         }}
         .control-group {{
             display: flex;
@@ -1173,6 +1225,9 @@ def _generate_unified_viewer_from_extracted_data(
         .gallery-grid-maximized .gallery-card .coord-pred {{
             color: #a78bfa;
         }}
+
+        /* Keyboard Shortcuts */
+        {keyboard_shortcuts_css}
     </style>
 </head>
 <body>
@@ -1188,6 +1243,17 @@ def _generate_unified_viewer_from_extracted_data(
             <div class="control-group">
                 <span class="control-label">Checkpoint:</span>
                 <select class="control-select" id="checkpoint-select"></select>
+            </div>
+            <div class="search-container">
+                <input
+                    type="text"
+                    id="search-input"
+                    class="search-input"
+                    placeholder="Search steps... (Ctrl+F / Cmd+F)"
+                    title="Search by step index, action type, or description"
+                />
+                <button class="search-clear-btn" id="search-clear-btn" title="Clear search">Clear</button>
+                <span class="search-count" id="search-count"></span>
             </div>
         </div>
 
@@ -2830,6 +2896,121 @@ def _enhance_comparison_to_unified_viewer(
             window.setupMetricsSummary();
         }}
     }};
+
+    // Search functionality
+    let searchQuery = '';
+    let filteredIndices = [];
+
+    function advancedSearch(items, query, fields = ['action']) {{
+        if (!query || query.trim() === '') {{
+            return items.map((_, i) => i);
+        }}
+
+        // Tokenize query
+        const queryTokens = query
+            .toLowerCase()
+            .replace(/[^a-z0-9\\s]/g, ' ')
+            .replace(/\\s+/g, ' ')
+            .trim()
+            .split(' ')
+            .filter(t => t.length > 0);
+
+        if (queryTokens.length === 0) {{
+            return items.map((_, i) => i);
+        }}
+
+        const results = [];
+
+        items.forEach((item, idx) => {{
+            // Build searchable text
+            const searchParts = [];
+
+            // Add step index
+            searchParts.push(String(idx));
+
+            // Add action type and details
+            if (item.human_action) {{
+                const action = item.human_action;
+                if (action.type) searchParts.push(action.type);
+                if (action.text) searchParts.push(action.text);
+                if (action.key) searchParts.push(action.key);
+            }}
+
+            const searchText = searchParts
+                .join(' ')
+                .toLowerCase()
+                .replace(/[^a-z0-9\\s]/g, ' ')
+                .replace(/\\s+/g, ' ');
+
+            // All query tokens must match
+            const matches = queryTokens.every(token => searchText.includes(token));
+            if (matches) {{
+                results.push(idx);
+            }}
+        }});
+
+        return results;
+    }}
+
+    function updateSearchResults() {{
+        searchQuery = document.getElementById('search-input').value;
+        filteredIndices = advancedSearch(baseData, searchQuery, ['action']);
+
+        // Update count
+        const countEl = document.getElementById('search-count');
+        if (searchQuery) {{
+            countEl.textContent = `${{filteredIndices.length}} of ${{baseData.length}} steps`;
+        }} else {{
+            countEl.textContent = '';
+        }}
+
+        // Update step list visibility
+        updateStepListVisibility();
+
+        // If no results, show message
+        if (searchQuery && filteredIndices.length === 0) {{
+            countEl.textContent = 'No matches';
+            countEl.style.color = 'var(--text-muted)';
+        }} else {{
+            countEl.style.color = 'var(--text-secondary)';
+        }}
+    }}
+
+    function updateStepListVisibility() {{
+        const stepList = document.querySelector('.step-list');
+        if (!stepList) return;
+
+        const stepItems = stepList.querySelectorAll('.step-item');
+        stepItems.forEach((item, idx) => {{
+            if (searchQuery && !filteredIndices.includes(idx)) {{
+                item.style.display = 'none';
+            }} else {{
+                item.style.display = '';
+            }}
+        }});
+    }}
+
+    function clearSearch() {{
+        document.getElementById('search-input').value = '';
+        updateSearchResults();
+    }}
+
+    // Setup search event listeners
+    document.getElementById('search-input').addEventListener('input', updateSearchResults);
+    document.getElementById('search-clear-btn').addEventListener('click', clearSearch);
+
+    // Keyboard shortcut: Ctrl+F / Cmd+F
+    document.addEventListener('keydown', (e) => {{
+        if ((e.ctrlKey || e.metaKey) && e.key === 'f') {{
+            e.preventDefault();
+            document.getElementById('search-input').focus();
+        }}
+        // Escape to clear search
+        if (e.key === 'Escape' && document.activeElement === document.getElementById('search-input')) {{
+            clearSearch();
+            document.getElementById('search-input').blur();
+        }}
+    }});
 
     // Initialize on load
     setTimeout(window.initCheckpointDropdown, 200);
