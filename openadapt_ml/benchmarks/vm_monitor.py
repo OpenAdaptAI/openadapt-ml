@@ -3,6 +3,8 @@
 This module provides reusable classes for monitoring Windows VMs running WAA.
 Can be used by the viewer, CLI, or as a standalone tool.
 
+Enhanced with Azure ML job tracking, cost estimation, and activity detection.
+
 Usage:
     # Monitor a single VM
     from openadapt_ml.benchmarks.vm_monitor import VMMonitor, VMConfig
@@ -21,6 +23,14 @@ Usage:
 
     # Or run continuous monitoring
     monitor.run_monitor(callback=lambda s: print(s))
+
+    # Fetch Azure ML jobs
+    jobs = fetch_azure_ml_jobs(days=7)
+    print(f"Found {len(jobs)} jobs in last 7 days")
+
+    # Calculate VM costs
+    costs = calculate_vm_costs(vm_size="Standard_D4ds_v5", hours=2.5)
+    print(f"Estimated cost: ${costs['total_cost_usd']:.2f}")
 """
 
 from __future__ import annotations
@@ -29,12 +39,15 @@ import json
 import subprocess
 import time
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
 import urllib.request
 import urllib.error
 import socket
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -633,6 +646,445 @@ def main():
         print(f"\n✓ WAA is ready! Probe response: {final_status.waa_probe_response}")
     except KeyboardInterrupt:
         print("\nMonitoring stopped.")
+
+
+# ============================================================================
+# Azure ML Job Tracking
+# ============================================================================
+
+
+@dataclass
+class AzureMLJob:
+    """Represents an Azure ML job."""
+
+    job_id: str
+    display_name: str
+    status: str  # running, completed, failed, canceled
+    created_at: str
+    compute_target: str | None = None
+    duration_minutes: float | None = None
+    cost_usd: float | None = None
+    azure_dashboard_url: str | None = None
+
+
+def fetch_azure_ml_jobs(
+    resource_group: str = "openadapt-agents",
+    workspace_name: str = "openadapt-ml",
+    days: int = 7,
+    max_results: int = 20,
+) -> list[AzureMLJob]:
+    """Fetch recent Azure ML jobs.
+
+    Args:
+        resource_group: Azure resource group name.
+        workspace_name: Azure ML workspace name.
+        days: Number of days to look back.
+        max_results: Maximum number of jobs to return.
+
+    Returns:
+        List of AzureMLJob objects, sorted by creation time (newest first).
+    """
+    try:
+        result = subprocess.run(
+            [
+                "az",
+                "ml",
+                "job",
+                "list",
+                "--resource-group",
+                resource_group,
+                "--workspace-name",
+                workspace_name,
+                "--query",
+                "[].{name:name,display_name:display_name,status:status,created_at:creation_context.created_at,compute:compute}",
+                "-o",
+                "json",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        if result.returncode != 0:
+            logger.error(f"Azure CLI error: {result.stderr}")
+            return []
+
+        jobs_raw = json.loads(result.stdout)
+
+        # Filter by date
+        cutoff_date = datetime.now() - timedelta(days=days)
+        jobs = []
+
+        for job in jobs_raw[:max_results]:
+            created_at = job.get("created_at", "")
+            try:
+                # Parse ISO format: 2026-01-17T10:30:00Z
+                job_date = datetime.fromisoformat(
+                    created_at.replace("Z", "+00:00")
+                    if created_at
+                    else datetime.now().isoformat()
+                )
+                if job_date < cutoff_date.replace(tzinfo=job_date.tzinfo):
+                    continue
+            except (ValueError, AttributeError):
+                # If date parsing fails, include the job
+                pass
+
+            # Calculate duration for completed jobs
+            duration_minutes = None
+            status = job.get("status", "unknown").lower()
+
+            # Build Azure dashboard URL
+            subscription_id = get_azure_subscription_id()
+            wsid = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.MachineLearningServices/workspaces/{workspace_name}"
+            dashboard_url = (
+                f"https://ml.azure.com/runs/{job.get('name', '')}?wsid={wsid}"
+            )
+
+            jobs.append(
+                AzureMLJob(
+                    job_id=job.get("name", "unknown"),
+                    display_name=job.get("display_name", ""),
+                    status=status,
+                    created_at=created_at,
+                    compute_target=job.get("compute", None),
+                    duration_minutes=duration_minutes,
+                    azure_dashboard_url=dashboard_url,
+                )
+            )
+
+        return jobs
+
+    except Exception as e:
+        logger.error(f"Error fetching Azure ML jobs: {e}")
+        return []
+
+
+def get_azure_subscription_id() -> str:
+    """Get the current Azure subscription ID."""
+    try:
+        result = subprocess.run(
+            ["az", "account", "show", "--query", "id", "-o", "tsv"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return "unknown"
+
+
+# ============================================================================
+# Cost Tracking
+# ============================================================================
+
+
+@dataclass
+class VMCostEstimate:
+    """Estimated costs for VM usage."""
+
+    vm_size: str
+    hourly_rate_usd: float
+    hours_elapsed: float
+    cost_usd: float
+    cost_per_hour_usd: float
+    cost_per_day_usd: float
+    cost_per_week_usd: float
+
+
+# Azure VM pricing (US East, as of Jan 2025)
+VM_PRICING = {
+    "Standard_D2_v3": 0.096,
+    "Standard_D4_v3": 0.192,
+    "Standard_D8_v3": 0.384,
+    "Standard_D4s_v3": 0.192,
+    "Standard_D8s_v3": 0.384,
+    "Standard_D4ds_v5": 0.192,
+    "Standard_D8ds_v5": 0.384,
+    "Standard_D16ds_v5": 0.768,
+    "Standard_D32ds_v5": 1.536,
+}
+
+
+def calculate_vm_costs(
+    vm_size: str, hours: float, hourly_rate_override: float | None = None
+) -> VMCostEstimate:
+    """Calculate VM cost estimates.
+
+    Args:
+        vm_size: Azure VM size (e.g., "Standard_D4ds_v5").
+        hours: Number of hours the VM has been running.
+        hourly_rate_override: Override default hourly rate (for custom pricing).
+
+    Returns:
+        VMCostEstimate with cost breakdown.
+    """
+    hourly_rate = hourly_rate_override or VM_PRICING.get(vm_size, 0.20)
+    cost_usd = hourly_rate * hours
+
+    return VMCostEstimate(
+        vm_size=vm_size,
+        hourly_rate_usd=hourly_rate,
+        hours_elapsed=hours,
+        cost_usd=cost_usd,
+        cost_per_hour_usd=hourly_rate,
+        cost_per_day_usd=hourly_rate * 24,
+        cost_per_week_usd=hourly_rate * 24 * 7,
+    )
+
+
+def get_vm_uptime_hours(
+    resource_group: str, vm_name: str, check_actual_state: bool = True
+) -> float:
+    """Get VM uptime in hours.
+
+    Args:
+        resource_group: Azure resource group.
+        vm_name: VM name.
+        check_actual_state: If True, check if VM is actually running.
+
+    Returns:
+        Hours since VM started, or 0 if VM is not running.
+    """
+    try:
+        # Get VM creation time or last start time
+        result = subprocess.run(
+            [
+                "az",
+                "vm",
+                "show",
+                "-d",
+                "-g",
+                resource_group,
+                "-n",
+                vm_name,
+                "--query",
+                "{powerState:powerState}",
+                "-o",
+                "json",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        if result.returncode != 0:
+            return 0.0
+
+        info = json.loads(result.stdout)
+        power_state = info.get("powerState", "")
+
+        # Check if VM is running
+        if check_actual_state and "running" not in power_state.lower():
+            return 0.0
+
+        # Try to get activity logs for last start time
+        result = subprocess.run(
+            [
+                "az",
+                "monitor",
+                "activity-log",
+                "list",
+                "--resource-group",
+                resource_group,
+                "--resource-id",
+                f"/subscriptions/{get_azure_subscription_id()}/resourceGroups/{resource_group}/providers/Microsoft.Compute/virtualMachines/{vm_name}",
+                "--query",
+                "[?operationName.localizedValue=='Start Virtual Machine' || operationName.localizedValue=='Create or Update Virtual Machine'].eventTimestamp | [0]",
+                "-o",
+                "tsv",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+
+        if result.returncode == 0 and result.stdout.strip():
+            start_time_str = result.stdout.strip()
+            start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+            elapsed = datetime.now(start_time.tzinfo) - start_time
+            return elapsed.total_seconds() / 3600
+
+        # Fallback: assume started 1 hour ago if we can't determine
+        return 1.0
+
+    except Exception as e:
+        logger.debug(f"Error getting VM uptime: {e}")
+        return 0.0
+
+
+# ============================================================================
+# VM Activity Detection
+# ============================================================================
+
+
+@dataclass
+class VMActivity:
+    """Current VM activity information."""
+
+    is_active: bool
+    activity_type: str  # idle, benchmark_running, training, setup, unknown
+    description: str
+    benchmark_progress: dict | None = None  # If benchmark is running
+    last_action_time: str | None = None
+
+
+def detect_vm_activity(
+    ip: str,
+    ssh_user: str = "azureuser",
+    docker_container: str = "winarena",
+    internal_ip: str = "172.30.0.2",
+) -> VMActivity:
+    """Detect what the VM is currently doing.
+
+    Args:
+        ip: VM IP address.
+        ssh_user: SSH username.
+        docker_container: Docker container name.
+        internal_ip: Internal IP for WAA server.
+
+    Returns:
+        VMActivity with current activity information.
+    """
+    try:
+        # Check if container is running
+        result = subprocess.run(
+            [
+                "ssh",
+                "-o",
+                "StrictHostKeyChecking=no",
+                "-o",
+                "ConnectTimeout=5",
+                f"{ssh_user}@{ip}",
+                f"docker ps -q -f name={docker_container}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        if result.returncode != 0 or not result.stdout.strip():
+            return VMActivity(
+                is_active=False,
+                activity_type="idle",
+                description="Container not running",
+            )
+
+        # Check WAA probe for benchmark status
+        result = subprocess.run(
+            [
+                "ssh",
+                "-o",
+                "StrictHostKeyChecking=no",
+                "-o",
+                "ConnectTimeout=5",
+                f"{ssh_user}@{ip}",
+                f"curl -s --connect-timeout 3 http://{internal_ip}:5000/probe",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        if result.returncode == 0 and result.stdout.strip():
+            probe_response = result.stdout.strip()
+            try:
+                probe_data = json.loads(probe_response)
+                # WAA is ready and responsive
+                return VMActivity(
+                    is_active=True,
+                    activity_type="benchmark_running",
+                    description="WAA benchmark ready",
+                    benchmark_progress=probe_data,
+                )
+            except json.JSONDecodeError:
+                # Got response but not JSON - maybe setup phase
+                return VMActivity(
+                    is_active=True,
+                    activity_type="setup",
+                    description="WAA starting up",
+                )
+
+        # Container running but WAA not ready
+        return VMActivity(
+            is_active=True,
+            activity_type="setup",
+            description="Windows VM booting or WAA initializing",
+        )
+
+    except Exception as e:
+        logger.debug(f"Error detecting VM activity: {e}")
+        return VMActivity(
+            is_active=False,
+            activity_type="unknown",
+            description=f"Error checking activity: {str(e)[:100]}",
+        )
+
+
+# ============================================================================
+# Evaluation History
+# ============================================================================
+
+
+@dataclass
+class EvaluationRun:
+    """Historical evaluation run."""
+
+    run_id: str
+    started_at: str
+    completed_at: str | None
+    num_tasks: int
+    success_rate: float | None
+    agent_type: str
+    status: str  # running, completed, failed
+
+
+def get_evaluation_history(
+    results_dir: Path | str = "benchmark_results", max_runs: int = 10
+) -> list[EvaluationRun]:
+    """Get history of evaluation runs from results directory.
+
+    Args:
+        results_dir: Path to benchmark results directory.
+        max_runs: Maximum number of runs to return.
+
+    Returns:
+        List of EvaluationRun objects, sorted by start time (newest first).
+    """
+    results_path = Path(results_dir)
+    if not results_path.exists():
+        return []
+
+    runs = []
+
+    # Look for run directories or result files
+    for item in sorted(results_path.iterdir(), reverse=True):
+        if item.is_dir():
+            # Check for summary.json or similar
+            summary_file = item / "summary.json"
+            if summary_file.exists():
+                try:
+                    summary = json.loads(summary_file.read_text())
+                    runs.append(
+                        EvaluationRun(
+                            run_id=item.name,
+                            started_at=summary.get("started_at", "unknown"),
+                            completed_at=summary.get("completed_at", None),
+                            num_tasks=summary.get("num_tasks", 0),
+                            success_rate=summary.get("success_rate", None),
+                            agent_type=summary.get("agent_type", "unknown"),
+                            status=summary.get("status", "completed"),
+                        )
+                    )
+                except (json.JSONDecodeError, KeyError):
+                    continue
+
+        if len(runs) >= max_runs:
+            break
+
+    return runs
 
 
 if __name__ == "__main__":
