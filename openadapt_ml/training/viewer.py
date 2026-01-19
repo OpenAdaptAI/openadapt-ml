@@ -9,9 +9,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from openadapt_ml.shared_ui import (
-    get_keyboard_shortcuts_css,
-)
 from openadapt_ml.training.shared_ui import (
     get_shared_header_css as _get_shared_header_css,
     generate_shared_header_html as _generate_shared_header_html,
@@ -299,9 +296,7 @@ def _generate_unified_viewer_from_extracted_data(
     shared_header_css = _get_shared_header_css()
     shared_header_html = _generate_shared_header_html("viewer")
 
-    # Get keyboard shortcuts components
-    keyboard_shortcuts_css = get_keyboard_shortcuts_css()
-    # Note: keyboard shortcuts JS is handled inline in the viewer script
+    # Note: keyboard shortcuts CSS and JS are handled inline in the viewer HTML
 
     # Build base HTML from extracted data (standalone, no openadapt-capture dependency)
     base_data_json = json.dumps(base_data)
@@ -1224,9 +1219,6 @@ def _generate_unified_viewer_from_extracted_data(
         .gallery-grid-maximized .gallery-card .coord-pred {{
             color: #a78bfa;
         }}
-
-        /* Keyboard Shortcuts */
-        {keyboard_shortcuts_css}
     </style>
 </head>
 <body>
