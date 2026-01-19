@@ -4,6 +4,11 @@ Running tests:
     uv run pytest tests/test_viewer_screenshots.py -v
 """
 
+import pytest
+
+# openadapt-viewer is an optional local development dependency
+pytest.importorskip("openadapt_viewer", reason="openadapt-viewer not installed (optional dependency)")
+
 from openadapt_ml.training.viewer_components import (
     screenshot_with_predictions,
     training_metrics,

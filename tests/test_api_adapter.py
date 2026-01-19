@@ -10,6 +10,13 @@ import pytest
 
 from openadapt_ml.models.api_adapter import ApiVLMAdapter
 
+# Check if optional dependencies are available
+try:
+    import anthropic
+    HAS_ANTHROPIC = True
+except ImportError:
+    HAS_ANTHROPIC = False
+
 
 @pytest.fixture
 def dummy_sample(tmp_path) -> Dict[str, Any]:
@@ -40,6 +47,7 @@ def test_openai_adapter_generate(mock_getenv, mock_openai, mock_settings, dummy_
     assert "CLICK(" in text
 
 
+@pytest.mark.skipif(not HAS_ANTHROPIC, reason="anthropic package not installed (optional dependency)")
 @mock.patch("openadapt_ml.models.api_adapter.settings")
 @mock.patch("anthropic.Anthropic")
 @mock.patch("openadapt_ml.models.api_adapter.os.getenv")
