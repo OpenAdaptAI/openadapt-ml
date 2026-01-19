@@ -871,7 +871,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
                     self.send_header("Content-Type", "application/json")
                     self.send_header("Access-Control-Allow-Origin", "*")
                     self.end_headers()
-                    self.wfile.write(json.dumps({"error": str(e), "status": "error"}).encode())
+                    self.wfile.write(
+                        json.dumps({"error": str(e), "status": "error"}).encode()
+                    )
             elif self.path.startswith("/api/benchmark/costs"):
                 # Return cost breakdown (Azure VM, API calls, GPU)
                 try:
@@ -959,7 +961,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 # URL format: /api/benchmark/screenshots/{run_name}/{task_id}/screenshots/{filename}
                 try:
                     # Remove /api/benchmark/screenshots/ prefix
-                    path_parts = self.path.replace("/api/benchmark/screenshots/", "").split("/")
+                    path_parts = self.path.replace(
+                        "/api/benchmark/screenshots/", ""
+                    ).split("/")
                     if len(path_parts) >= 4:
                         run_name = path_parts[0]
                         task_id = path_parts[1]
@@ -967,7 +971,14 @@ def cmd_serve(args: argparse.Namespace) -> int:
                         filename = path_parts[3]
 
                         results_dir = Path("benchmark_results")
-                        screenshot_path = results_dir / run_name / "tasks" / task_id / "screenshots" / filename
+                        screenshot_path = (
+                            results_dir
+                            / run_name
+                            / "tasks"
+                            / task_id
+                            / "screenshots"
+                            / filename
+                        )
 
                         if screenshot_path.exists():
                             self.send_response(200)
@@ -977,7 +988,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
                             with open(screenshot_path, "rb") as f:
                                 self.wfile.write(f.read())
                         else:
-                            self.send_error(404, f"Screenshot not found: {screenshot_path}")
+                            self.send_error(
+                                404, f"Screenshot not found: {screenshot_path}"
+                            )
                     else:
                         self.send_error(400, "Invalid screenshot path format")
                 except Exception as e:
@@ -2034,7 +2047,6 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 dict with job status, progress, ETA, and current task info
             """
             import time
-            from datetime import datetime
 
             # Check for live evaluation state
             live_file = Path("benchmark_live.json")
@@ -2051,8 +2063,14 @@ def cmd_serve(args: argparse.Namespace) -> int:
                         avg_task_seconds = None
                         if completed_tasks > 0 and total_tasks > 0:
                             # Estimate from live state timestamp or use fallback
-                            elapsed = time.time() - live_state.get("start_time", time.time())
-                            avg_task_seconds = elapsed / completed_tasks if completed_tasks > 0 else 30.0
+                            elapsed = time.time() - live_state.get(
+                                "start_time", time.time()
+                            )
+                            avg_task_seconds = (
+                                elapsed / completed_tasks
+                                if completed_tasks > 0
+                                else 30.0
+                            )
                             remaining_tasks = total_tasks - completed_tasks
                             eta_seconds = remaining_tasks * avg_task_seconds
 
@@ -2095,7 +2113,6 @@ def cmd_serve(args: argparse.Namespace) -> int:
             Returns:
                 dict with Azure VM, API calls, and GPU costs
             """
-            import time
 
             # Check for cost tracking file
             cost_file = Path("benchmark_costs.json")
@@ -2143,7 +2160,11 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 return {"error": "No benchmark results found"}
 
             # Find most recent run
-            runs = sorted(benchmark_results_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
+            runs = sorted(
+                benchmark_results_dir.iterdir(),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
             if not runs:
                 return {"error": "No benchmark runs found"}
 
@@ -2185,7 +2206,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
                             domain_breakdown[domain]["total"] += 1
                             if execution.get("success"):
                                 domain_breakdown[domain]["success"] += 1
-                            domain_breakdown[domain]["total_steps"] += execution.get("num_steps", 0)
+                            domain_breakdown[domain]["total_steps"] += execution.get(
+                                "num_steps", 0
+                            )
 
                         except Exception:
                             continue
@@ -2201,7 +2224,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
                     "avg_steps_per_task": [],  # TODO: implement trend tracking
                     "domain_breakdown": domain_breakdown,
                     "episode_success_metrics": {
-                        "first_action_accuracy": summary.get("first_action_accuracy", 0.0),
+                        "first_action_accuracy": summary.get(
+                            "first_action_accuracy", 0.0
+                        ),
                         "episode_success_rate": summary.get("success_rate", 0.0),
                         "avg_steps_to_success": summary.get("avg_steps", 0.0),
                         "avg_steps_to_failure": 0.0,  # TODO: calculate from failed tasks
@@ -2224,14 +2249,16 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
             workers = []
             for vm in vms:
-                workers.append({
-                    "worker_id": vm.get("name", "unknown"),
-                    "status": "running" if vm.get("status") == "online" else "idle",
-                    "current_task": vm.get("current_task"),
-                    "tasks_completed": vm.get("tasks_completed", 0),
-                    "uptime_seconds": vm.get("uptime_seconds", 0),
-                    "idle_time_seconds": vm.get("idle_time_seconds", 0),
-                })
+                workers.append(
+                    {
+                        "worker_id": vm.get("name", "unknown"),
+                        "status": "running" if vm.get("status") == "online" else "idle",
+                        "current_task": vm.get("current_task"),
+                        "tasks_completed": vm.get("tasks_completed", 0),
+                        "uptime_seconds": vm.get("uptime_seconds", 0),
+                        "idle_time_seconds": vm.get("idle_time_seconds", 0),
+                    }
+                )
 
             return {
                 "total_workers": len(vms),
@@ -2276,7 +2303,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 Task execution data with steps and screenshots
             """
             results_dir = Path("benchmark_results")
-            execution_file = results_dir / run_name / "tasks" / task_id / "execution.json"
+            execution_file = (
+                results_dir / run_name / "tasks" / task_id / "execution.json"
+            )
 
             if not execution_file.exists():
                 raise FileNotFoundError(f"Execution file not found: {execution_file}")
