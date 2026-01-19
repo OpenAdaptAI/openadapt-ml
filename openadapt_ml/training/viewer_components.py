@@ -43,24 +43,28 @@ def screenshot_with_predictions(
     overlays = []
 
     if human_action:
-        overlays.append({
-            "type": human_action.get("type", "click"),
-            "x": human_action.get("x", 0),
-            "y": human_action.get("y", 0),
-            "label": "H",
-            "variant": "human",
-            "color": "#34d399",
-        })
+        overlays.append(
+            {
+                "type": human_action.get("type", "click"),
+                "x": human_action.get("x", 0),
+                "y": human_action.get("y", 0),
+                "label": "H",
+                "variant": "human",
+                "color": "#34d399",
+            }
+        )
 
     if predicted_action:
-        overlays.append({
-            "type": predicted_action.get("type", "click"),
-            "x": predicted_action.get("x", 0),
-            "y": predicted_action.get("y", 0),
-            "label": "AI",
-            "variant": "predicted",
-            "color": "#00d4aa",
-        })
+        overlays.append(
+            {
+                "type": predicted_action.get("type", "click"),
+                "x": predicted_action.get("x", 0),
+                "y": predicted_action.get("y", 0),
+                "label": "AI",
+                "variant": "predicted",
+                "color": "#00d4aa",
+            }
+        )
 
     caption = f"Step {step_number}" if step_number is not None else None
 
@@ -90,8 +94,12 @@ def training_metrics(
         metrics.append({"label": "Loss", "value": f"{loss:.4f}", "color": color})
 
     if accuracy is not None:
-        color = "success" if accuracy > 0.9 else "warning" if accuracy > 0.7 else "error"
-        metrics.append({"label": "Accuracy", "value": f"{accuracy:.2%}", "color": color})
+        color = (
+            "success" if accuracy > 0.9 else "warning" if accuracy > 0.7 else "error"
+        )
+        metrics.append(
+            {"label": "Accuracy", "value": f"{accuracy:.2%}", "color": color}
+        )
 
     if elapsed_time is not None:
         hours = int(elapsed_time // 3600)
@@ -145,8 +153,16 @@ def generate_comparison_summary(
     metrics = [
         {"label": "Total Steps", "value": total_steps},
         {"label": "Correct", "value": correct_steps, "color": "success"},
-        {"label": "Incorrect", "value": incorrect_steps, "color": "error" if incorrect_steps > 0 else "muted"},
-        {"label": "Accuracy", "value": f"{accuracy:.1%}", "color": "success" if accuracy > 0.9 else "warning"},
+        {
+            "label": "Incorrect",
+            "value": incorrect_steps,
+            "color": "error" if incorrect_steps > 0 else "muted",
+        },
+        {
+            "label": "Accuracy",
+            "value": f"{accuracy:.1%}",
+            "color": "success" if accuracy > 0.9 else "warning",
+        },
     ]
 
     if model_name:

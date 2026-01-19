@@ -11,7 +11,6 @@ from pathlib import Path
 
 from openadapt_ml.shared_ui import (
     get_keyboard_shortcuts_css,
-    get_keyboard_shortcuts_js,
 )
 from openadapt_ml.training.shared_ui import (
     get_shared_header_css as _get_shared_header_css,
@@ -302,7 +301,7 @@ def _generate_unified_viewer_from_extracted_data(
 
     # Get keyboard shortcuts components
     keyboard_shortcuts_css = get_keyboard_shortcuts_css()
-    keyboard_shortcuts_js = get_keyboard_shortcuts_js()
+    # Note: keyboard shortcuts JS is handled inline in the viewer script
 
     # Build base HTML from extracted data (standalone, no openadapt-capture dependency)
     base_data_json = json.dumps(base_data)

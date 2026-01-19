@@ -5068,11 +5068,11 @@ ls -lh /mnt/waa-storage/
             print(f"  State:      {power_state}")
         else:
             print(f"  ✗ VM '{vm_name}' not found")
-            print(f"  Run: uv run python -m openadapt_ml.benchmarks.cli vm setup-waa")
+            print("  Run: uv run python -m openadapt_ml.benchmarks.cli vm setup-waa")
             sys.exit(1)
 
         # ===== VM ACTIVITY =====
-        print(f"\n2. CURRENT ACTIVITY")
+        print("\n2. CURRENT ACTIVITY")
         print("-" * 70)
         if not use_mock:
             activity = detect_vm_activity(ip, "azureuser", "winarena", "172.30.0.2")
@@ -5081,7 +5081,7 @@ ls -lh /mnt/waa-storage/
         print(f"  Details:    {activity.description}")
 
         # ===== COST TRACKING =====
-        print(f"\n3. COST TRACKING")
+        print("\n3. COST TRACKING")
         print("-" * 70)
         if not use_mock:
             uptime_hours = get_vm_uptime_hours(resource_group, vm_name)
@@ -5094,10 +5094,12 @@ ls -lh /mnt/waa-storage/
             print(f"  Weekly:     ${costs.cost_per_week_usd:.2f}/week")
 
         # ===== AZURE ML JOBS =====
-        print(f"\n4. RECENT AZURE ML JOBS (Last 7 Days)")
+        print("\n4. RECENT AZURE ML JOBS (Last 7 Days)")
         print("-" * 70)
         if not use_mock:
-            jobs = fetch_azure_ml_jobs(resource_group=resource_group, days=7, max_results=5)
+            jobs = fetch_azure_ml_jobs(
+                resource_group=resource_group, days=7, max_results=5
+            )
         if jobs:
             for job in jobs[:5]:  # Show top 5
                 status_icon = {
@@ -5106,7 +5108,9 @@ ls -lh /mnt/waa-storage/
                     "failed": "✗",
                     "canceled": "⊗",
                 }.get(job.status, "?")
-                created_date = job.created_at[:10] if len(job.created_at) >= 10 else job.created_at
+                created_date = (
+                    job.created_at[:10] if len(job.created_at) >= 10 else job.created_at
+                )
                 print(f"  {status_icon} {job.display_name or job.job_id[:12]}")
                 print(f"     Status: {job.status} | Created: {created_date}")
                 if show_details and job.azure_dashboard_url:
@@ -5116,20 +5120,24 @@ ls -lh /mnt/waa-storage/
 
         # ===== EVALUATION HISTORY =====
         if show_details:
-            print(f"\n5. EVALUATION HISTORY")
+            print("\n5. EVALUATION HISTORY")
             print("-" * 70)
             if not use_mock:
                 history = get_evaluation_history(max_runs=5)
             if history:
                 for run in history[:5]:
-                    success_pct = f"{run.success_rate*100:.1f}%" if run.success_rate else "N/A"
+                    success_pct = (
+                        f"{run.success_rate * 100:.1f}%" if run.success_rate else "N/A"
+                    )
                     print(f"  • {run.run_id}")
-                    print(f"     Tasks: {run.num_tasks} | Success: {success_pct} | Agent: {run.agent_type}")
+                    print(
+                        f"     Tasks: {run.num_tasks} | Success: {success_pct} | Agent: {run.agent_type}"
+                    )
             else:
                 print("  No evaluation history found")
 
         # ===== DASHBOARD & TUNNELS =====
-        print(f"\n6. DASHBOARD & ACCESS")
+        print("\n6. DASHBOARD & ACCESS")
         print("-" * 70)
 
         # In mock mode, skip dashboard and exit cleanly
@@ -5190,19 +5198,23 @@ ls -lh /mnt/waa-storage/
             if tunnel_status.get("vnc") and tunnel_status["vnc"].active:
                 print(f"  ✓ VNC tunnel: localhost:8006 -> {ip}:8006")
             else:
-                print(f"  ⚠ VNC tunnel failed - use: ssh -L 8006:{ip}:8006 azureuser@{ip}")
+                print(
+                    f"  ⚠ VNC tunnel failed - use: ssh -L 8006:{ip}:8006 azureuser@{ip}"
+                )
         except Exception as e:
             print(f"  ⚠ Tunnel error: {str(e)[:50]}")
 
         # URLs
         url = f"http://localhost:{port}/benchmark.html"
         print(f"\n  Dashboard:  {url}")
-        print(f"  VNC:        http://localhost:8006")
+        print("  VNC:        http://localhost:8006")
 
         # Auto-shutdown info
         if auto_shutdown_hours > 0:
             shutdown_time = datetime.now() + timedelta(hours=auto_shutdown_hours)
-            print(f"  Shutdown:   {shutdown_time.strftime('%H:%M:%S')} ({auto_shutdown_hours}h)")
+            print(
+                f"  Shutdown:   {shutdown_time.strftime('%H:%M:%S')} ({auto_shutdown_hours}h)"
+            )
 
         print(f"\n{'=' * 70}")
         print("  Press Ctrl+C to stop monitoring")
@@ -5227,7 +5239,9 @@ ls -lh /mnt/waa-storage/
                 if (current_time - last_update).total_seconds() >= update_interval:
                     # Quick status check
                     is_ready, _ = check_waa_probe(ip, internal_ip="172.30.0.2")
-                    activity = detect_vm_activity(ip, "azureuser", "winarena", "172.30.0.2")
+                    activity = detect_vm_activity(
+                        ip, "azureuser", "winarena", "172.30.0.2"
+                    )
                     status_line = f"WAA: {'READY' if is_ready else 'waiting'} | Activity: {activity.activity_type}"
                     last_update = current_time
                 else:
@@ -5264,7 +5278,9 @@ ls -lh /mnt/waa-storage/
                     if deallocate_result.returncode == 0:
                         print(f"  ✓ VM '{vm_name}' deallocation initiated")
                     else:
-                        print(f"  ✗ Failed to deallocate: {deallocate_result.stderr[:50]}")
+                        print(
+                            f"  ✗ Failed to deallocate: {deallocate_result.stderr[:50]}"
+                        )
                     break
 
                 time.sleep(5)

@@ -158,7 +158,7 @@ class CaptureAdapter:
                         "timestamp": frame_relative_time,
                         "frame_index": frame_idx,
                         "name": closest_action["type"],
-                        **closest_action.get("extra", {})
+                        **closest_action.get("extra", {}),
                     }
                 else:
                     # No action, create a frame-only event
@@ -178,7 +178,9 @@ class CaptureAdapter:
         if not images:
             raise ValueError(f"No screenshots loaded from {capture_path}")
 
-        logger.info(f"Loaded {len(images)} frames with {len(events)} events from {capture_path}")
+        logger.info(
+            f"Loaded {len(images)} frames with {len(events)} events from {capture_path}"
+        )
         return images, events
 
     def _get_screenshot_files(self, screenshots_dir: Path) -> dict[int, Path]:
@@ -295,12 +297,12 @@ class CaptureAdapter:
                 continue
 
             # Handle down events
-            if event_type.endswith('.down'):
+            if event_type.endswith(".down"):
                 base_type = event_type[:-5]  # Remove '.down' → 'mouse' or 'key'
                 pending_down[base_type] = (event_type, timestamp, data)
 
             # Handle up events
-            elif event_type.endswith('.up'):
+            elif event_type.endswith(".up"):
                 base_type = event_type[:-3]  # Remove '.up'
 
                 if base_type in pending_down:
@@ -309,26 +311,26 @@ class CaptureAdapter:
                     duration = timestamp - down_timestamp
 
                     # Create paired action
-                    if base_type == 'mouse':
+                    if base_type == "mouse":
                         action = {
-                            'type': 'click',
-                            'timestamp': down_timestamp,
-                            'duration': duration,
-                            'extra': {
-                                'mouse_x': down_data.get('x'),
-                                'mouse_y': down_data.get('y'),
-                                'button': down_data.get('button', 'left'),
-                            }
+                            "type": "click",
+                            "timestamp": down_timestamp,
+                            "duration": duration,
+                            "extra": {
+                                "mouse_x": down_data.get("x"),
+                                "mouse_y": down_data.get("y"),
+                                "button": down_data.get("button", "left"),
+                            },
                         }
-                    elif base_type == 'key':
+                    elif base_type == "key":
                         action = {
-                            'type': 'key',
-                            'timestamp': down_timestamp,
-                            'duration': duration,
-                            'extra': {
-                                'text': down_data.get('key') or down_data.get('text'),
-                                'key': down_data.get('key'),
-                            }
+                            "type": "key",
+                            "timestamp": down_timestamp,
+                            "duration": duration,
+                            "extra": {
+                                "text": down_data.get("key") or down_data.get("text"),
+                                "key": down_data.get("key"),
+                            },
                         }
                     else:
                         continue
@@ -339,15 +341,15 @@ class CaptureAdapter:
                     logger.debug(f"Unpaired {event_type} event at {timestamp}")
 
             # Handle mouse.move (if configured to include)
-            elif event_type == 'mouse.move' and self.include_moves:
+            elif event_type == "mouse.move" and self.include_moves:
                 action = {
-                    'type': 'move',
-                    'timestamp': timestamp,
-                    'duration': 0.0,
-                    'extra': {
-                        'mouse_x': data.get('x'),
-                        'mouse_y': data.get('y'),
-                    }
+                    "type": "move",
+                    "timestamp": timestamp,
+                    "duration": 0.0,
+                    "extra": {
+                        "mouse_x": data.get("x"),
+                        "mouse_y": data.get("y"),
+                    },
                 }
                 paired.append(action)
 
@@ -357,7 +359,9 @@ class CaptureAdapter:
 
         return paired
 
-    def _find_closest_action(self, paired_actions: list[dict], frame_time: float, window: float = 2.0) -> Optional[dict]:
+    def _find_closest_action(
+        self, paired_actions: list[dict], frame_time: float, window: float = 2.0
+    ) -> Optional[dict]:
         """Find action closest to a given frame time.
 
         Args:
@@ -369,10 +373,10 @@ class CaptureAdapter:
             Closest action dict or None if no action within window
         """
         closest_action = None
-        closest_distance = float('inf')
+        closest_distance = float("inf")
 
         for action in paired_actions:
-            distance = abs(action['timestamp'] - frame_time)
+            distance = abs(action["timestamp"] - frame_time)
             if distance < closest_distance and distance <= window:
                 closest_distance = distance
                 closest_action = action

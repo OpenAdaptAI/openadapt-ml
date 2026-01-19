@@ -737,7 +737,9 @@ def fetch_azure_ml_jobs(
             # Build Azure dashboard URL
             subscription_id = get_azure_subscription_id()
             wsid = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.MachineLearningServices/workspaces/{workspace_name}"
-            dashboard_url = f"https://ml.azure.com/runs/{job.get('name', '')}?wsid={wsid}"
+            dashboard_url = (
+                f"https://ml.azure.com/runs/{job.get('name', '')}?wsid={wsid}"
+            )
 
             jobs.append(
                 AzureMLJob(
