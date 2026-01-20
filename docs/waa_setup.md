@@ -8,15 +8,22 @@ Windows Agent Arena (WAA) is a benchmark with 154 tasks across 11 Windows applic
 
 **Repository:** https://github.com/microsoft/WindowsAgentArena
 
-> **Cost & Complexity Warning:** WAA infrastructure is the dominant cost factor, not modeling. VM uptime + human babysitting time dominate total cost. A single benchmark run requires ~30GB storage, ~30 min setup, and $0.19+/hour Azure VM costs. For rapid iteration, consider using our **mock evaluation mode** (`test-mock`) which replays recorded sessions and generates synthetic results without Windows virtualization.
+## FULLY AUTOMATED Setup
+
+**CRITICAL**: NO manual ISO downloads. Everything is automated using `dockurr/windows`.
+
+Our `waa-auto` Docker image:
+1. Uses `dockurr/windows:latest` which **automatically downloads Windows 11** based on `VERSION` env var
+2. Combines WAA client/server from `windowsarena/winarena:latest`
+3. Handles all automation via unattend.xml
 
 ## Architecture
 
 ```
 Azure VM (Standard_D4ds_v5, nested virtualization required)
-  └── Docker
-       └── windowsarena/winarena container
-            └── QEMU running Windows 11
+  └── Docker (data on /mnt)
+       └── waa-auto:latest (based on dockurr/windows)
+            └── QEMU running Windows 11 (IP: 172.30.0.2)
                  └── WAA Server (Flask on port 5000)
                       ├── /probe - Health check
                       ├── /execute - Run commands
@@ -28,31 +35,31 @@ Azure VM (Standard_D4ds_v5, nested virtualization required)
 | Phase | Duration | Notes |
 |-------|----------|-------|
 | Azure VM creation | 5-10 min | One-time |
-| Windows ISO download | 5-15 min | ~6GB, depends on bandwidth |
-| Windows installation | 20-30 min | First time only, cached after |
+| Docker image build | 5-10 min | One-time, cached |
+| Windows ISO download | 5-10 min | ~6.6GB, **automatic** via dockurr |
+| Windows installation | 10-15 min | First time only, cached after |
 | Benchmark execution | 5-15 min/task | Varies by task complexity |
-| **Total first run** | **~45-60 min** | Subsequent runs: ~5 min startup |
+| **Total first run** | **~30-45 min** | Subsequent runs: ~3 min startup |
 
 **Azure costs:** `Standard_D4ds_v5` ≈ $0.19/hour. **Remember to delete the VM when done.**
 
 ---
 
-## Quick Start
+## Quick Start (FULLY AUTOMATED)
 
 ```bash
-# 1. Set up Azure VM with WAA
-uv run python -m openadapt_ml.benchmarks.cli vm setup-waa
+# 1. Setup Azure VM with Docker and build waa-auto image (~10 min)
+uv run python -m openadapt_ml.benchmarks.cli vm setup-waa --api-key $OPENAI_API_KEY
 
-# 2. Prepare Windows (downloads ISO, installs Windows)
-uv run python -m openadapt_ml.benchmarks.cli vm prepare-windows
-# ✓ Success: VNC at http://<vm-ip>:8006 shows Windows desktop
-
-# 3. Run benchmark
+# 2. Run benchmark (Windows auto-downloads on first run)
 uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5
-# ✓ Success: Results saved to ~/waa-results/
 
-# 4. Delete VM when done (stops billing)
-uv run python -m openadapt_ml.benchmarks.cli vm delete
+# 3. Monitor progress (optional, for debugging)
+uv run python -m openadapt_ml.benchmarks.cli vm monitor
+# Opens browser to VNC at http://localhost:8006
+
+# 4. Delete VM when done (IMPORTANT: stops billing!)
+uv run python -m openadapt_ml.benchmarks.cli vm delete -y
 ```
 
 **Alternative: Mock evaluation (no Windows required):**
@@ -62,122 +69,106 @@ uv run python -m openadapt_ml.benchmarks.cli test-mock --tasks 20
 
 ---
 
-## Detailed Setup
+## How Auto-Download Works
 
-### Prerequisites
+The [dockurr/windows](https://github.com/dockur/windows) project handles Windows installation automatically:
 
-- Azure subscription with nested virtualization support
-- VM size: `Standard_D4ds_v5` or larger (D8+ recommended for faster task execution)
-- At least 50GB disk space (use `/mnt` temp disk, not OS disk)
+1. **Set VERSION environment variable:**
+   - `VERSION=11e` - Windows 11 Enterprise (6.6 GB, recommended)
+   - `VERSION=11` - Windows 11 Pro (7.2 GB)
+   - `VERSION=10e` - Windows 10 Enterprise (5.2 GB)
 
-### Security Considerations
+2. **First run behavior:**
+   - dockurr/windows downloads Windows ISO from Microsoft
+   - QEMU installs Windows using unattend.xml (unattended)
+   - Disk image saved to `/storage/data.qcow2`
 
-The WAA setup exposes several ports:
+3. **Subsequent runs:**
+   - Boots from existing disk image (~2-3 min)
+   - No re-download needed
 
-| Port | Service | Risk | Recommendation |
-|------|---------|------|----------------|
-| 8006 | VNC (noVNC web) | Medium | Restrict via NSG to your IP |
-| 5000 | WAA Flask API | High | SSH tunnel or NSG restrict |
-
-**Recommended:** Access via SSH tunnel rather than exposing ports publicly:
-```bash
-ssh -L 8006:localhost:8006 -L 5000:localhost:5000 azureuser@<vm-ip>
-```
-
-### Step 1: Download Windows ISO
-
-The official WAA image requires a Windows ISO. Two options:
-
-**Option A: Enterprise Evaluation ISO (recommended)**
-- No product key required
+**Why Windows 11 Enterprise (`11e`)?**
+- Accepts GVLK keys (no "product key" dialog during setup)
 - 90-day evaluation period (sufficient for benchmarks)
-- Download from [Microsoft Evaluation Center](https://www.microsoft.com/en-us/evalcenter/download-windows-11-enterprise)
+- Most compatible with WAA test applications
 
-**Option B: Volume-licensed Enterprise ISO + GVLK**
-- Requires GVLK key in unattend.xml: `NPPR9-FWDCX-D2C8J-H872K-2YT43`
-- This is [Microsoft's published KMS client key](https://learn.microsoft.com/en-us/windows-server/get-started/kms-client-activation-keys) for volume licensing scenarios
-- For organizations with volume licensing
+---
 
-**Automated download (Evaluation ISO):**
-```bash
-mkdir -p ~/waa-iso
-curl -L -o ~/waa-iso/setup.iso \
-  'https://go.microsoft.com/fwlink/?linkid=2334167&clcid=0x409&culture=en-us&country=us'
-```
+## Manual Docker Commands (Advanced)
 
-> **Note:** This URL may change. If it fails, download manually from the Evaluation Center.
+If you prefer direct Docker commands instead of CLI:
 
-### Step 2: Prepare Windows Image
-
-Run the official WAA container with `--prepare-image true`:
+### Start Windows VM (First Run)
 
 ```bash
-docker run --rm \
-  --name waa-prepare \
-  --device=/dev/kvm \
-  --cap-add NET_ADMIN \
-  -p 8006:8006 \
-  -v ~/waa-storage:/storage \
-  -v ~/waa-iso:/iso \
-  windowsarena/winarena:latest \
-  "/entry.sh --prepare-image true --start-client false"
-```
-
-**Verify success:**
-1. VNC at `http://<vm-ip>:8006` shows Windows desktop (not installer)
-2. `~/waa-storage/` contains `data.img` (~30GB)
-
-### Step 3: Run Benchmarks
-
-```bash
-docker run --rm \
-  --name waa-benchmark \
+# This downloads Windows 11 and installs it (~20 min first run)
+docker run -d \
+  --name winarena \
   --device=/dev/kvm \
   --cap-add NET_ADMIN \
   -p 8006:8006 \
   -p 5000:5000 \
-  -v ~/waa-storage:/storage \
-  -v ~/waa-results:/results \
-  -e OPENAI_API_KEY="your-key" \
-  windowsarena/winarena:latest \
-  "/entry.sh --start-client true --model gpt-4o --agent navi --result-dir /results"
-  # Note: --model must be a valid OpenAI model name (e.g., gpt-4o, gpt-4o-mini)
+  -v /mnt/waa-storage:/storage \
+  -e VERSION=11e \
+  -e RAM_SIZE=12G \
+  -e CPU_CORES=4 \
+  -e DISK_SIZE=64G \
+  waa-auto:latest \
+  "/waa-entry.sh --start-client false"
 ```
 
-**Model options:** The `--model` flag must be a valid OpenAI model name (e.g., `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`). Invalid model names will cause the benchmark to hang on retries. For local VLMs or proxies, set `OPENAI_API_BASE` accordingly.
+### Run Benchmarks
 
-**Verify success:**
-1. `curl http://localhost:5000/probe` returns `{"status": "Probe successful"}`
-2. Results appear in `~/waa-results/`
+```bash
+docker run -d \
+  --name winarena \
+  --device=/dev/kvm \
+  --cap-add NET_ADMIN \
+  -p 8006:8006 \
+  -p 5000:5000 \
+  -v /mnt/waa-storage:/storage \
+  -e OPENAI_API_KEY="your-key" \
+  waa-auto:latest \
+  "/waa-entry.sh --start-client true --model gpt-4o --num-tasks 5"
+```
 
 ---
 
 ## CLI Commands
 
 ```bash
-# Full setup (creates Azure VM, installs Docker)
-uv run python -m openadapt_ml.benchmarks.cli vm setup-waa
+# Full setup (creates Azure VM, installs Docker, builds waa-auto)
+uv run python -m openadapt_ml.benchmarks.cli vm setup-waa --api-key $OPENAI_API_KEY
 
-# Prepare Windows (download ISO, install Windows)
-uv run python -m openadapt_ml.benchmarks.cli vm prepare-windows
-
-# Run WAA benchmark (uses OPENAI_API_KEY from .env)
+# Run WAA benchmark
 uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5
+
+# Start monitoring dashboard (VNC, logs, status)
+uv run python -m openadapt_ml.benchmarks.cli vm monitor
 
 # Check VM and WAA status
 uv run python -m openadapt_ml.benchmarks.cli vm status
 
+# Check if WAA server is ready
+uv run python -m openadapt_ml.benchmarks.cli vm probe --wait
+
+# View container logs
+uv run python -m openadapt_ml.benchmarks.cli vm logs --lines 100
+
 # SSH into VM for debugging
 uv run python -m openadapt_ml.benchmarks.cli vm ssh
 
-# Fix storage (move to larger temp disk)
-uv run python -m openadapt_ml.benchmarks.cli vm fix-storage
+# Check disk space, Docker status
+uv run python -m openadapt_ml.benchmarks.cli vm diag
 
-# Reset Windows (fresh install)
+# Clean Docker images/containers (free disk space)
+uv run python -m openadapt_ml.benchmarks.cli vm docker-prune
+
+# Reset Windows (delete disk image, forces fresh install)
 uv run python -m openadapt_ml.benchmarks.cli vm reset-windows
 
 # Delete VM when done (IMPORTANT: stops billing)
-uv run python -m openadapt_ml.benchmarks.cli vm delete
+uv run python -m openadapt_ml.benchmarks.cli vm delete -y
 ```
 
 ---
@@ -210,19 +201,22 @@ waa-results/
 
 Windows installs automatically using an unattend.xml answer file that:
 
-1. **Skips product key dialog** - Either Evaluation ISO (no key needed) or GVLK
+1. **Skips product key dialog** - Enterprise Evaluation ISO with `VERSION=11e`
 2. **Bypasses hardware checks** - TPM, SecureBoot, RAM checks disabled
 3. **Configures user account** - Creates "Docker" user with password
 4. **Enables AutoLogon** - User logs in automatically after install
 5. **Runs FirstLogonCommands** - Executes setup scripts on first login
 
-### FirstLogonCommands
+### FirstLogonCommands (in waa-auto)
 
-After Windows installs and auto-logs in, these scripts run:
+Our waa-auto Dockerfile injects additional FirstLogonCommands:
 
-1. `C:\oem\install.bat` - Entry point
-2. `C:\oem\setup.ps1` - Main PowerShell setup (installs Python, dependencies)
-3. `C:\oem\on-logon.ps1` - Starts WAA Flask server
+1. Disable Windows Firewall
+2. Disable sleep and monitor timeout
+3. Disable lock screen
+4. Run `\\host.lan\Data\install.bat` (installs Python, Chrome, etc.)
+5. Create scheduled task for WAA server auto-start
+6. Start WAA server immediately
 
 ### WAA Server Endpoints
 
@@ -245,20 +239,14 @@ After Windows installs and auto-logs in, these scripts run:
 | QEMU clock skew | Tasks timeout unexpectedly | Restart container |
 | FirstLogonCommands failure | Server never starts | Check `C:\Users\Docker\Desktop\*.log` via VNC |
 
-### "ISO file not found"
+### WAA server not responding on /probe
 
-The Windows ISO must be mounted at `/iso/setup.iso`. Either:
-- Mount with `-v ~/waa-iso:/iso`, OR
-- Use our CLI which handles this automatically
+**Cause:** Windows still booting or Flask server failed
 
-### Windows stuck at "Product key" dialog
-
-**Cause:** Using wrong ISO type without matching configuration
-
-**Solution:**
-- Use Enterprise Evaluation ISO (no key needed), OR
-- Use Enterprise ISO + add GVLK to unattend.xml
-- Fallback: VNC to port 8006, click "I don't have a product key"
+**Diagnosis:**
+1. Check VNC at `http://localhost:8006` (via SSH tunnel)
+2. Wait 15-20 minutes for first boot
+3. Run `uv run python -m openadapt_ml.benchmarks.cli vm logs` to see container output
 
 ### Container won't start - disk space
 
@@ -266,33 +254,40 @@ The Windows ISO must be mounted at `/iso/setup.iso`. Either:
 
 **Fix:**
 ```bash
-uv run python -m openadapt_ml.benchmarks.cli vm fix-storage
+uv run python -m openadapt_ml.benchmarks.cli vm docker-prune
+# Or move Docker data to /mnt
+uv run python -m openadapt_ml.benchmarks.cli vm docker-move
 ```
 
-### WAA server not responding on /probe
+### Windows stuck at "Product key" dialog
 
-**Cause:** Windows still booting or Flask server failed
+This should NOT happen with `VERSION=11e` (Enterprise Evaluation).
 
-**Diagnosis:**
-1. Check VNC at `http://<vm-ip>:8006`
-2. Wait 15-20 minutes for first boot
-3. Look for `waa_setup.log` on Windows desktop
+If it does:
+1. Connect via VNC: `http://localhost:8006`
+2. Click "I don't have a product key"
+3. Select "Windows 11 Enterprise" edition
+
+**Better fix:** Delete disk image and let it reinstall:
+```bash
+uv run python -m openadapt_ml.benchmarks.cli vm reset-windows
+```
 
 ---
 
 ## Technical Notes
 
-### Official Image Limitation
+### Why waa-auto Instead of Official Image?
 
-The official `windowsarena/winarena:latest` is built on `dockurr/windows v0.00` (November 2024) which does **not** auto-download Windows.
+The official `windowsarena/winarena:latest` is built on `dockurr/windows v0.00` (November 2024) which does **NOT** auto-download Windows. It expects a manual ISO.
 
-> **Warning:** The dockurr/windows repo updates frequently and may break KVM flags. Consider pinning to a specific digest for production use.
+Our `waa-auto` image uses `dockurr/windows:latest` which auto-downloads Windows based on `VERSION` env var.
 
 ### Network Configuration
 
-- Official WAA uses IP `20.20.20.21` inside the QEMU VM
-- Newer dockurr/windows versions use `172.30.0.2`
-- The official image's scripts are hardcoded to `20.20.20.21`
+- **waa-auto (dockurr/windows):** Windows VM at `172.30.0.2`
+- **Official WAA:** Windows VM at `20.20.20.21`
+- Our Dockerfile patches IP addresses in all entry scripts
 
 ### Azure VM Sizing
 
@@ -306,10 +301,27 @@ Larger VMs reduce screenshot→action loop latency and improve overall throughpu
 
 ---
 
+## Security Considerations
+
+The WAA setup exposes several ports:
+
+| Port | Service | Risk | Recommendation |
+|------|---------|------|----------------|
+| 8006 | VNC (noVNC web) | Medium | Restrict via NSG to your IP |
+| 5000 | WAA Flask API | High | SSH tunnel or NSG restrict |
+
+**Recommended:** Access via SSH tunnel rather than exposing ports publicly:
+```bash
+ssh -L 8006:localhost:8006 -L 5000:localhost:5000 azureuser@<vm-ip>
+```
+
+The CLI's `vm monitor` command automatically sets up SSH tunnels.
+
+---
+
 ## References
 
 - [Windows Agent Arena GitHub](https://github.com/microsoft/WindowsAgentArena)
 - [WAA Paper (arXiv)](https://arxiv.org/abs/2409.08264)
-- [Microsoft Evaluation Center](https://www.microsoft.com/en-us/evalcenter/download-windows-11-enterprise)
+- [dockur/windows](https://github.com/dockur/windows) - Auto-downloads Windows
 - [Microsoft KMS Keys](https://learn.microsoft.com/en-us/windows-server/get-started/kms-client-activation-keys)
-- [dockur/windows](https://github.com/dockur/windows)

@@ -1,5 +1,24 @@
 # Claude Context for openadapt-ml
 
+## Simplicity Guidelines
+
+**Philosophy**: "Less is more. 80/20 impact/complexity. Working code beats elegant design."
+
+**Before writing code, ask**:
+1. Can this be <100 lines? (ideally <50)
+2. Does this provide 80% of value?
+3. Is this the simplest approach?
+
+**Red flags to avoid**:
+- Classes when functions work
+- Abstractions before 3rd use
+- Design docs for non-existent code
+- Multiple implementations of same thing
+
+**See**: `/Users/abrichr/oa/src/openadapt-evals/SIMPLICITY_PRINCIPLES.md` for full guidelines.
+
+---
+
 ## Project Status & Priorities
 
 **IMPORTANT**: Before starting work, always check the project-wide status document:
@@ -73,6 +92,28 @@ uv run python -m openadapt_ml.benchmarks.cli vm monitor
 ```
 
 **After every /compact or session restart, your LITERAL FIRST ACTION must be starting this dashboard if VMs are involved.**
+
+---
+## 🔴 MANDATORY: VERIFY URLs BEFORE RECOMMENDING 🔴
+
+**BEFORE telling the user to access ANY URL (localhost:XXXX, VNC, dashboard, etc.):**
+
+1. **MANUALLY VERIFY** the URL is accessible by running a curl/check command
+2. **NEVER assume** a service is running just because it was started earlier
+3. **NEVER recommend** a URL based on documentation alone - ALWAYS test first
+
+**Example verification:**
+```bash
+# ALWAYS do this BEFORE telling user to visit localhost:8006
+curl -s --connect-timeout 5 http://localhost:8006/ > /dev/null && echo "VNC accessible" || echo "VNC NOT accessible"
+```
+
+**If verification fails:**
+- Do NOT tell user to access the URL
+- Diagnose why it's not working
+- Fix it first, THEN provide the URL
+
+**This rule exists because:** The user was told to access localhost:8006 when the container was gone. This is unacceptable.
 
 ---
 ## 🚨🚨🚨 STOP! READ THIS BEFORE EVERY COMMAND 🚨🚨🚨
@@ -586,23 +627,28 @@ pgrep -f "openadapt" -l  # Lists matching processes before killing
 
 **Available VM CLI commands**:
 ```bash
-vm monitor       # THE GO-TO COMMAND: Start dashboard, open browser, show probe status
-                 # Options: --auto-shutdown-hours N (deallocate after N hours)
-vm setup-waa     # Full VM setup with Docker and waa-auto image
-vm run-waa       # Run benchmark (requires waa-auto image, --rebuild to force image rebuild)
-vm diag          # Check disk, Docker, containers, WAA probe status
-vm logs          # View container logs (--lines N, --follow)
-vm probe         # Check WAA server status (--wait to poll)
-vm exec          # Run command in container (--cmd 'your command')
-vm fix-oem       # Copy OEM files to Samba share (for manual install.bat)
-vm docker-prune  # Clean Docker images, containers, build cache (free disk space)
-vm docker-move   # Move Docker/containerd to /mnt via symlinks (147GB space)
-vm stop-build    # Stop running Docker build and clean build cache
-vm status        # Azure VM status
-vm ssh           # Interactive SSH
-vm deallocate    # Stop VM billing (preserves disk), use -y to skip confirmation
-vm start         # Start a deallocated VM
-vm delete        # Delete VM (use -y to skip confirmation)
+vm monitor         # THE GO-TO COMMAND: Start dashboard, open browser, show probe status
+                   # Options: --auto-shutdown-hours N (deallocate after N hours)
+vm setup-waa       # Full VM setup with Docker and waa-auto image
+vm run-waa         # Run benchmark (requires waa-auto image, --rebuild to force image rebuild)
+vm diag            # Check disk, Docker, containers, WAA probe status
+vm logs            # View container logs (--lines N, --follow)
+vm probe           # Check WAA server status (--wait to poll)
+vm exec            # Run command in container (--cmd 'your command')
+vm host-exec       # Run command on VM host (not in container) (--cmd 'your command')
+vm start-windows   # Start Windows container with waa-auto image
+vm restart-windows # Stop and restart the Windows container
+vm check-build     # Check Docker build status from /tmp/waa_build.log
+vm stop-build      # Stop running Docker build and clean build cache
+vm fix-oem         # Copy OEM files to Samba share (for manual install.bat)
+vm reset-windows   # Delete Windows storage and start fresh installation
+vm docker-prune    # Clean Docker images, containers, build cache (free disk space)
+vm docker-move     # Move Docker/containerd to /mnt via symlinks (147GB space)
+vm status          # Azure VM status
+vm ssh             # Interactive SSH
+vm deallocate      # Stop VM billing (preserves disk), use -y to skip confirmation
+vm start           # Start a deallocated VM
+vm delete          # Delete VM (use -y to skip confirmation)
 ```
 
 ## TODO / Known Issues
@@ -663,83 +709,109 @@ az ml workspace sync-keys -n openadapt-ml -g openadapt-agents
 - [ACR Pull Role Assignment](https://learn.microsoft.com/en-us/azure/container-registry/container-registry-authentication-managed-identity)
 
 ### Azure WAA Evaluation - Dedicated VM Setup
-**Status**: WORKING - Custom `waa-auto` Docker image REQUIRED (verified Jan 2026)
+**Status**: WORKING - Fully Automated with waa-auto (Jan 2026)
 
-**Problem**: WAA requires running a Windows VM inside Docker (via QEMU). Azure ML managed compute doesn't support nested virtualization.
+**IMPORTANT**: See `docs/WAA_APPROACH_REVIEW.md` for full documentation.
 
-**CRITICAL**: The official `windowsarena/winarena:latest` image is **BROKEN**. It uses an outdated `dockurr/windows v0.00` that does NOT auto-download Windows 11. You will get "ISO file not found" errors and the VM will never start.
+**CRITICAL**: NO MANUAL ISO DOWNLOADS. Everything is fully automated using `dockurr/windows`.
 
-**Solution**: The CLI builds a custom `waa-auto` Docker image that:
-1. Uses modern `dockurr/windows:latest` (v5.14+) which auto-downloads Windows 11
-2. Installs Python 3 and all WAA client dependencies
-3. Patches IP addresses for dockurr/windows networking
+**How it works**:
+- Our `waa-auto` Dockerfile uses `dockurr/windows:latest` as base
+- dockurr/windows **automatically downloads Windows 11** based on `VERSION` env var
+- Setting `VERSION=11e` downloads Windows 11 Enterprise (~6.6 GB)
+- First run: Downloads ISO + installs Windows (~15-20 min)
+- Subsequent runs: Boots from cached disk image (~2-3 min)
 
-**Working Quick Start** (via CLI - fully automated):
+**FULLY AUTOMATED - Via CLI**:
+
 ```bash
-# 1. Setup VM with Docker and build waa-auto image (~10 min)
+# 1. Setup Azure VM with Docker and build waa-auto image (~10 min)
 uv run python -m openadapt_ml.benchmarks.cli vm setup-waa --api-key $OPENAI_API_KEY
 
-# 2. Run benchmark (Windows downloads on first run, ~15 min, then ~30 min/20 tasks)
+# 2. Run benchmark (Windows auto-downloads on first run)
 uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 20
 
-# 3. Delete VM when done (IMPORTANT: stops billing!)
-uv run python -m openadapt_ml.benchmarks.cli vm delete
+# 3. Monitor (optional, for debugging)
+uv run python -m openadapt_ml.benchmarks.cli vm monitor
+# Opens browser to VNC at http://localhost:8006
+
+# 4. Delete VM when done (IMPORTANT: stops billing!)
+uv run python -m openadapt_ml.benchmarks.cli vm delete -y
 ```
 
 **Diagnostic commands**:
 ```bash
-# Check VM disk, Docker, containers, WAA probe status
-uv run python -m openadapt_ml.benchmarks.cli vm diag
-
-# Check VM Azure status
-uv run python -m openadapt_ml.benchmarks.cli vm status
-
-# SSH into VM for debugging
-uv run python -m openadapt_ml.benchmarks.cli vm ssh
-
-# Check if WAA server is ready
-uv run python -m openadapt_ml.benchmarks.cli vm probe --wait
-
-# Force rebuild waa-auto if needed
-uv run python -m openadapt_ml.benchmarks.cli vm run-waa --rebuild --num-tasks 5
+uv run python -m openadapt_ml.benchmarks.cli vm diag     # Check disk, Docker, containers
+uv run python -m openadapt_ml.benchmarks.cli vm status   # Azure VM status
+uv run python -m openadapt_ml.benchmarks.cli vm ssh      # Interactive SSH
+uv run python -m openadapt_ml.benchmarks.cli vm probe    # Check WAA server readiness
+uv run python -m openadapt_ml.benchmarks.cli vm logs     # View container logs
 ```
-
-**What the CLI does** (via custom `waa-auto` Docker image in `openadapt_ml/benchmarks/waa/Dockerfile`):
-1. Uses modern `dockurr/windows:latest` base (auto-downloads Windows 11)
-2. Copies `/oem` folder from official WAA image (fixes OEM folder issue)
-3. Patches IP addresses (20.20.20.21 → 172.30.0.2)
-4. Adds automation commands to Windows FirstLogonCommands:
-   - Disable firewall, sleep, lock screen
-   - **Auto-runs install.bat** to install Python, Chrome, LibreOffice, VSCode, WAA server
-5. Installs Python dependencies for benchmark client
-
-**Fully automated** - no manual VNC login or script execution needed!
 
 **Key requirements**:
 1. **VM Size**: `Standard_D4ds_v5` or larger (nested virtualization required)
-2. **Docker storage**: Scripts use `/mnt/WindowsAgentArena/src/win-arena-container/vm/storage`
-3. **ISO location**: `src/win-arena-container/vm/image/setup.iso`
-4. **API key**: `config.json` in repo root with OPENAI_API_KEY
-5. **Valid model name**: Must use real OpenAI model (e.g., `gpt-4o`, `gpt-4o-mini`). Invalid names cause benchmark to hang on API retries.
+2. **API key**: `config.json` with OPENAI_API_KEY (or set env var)
+3. **Valid model**: Use real OpenAI model name (gpt-4o, gpt-4o-mini)
 
 **Architecture**:
 ```
 Azure VM (Standard_D4ds_v5, nested virt enabled)
   └── Docker (data on /mnt)
-       └── winarena:latest (built by run-local.sh)
-            └── QEMU running Windows 11 VM (IP: 20.20.20.21)
+       └── waa-auto:latest (based on dockurr/windows)
+            └── QEMU running Windows 11 (IP: 172.30.0.2)
                  └── WAA Flask server on port 5000
                  └── Navi agent executing tasks
 ```
 
+**What waa-auto does**:
+1. Uses `dockurr/windows:latest` (auto-downloads Windows via `VERSION=11e`)
+2. Copies WAA client/server from `windowsarena/winarena:latest`
+3. Patches IP addresses (20.20.20.21 -> 172.30.0.2)
+4. Injects FirstLogonCommands to run install.bat
+5. Installs Python dependencies for benchmark client
+
 **Monitor progress**:
 - VNC: `http://localhost:8006` (via SSH tunnel, auto-managed by dashboard)
-- Logs: `tail -f /tmp/waa_benchmark.log` (if running via nohup)
+- Logs: `uv run python -m openadapt_ml.benchmarks.cli vm logs`
 
 **Files**:
-- `openadapt_ml/benchmarks/cli.py` - `vm` subcommand with setup-waa, probe
-- `openadapt_ml/cloud/ssh_tunnel.py` - SSH tunnel manager (auto VNC/WAA tunnels)
-- `docs/waa_setup.md` - Detailed setup guide
+- `docs/WAA_APPROACH_REVIEW.md` - Full analysis (updated Jan 2026)
+- `openadapt_ml/benchmarks/waa_deploy/Dockerfile` - Custom waa-auto image
+- `openadapt_ml/benchmarks/cli.py` - CLI commands
+
+### Docker Disk Space Management
+**Status**: FIXED - Automatic cleanup (Jan 2026)
+
+**Problem**: Docker build cache on /mnt (147GB) was growing to 90+ GB during builds, exhausting disk space and causing builds to fail with "no space left on device".
+
+**Root cause**: Docker's build cache and containerd snapshotter accumulate data that isn't cleaned by `docker system prune`:
+- `/mnt/docker/buildkit/containerd-overlayfs` - BuildKit layer cache
+- `/mnt/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots` - Containerd snapshots
+- These can grow to 30-40 GB each, even with no images present
+
+**Solution implemented** (3 parts):
+
+1. **Automatic pre-build cleanup**: Before Docker builds, the CLI now runs `docker builder prune -af` and checks available disk space, warning if < 50GB.
+
+2. **Automatic post-build cleanup**: After successful builds, the CLI cleans build cache and dangling images to prevent accumulation.
+
+3. **BuildKit garbage collection**: New VMs are configured with `/etc/buildkit/buildkitd.toml` that limits cache to 30GB max.
+
+4. **Enhanced docker-prune command**: Now includes "deep cleanup" that stops Docker/containerd and removes orphaned snapshots that normal prune misses.
+
+**Usage**:
+```bash
+# Quick cleanup (standard prune + deep cleanup + configure GC)
+uv run python -m openadapt_ml.benchmarks.cli vm docker-prune
+
+# For severe disk issues, delete VM and recreate (comes with GC pre-configured)
+uv run python -m openadapt_ml.benchmarks.cli vm delete -y
+uv run python -m openadapt_ml.benchmarks.cli vm setup-waa --api-key $OPENAI_API_KEY
+```
+
+**Files changed**:
+- `openadapt_ml/benchmarks/cli.py` - Pre/post build cleanup, enhanced docker-prune
+- New VMs get BuildKit GC config during setup
 
 ### SSH Tunnel Management (VNC/WAA Access)
 **Status**: DONE

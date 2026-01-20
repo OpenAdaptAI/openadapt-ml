@@ -477,6 +477,17 @@ def cmd_serve(args: argparse.Namespace) -> int:
             # Also regenerate benchmark viewer from latest benchmark results
             _regenerate_benchmark_viewer_if_available(serve_dir)
 
+            # Generate Azure ops dashboard
+            try:
+                from openadapt_ml.training.azure_ops_viewer import (
+                    generate_azure_ops_dashboard,
+                )
+
+                generate_azure_ops_dashboard(serve_dir / "azure_ops.html")
+                print("  Generated Azure ops dashboard")
+            except Exception as e:
+                print(f"  Warning: Could not generate Azure ops dashboard: {e}")
+
         start_page = "dashboard.html"
 
     # Override start page if specified
@@ -995,6 +1006,29 @@ def cmd_serve(args: argparse.Namespace) -> int:
                         self.send_error(400, "Invalid screenshot path format")
                 except Exception as e:
                     self.send_error(500, f"Error serving screenshot: {e}")
+            elif self.path.startswith("/api/azure-ops-sse"):
+                # Server-Sent Events endpoint for Azure operations status
+                try:
+                    self._stream_azure_ops_updates()
+                except Exception as e:
+                    self.send_error(500, f"SSE error: {e}")
+            elif self.path.startswith("/api/azure-ops-status"):
+                # Return Azure operations status from JSON file
+                try:
+                    from openadapt_ml.benchmarks.azure_ops_tracker import read_status
+
+                    status = read_status()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps(status).encode())
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
             else:
                 # Default file serving
                 super().do_GET()
@@ -2698,6 +2732,148 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 send_event("error", {"message": str(e)})
             finally:
                 # Cleanup - connection is ending
+                client_connected = False
+
+        def _stream_azure_ops_updates(self):
+            """Stream Server-Sent Events for Azure operations status updates.
+
+            Monitors azure_ops_status.json for changes and streams updates.
+            Uses file modification time to detect changes efficiently.
+
+            Streams events:
+            - connected: Initial connection event
+            - status: Azure ops status update when file changes
+            - heartbeat: Keep-alive signal every 30 seconds
+            - error: Error messages
+            """
+            import time
+            import select
+            from pathlib import Path
+
+            HEARTBEAT_INTERVAL = 30  # seconds
+            CHECK_INTERVAL = 1  # Check file every second
+
+            # Set SSE headers
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Connection", "keep-alive")
+            self.send_header("X-Accel-Buffering", "no")  # Disable nginx buffering
+            self.end_headers()
+
+            # Track connection state
+            client_connected = True
+            last_mtime = 0.0
+            last_heartbeat = time.time()
+
+            def send_event(event_type: str, data: dict) -> bool:
+                """Send an SSE event. Returns False if client disconnected."""
+                nonlocal client_connected
+                if not client_connected:
+                    return False
+                try:
+                    event_str = f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+                    self.wfile.write(event_str.encode("utf-8"))
+                    self.wfile.flush()
+                    return True
+                except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                    client_connected = False
+                    return False
+                except Exception as e:
+                    print(f"Azure ops SSE send error: {e}")
+                    client_connected = False
+                    return False
+
+            def check_client_connected() -> bool:
+                """Check if client is still connected using socket select."""
+                nonlocal client_connected
+                if not client_connected:
+                    return False
+                try:
+                    rlist, _, xlist = select.select([self.rfile], [], [self.rfile], 0)
+                    if xlist:
+                        client_connected = False
+                        return False
+                    if rlist:
+                        data = self.rfile.read(1)
+                        if not data:
+                            client_connected = False
+                            return False
+                    return True
+                except Exception:
+                    client_connected = False
+                    return False
+
+            # Status file path
+            from openadapt_ml.benchmarks.azure_ops_tracker import (
+                DEFAULT_OUTPUT_FILE,
+                read_status,
+            )
+
+            status_file = Path(DEFAULT_OUTPUT_FILE)
+
+            # Send initial connected event
+            if not send_event(
+                "connected",
+                {"timestamp": time.time(), "version": "1.0"},
+            ):
+                return
+
+            # Send initial status immediately
+            try:
+                status = read_status()
+                if not send_event("status", status):
+                    return
+                if status_file.exists():
+                    last_mtime = status_file.stat().st_mtime
+            except Exception as e:
+                send_event("error", {"message": str(e)})
+
+            try:
+                iteration_count = 0
+                max_iterations = 3600  # Max 1 hour of streaming
+
+                while client_connected and iteration_count < max_iterations:
+                    iteration_count += 1
+                    current_time = time.time()
+
+                    # Check client connection
+                    if not check_client_connected():
+                        break
+
+                    # Send heartbeat every 30 seconds
+                    if current_time - last_heartbeat >= HEARTBEAT_INTERVAL:
+                        if not send_event("heartbeat", {"timestamp": current_time}):
+                            break
+                        last_heartbeat = current_time
+
+                    # Check if status file changed
+                    try:
+                        if status_file.exists():
+                            current_mtime = status_file.stat().st_mtime
+                            if current_mtime > last_mtime:
+                                # File changed - send update
+                                status = read_status()
+                                if not send_event("status", status):
+                                    break
+                                last_mtime = current_mtime
+                    except Exception as e:
+                        # File access error - log but continue
+                        print(f"Azure ops SSE file check error: {e}")
+
+                    # Sleep briefly before next check
+                    try:
+                        select.select([self.rfile], [], [], CHECK_INTERVAL)
+                    except Exception:
+                        break
+
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                # Client disconnected - normal
+                pass
+            except Exception as e:
+                send_event("error", {"message": str(e)})
+            finally:
                 client_connected = False
 
         def _detect_running_benchmark_sync(
