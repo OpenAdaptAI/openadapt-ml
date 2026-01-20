@@ -3256,8 +3256,8 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
         print("  ✓ Cleanup complete (using /mnt for 115GB temp disk)")
 
         # Step 3: Start automated WAA container
-        # Use VERSION=11e for Windows 11 Enterprise (accepts GVLK keys, no product key dialog)
-        # Note: VERSION=11 would download Pro, which also works but is less suitable for benchmarks
+        # Use VERSION=11 for Windows 11 Pro (fully unattended, no edition picker)
+        # Note: VERSION=11e downloads Enterprise Evaluation which shows edition picker dialog
         print("\n[3/4] Starting automated WAA container...")
         docker_cmd = """docker run -d \
   --name winarena \
@@ -3268,7 +3268,7 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
   -p 7100:7100 \
   -p 7200:7200 \
   -v /mnt/waa-storage:/storage \
-  -e VERSION=11e \
+  -e VERSION=11 \
   -e RAM_SIZE=12G \
   -e CPU_CORES=4 \
   -e DISK_SIZE=64G \
@@ -3750,6 +3750,25 @@ ls -lh /mnt/waa-storage/
                 else:
                     print(f"      ✗ api_agent.py not found at {api_agent_path}")
                     sys.exit(1)
+
+                # Auto-cleanup: Clear Docker build cache before building to prevent disk space issues
+                # This is lighter than full prune - keeps existing images but clears build cache
+                print("      Clearing Docker build cache...")
+                cleanup_result = subprocess.run(
+                    [
+                        "ssh",
+                        *SSH_OPTS,
+                        f"azureuser@{ip}",
+                        "docker builder prune -af 2>&1 | tail -3",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                if "reclaimed" in cleanup_result.stdout.lower():
+                    print(f"      {cleanup_result.stdout.strip()}")
+                else:
+                    print("      Build cache cleared")
 
                 # Build the image (using /home/azureuser as context to avoid /tmp issues)
                 print("      Building waa-auto image (streaming output)...")
@@ -5991,7 +6010,7 @@ echo "killed"
   -p 5000:5000 \
   -p 7200:7200 \
   -v /mnt/waa-storage:/storage \
-  -e VERSION=11e \
+  -e VERSION=11 \
   -e RAM_SIZE=12G \
   -e CPU_CORES=4 \
   -e DISK_SIZE=64G \
@@ -6061,7 +6080,7 @@ echo "killed"
                 "-p 5000:5000 "
                 "-p 7200:7200 "
                 "-v /mnt/waa-storage:/storage "
-                "-e VERSION=11e "
+                "-e VERSION=11 "
                 "-e RAM_SIZE=12G "
                 "-e CPU_CORES=4 "
                 "-e DISK_SIZE=64G "

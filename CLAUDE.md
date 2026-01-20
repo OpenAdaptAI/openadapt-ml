@@ -718,7 +718,8 @@ az ml workspace sync-keys -n openadapt-ml -g openadapt-agents
 **How it works**:
 - Our `waa-auto` Dockerfile uses `dockurr/windows:latest` as base
 - dockurr/windows **automatically downloads Windows 11** based on `VERSION` env var
-- Setting `VERSION=11e` downloads Windows 11 Enterprise (~6.6 GB)
+- Setting `VERSION=11` downloads Windows 11 Pro (~6.6 GB) - **fully unattended, no dialogs**
+- Note: `VERSION=11e` downloads Enterprise Evaluation which shows an edition picker dialog
 - First run: Downloads ISO + installs Windows (~15-20 min)
 - Subsequent runs: Boots from cached disk image (~2-3 min)
 
@@ -764,10 +765,10 @@ Azure VM (Standard_D4ds_v5, nested virt enabled)
 ```
 
 **What waa-auto does**:
-1. Uses `dockurr/windows:latest` (auto-downloads Windows via `VERSION=11e`)
+1. Uses `dockurr/windows:latest` (auto-downloads Windows Pro via `VERSION=11`)
 2. Copies WAA client/server from `windowsarena/winarena:latest`
 3. Patches IP addresses (20.20.20.21 -> 172.30.0.2)
-4. Injects FirstLogonCommands to run install.bat
+4. Injects FirstLogonCommands to run install.bat automatically
 5. Installs Python dependencies for benchmark client
 
 **Monitor progress**:
@@ -812,6 +813,37 @@ uv run python -m openadapt_ml.benchmarks.cli vm setup-waa --api-key $OPENAI_API_
 **Files changed**:
 - `openadapt_ml/benchmarks/cli.py` - Pre/post build cleanup, enhanced docker-prune
 - New VMs get BuildKit GC config during setup
+
+### Windows "Select Operating System" Prompt Fix
+**Status**: FIXED (Jan 2026)
+
+**Problem**: Windows installer shows "Select the operating system you want to install" dialog instead of auto-selecting, even with autounattend.xml.
+
+**Root cause**: The autounattend.xml from dockurr/windows lacks an `<InstallFrom>` element with `<MetaData>` to specify which image index to install. When install.wim contains multiple editions (or when Windows can't auto-detect), it prompts the user.
+
+**Solution**: Added `<InstallFrom>` element to autounattend.xml that explicitly selects image index 1:
+
+```xml
+<ImageInstall>
+  <OSImage>
+    <InstallFrom>
+      <MetaData wcm:action="add">
+        <Key>/IMAGE/INDEX</Key>
+        <Value>1</Value>
+      </MetaData>
+    </InstallFrom>
+    <InstallTo>...</InstallTo>
+  </OSImage>
+</ImageInstall>
+```
+
+**Files changed**:
+- `openadapt_ml/benchmarks/waa_deploy/Dockerfile` - Adds sed command to inject InstallFrom element
+
+**If you still see the prompt**:
+1. Delete cached storage: `uv run python -m openadapt_ml.benchmarks.cli vm host-exec --cmd 'rm -rf /mnt/waa-storage/*'`
+2. Rebuild waa-auto image: `uv run python -m openadapt_ml.benchmarks.cli vm run-waa --rebuild`
+3. Check container is using waa-auto (not dockurr/windows directly): `uv run python -m openadapt_ml.benchmarks.cli vm host-exec --cmd 'docker inspect winarena | grep Image'`
 
 ### SSH Tunnel Management (VNC/WAA Access)
 **Status**: DONE
