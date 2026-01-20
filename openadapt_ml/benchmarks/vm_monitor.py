@@ -118,9 +118,10 @@ class VMMonitor:
         self.timeout = timeout
 
     def check_vnc(self) -> bool:
-        """Check if VNC port is reachable."""
+        """Check if VNC port is reachable via SSH tunnel (localhost)."""
         try:
-            url = f"http://{self.config.ssh_host}:{self.config.vnc_port}/"
+            # VNC is only accessible via SSH tunnel at localhost, not the public IP
+            url = f"http://localhost:{self.config.vnc_port}/"
             req = urllib.request.Request(url, method="HEAD")
             with urllib.request.urlopen(req, timeout=self.timeout):
                 return True

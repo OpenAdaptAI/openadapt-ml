@@ -47,11 +47,38 @@ COPY --from=windowsarena/winarena:latest /models /models
 # Copy Windows setup scripts (install.bat, setup.ps1, etc.)
 COPY --from=windowsarena/winarena:latest /oem /oem
 
-# Copy OEM files AFTER dockurr/samba starts (which wipes /tmp/smb)
-# Copy IMMEDIATELY (no delay) and SYNCHRONOUSLY (not backgrounded) to ensure
-# files are available before Windows boots and runs FirstLogonCommands
-RUN sed -i '/^return 0$/i cp -r /oem/* /tmp/smb/ 2>/dev/null || true' /run/samba.sh && \
-    echo "Inserted OEM copy before return in samba.sh"
+# Patch samba.sh to copy OEM files to the samba share after it starts
+# The samba share is at /tmp/smb (or /shared if mounted)
+# OEM files are needed BEFORE Windows runs FirstLogonCommands
+RUN sed -i '/^return 0$/i\
+# Copy OEM files to samba share for Windows access\n\
+echo "[samba.sh] Copying OEM files to samba share..."\n\
+SHARE_DIR="/tmp/smb"\n\
+[ -d "/shared" ] && SHARE_DIR="/shared"\n\
+cp -rv /oem/* "$SHARE_DIR/" 2>/dev/null || echo "[samba.sh] OEM copy failed, files may already exist"\n\
+ls -la "$SHARE_DIR/" 2>/dev/null || true\
+' /run/samba.sh && echo "Patched samba.sh to copy OEM files"
+
+# -----------------------------------------------------------------------------
+# Port forwarding: Forward port 5000 from container to Windows VM (172.30.0.2)
+# dockurr/windows doesn't auto-forward ports to the Windows VM inside QEMU
+# We use a simple nc loop to forward WAA server traffic
+# -----------------------------------------------------------------------------
+
+# Create port forwarder script
+RUN printf '#!/bin/bash\n\
+# Wait for Windows VM to be ready (DHCP lease means VM is up)\n\
+while ! grep -q "172.30.0.2" /var/log/dnsmasq.log 2>/dev/null; do sleep 5; done\n\
+# Start port forwarder for WAA server (port 5000)\n\
+while true; do\n\
+    nc -lp 5000 -c "nc 172.30.0.2 5000" 2>/dev/null || sleep 1\n\
+done\n\
+' > /port_forward.sh && chmod +x /port_forward.sh
+
+# Inject port forwarder startup into dockurr entry script
+# This runs after network setup but before the main wait loop
+RUN sed -i '/^return 0$/i nohup /port_forward.sh >/dev/null 2>\&1 \&' /run/samba.sh && \
+    echo "Inserted port forwarder startup in samba.sh"
 
 # Copy unattend.xml for automated Windows installation
 COPY --from=windowsarena/winarena:latest /run/assets/win11x64-enterprise-eval.xml /run/assets/win11x64.xml
@@ -83,16 +110,6 @@ RUN find /client -name "*.py" -exec sed -i 's|20.20.20.21|172.30.0.2|g' {} \; &&
 
 # Copy api_agent.py to the client mm_agents directory
 COPY api_agent.py /client/mm_agents/api_agent.py
-
-# Patch run.py to support api-claude and api-openai agents
-# This adds elif blocks after the "navi" agent handling
-# Using Python to insert the patch with proper indentation
-RUN python3 -c "import re; \
-f = open('/client/run.py', 'r'); c = f.read(); f.close(); \
-patch = '''    elif cfg_args[\"agent_name\"] in [\"api-claude\", \"api-openai\"]:\n        from mm_agents.api_agent import ApiAgent\n        provider = \"anthropic\" if cfg_args[\"agent_name\"] == \"api-claude\" else \"openai\"\n        agent = ApiAgent(provider=provider, temperature=args.temperature)\n'''; \
-c = c.replace('raise ValueError(f\"Unknown agent name: {cfg_args', patch + '    raise ValueError(f\"Unknown agent name: {cfg_args'); \
-f = open('/client/run.py', 'w'); f.write(c); f.close(); \
-print('Patched run.py for API agents')"
 
 # -----------------------------------------------------------------------------
 # Fix Windows setup for automation
@@ -200,13 +217,23 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 # Install Playwright browsers
 RUN playwright install chromium
 
+# Patch run.py to support api-claude and api-openai agents
+# This adds elif blocks after the "navi" agent handling
+# Using Python to insert the patch with proper indentation
+RUN python3 -c "import re; \
+f = open('/client/run.py', 'r'); c = f.read(); f.close(); \
+patch = '''    elif cfg_args[\"agent_name\"] in [\"api-claude\", \"api-openai\"]:\n        from mm_agents.api_agent import ApiAgent\n        provider = \"anthropic\" if cfg_args[\"agent_name\"] == \"api-claude\" else \"openai\"\n        agent = ApiAgent(provider=provider, temperature=args.temperature)\n'''; \
+c = c.replace('    else:\\n        raise ValueError', patch + '    else:\\n        raise ValueError'); \
+f = open('/client/run.py', 'w'); f.write(c); f.close(); \
+print('Patched run.py for API agents')"
+
 # -----------------------------------------------------------------------------
 # Environment configuration
 # -----------------------------------------------------------------------------
 
 ENV YRES="900"
 ENV XRES="1440"
-ENV RAM_SIZE="8G"
+ENV RAM_SIZE="6G"
 ENV CPU_CORES="4"
 ENV DISK_SIZE="30G"
 ENV VERSION="11e"
@@ -215,8 +242,8 @@ ENV ARGUMENTS="-qmp tcp:0.0.0.0:7200,server,nowait"
 # Expose ports
 EXPOSE 8006 5000 7200 3389
 
-# Default entrypoint - copy OEM files then run entry.sh
+# Default entrypoint - run entry.sh (OEM files are copied via samba.sh patch)
 # Use: /entry.sh --start-client true --model gpt-4o
 # Or:  /entry.sh --start-client false (just start Windows, no benchmark)
 ENTRYPOINT ["/bin/bash", "-c"]
-CMD ["/copy-oem.sh /entry.sh --start-client false"]
+CMD ["/entry.sh --start-client false"]

@@ -2790,7 +2790,12 @@ def cmd_vm(args: argparse.Namespace) -> None:
                 "sudo usermod -aG docker $USER",
                 "sudo systemctl stop docker",
                 "sudo mkdir -p /mnt/docker",
-                'echo \'{"data-root": "/mnt/docker"}\' | sudo tee /etc/docker/daemon.json',
+                # Configure Docker to use /mnt and enable BuildKit with cache limits
+                # keepBytes: max 30GB cache, gcPolicy: auto-prune when over limit
+                'echo \'{"data-root": "/mnt/docker", "features": {"buildkit": true}}\' | sudo tee /etc/docker/daemon.json',
+                # Configure BuildKit garbage collection (30GB max cache)
+                "sudo mkdir -p /etc/buildkit",
+                'echo \'[worker.oci]\\n  gc = true\\n  gckeepstorage = 30000000000\\n[[worker.oci.gcpolicy]]\\n  keepBytes = 30000000000\\n  keepDuration = 172800\\n  filters = ["type==source.local", "type==exec.cachemount", "type==source.git.checkout"]\' | sudo tee /etc/buildkit/buildkitd.toml',
                 "sudo systemctl start docker",
             ]
             result = subprocess.run(
@@ -2929,7 +2934,12 @@ EOF'''
                 # Configure Docker to use larger /mnt disk
                 "sudo systemctl stop docker",
                 "sudo mkdir -p /mnt/docker",
-                'echo \'{"data-root": "/mnt/docker"}\' | sudo tee /etc/docker/daemon.json',
+                # Configure Docker to use /mnt and enable BuildKit with cache limits
+                # keepBytes: max 30GB cache, gcPolicy: auto-prune when over limit
+                'echo \'{"data-root": "/mnt/docker", "features": {"buildkit": true}}\' | sudo tee /etc/docker/daemon.json',
+                # Configure BuildKit garbage collection (30GB max cache)
+                "sudo mkdir -p /etc/buildkit",
+                'echo \'[worker.oci]\\n  gc = true\\n  gckeepstorage = 30000000000\\n[[worker.oci.gcpolicy]]\\n  keepBytes = 30000000000\\n  keepDuration = 172800\\n  filters = ["type==source.local", "type==exec.cachemount", "type==source.git.checkout"]\' | sudo tee /etc/buildkit/buildkitd.toml',
                 "sudo systemctl start docker",
             ]
             result = subprocess.run(
@@ -3654,6 +3664,53 @@ ls -lh /mnt/waa-storage/
         if not waa_auto_exists:
             print("      waa-auto image not found, building...")
 
+            # Clean up Docker build cache BEFORE building to prevent disk space issues
+            # The build cache can grow to 90+ GB and exhaust /mnt (147GB)
+            print("      Cleaning Docker build cache before build...")
+            prune_before_result = subprocess.run(
+                [
+                    "ssh",
+                    *SSH_OPTS,
+                    f"azureuser@{ip}",
+                    "docker builder prune -af 2>&1 | tail -3",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if "Total reclaimed space" in prune_before_result.stdout:
+                for line in prune_before_result.stdout.strip().split("\n"):
+                    if "Total reclaimed space" in line:
+                        print(f"      {line.strip()}")
+
+            # Check available disk space on /mnt (where Docker data lives)
+            df_result = subprocess.run(
+                [
+                    "ssh",
+                    *SSH_OPTS,
+                    f"azureuser@{ip}",
+                    "df -h /mnt | tail -1 | awk '{print $4}'",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if df_result.returncode == 0:
+                avail = df_result.stdout.strip()
+                print(f"      Available disk space on /mnt: {avail}")
+                # Parse available space and warn if less than 50GB
+                try:
+                    avail_num = float(avail.replace("G", ""))
+                    if avail_num < 50:
+                        print(
+                            f"      WARNING: Low disk space ({avail}). Build may fail."
+                        )
+                        print(
+                            "      Consider running: uv run python -m openadapt_ml.benchmarks.cli vm docker-prune"
+                        )
+                except (ValueError, AttributeError):
+                    pass  # Could not parse, continue anyway
+
             # Copy Dockerfile and api_agent.py to VM
             waa_deploy_dir = Path(__file__).parent / "waa_deploy"
             dockerfile_path = waa_deploy_dir / "Dockerfile"
@@ -3772,6 +3829,38 @@ ls -lh /mnt/waa-storage/
                 ):
                     print()
                     print("      ✓ waa-auto image built successfully")
+
+                    # Clean up Docker build cache AFTER successful build to free space
+                    # This prevents cache accumulation across multiple builds
+                    print("      Cleaning Docker build cache after build...")
+                    prune_after_result = subprocess.run(
+                        [
+                            "ssh",
+                            *SSH_OPTS,
+                            f"azureuser@{ip}",
+                            "docker builder prune -af 2>&1 | tail -3",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                    )
+                    if "Total reclaimed space" in prune_after_result.stdout:
+                        for line in prune_after_result.stdout.strip().split("\n"):
+                            if "Total reclaimed space" in line:
+                                print(f"      {line.strip()}")
+
+                    # Also remove dangling images (intermediate layers not tagged)
+                    subprocess.run(
+                        [
+                            "ssh",
+                            *SSH_OPTS,
+                            f"azureuser@{ip}",
+                            "docker image prune -f 2>/dev/null",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
                 else:
                     print()
                     print("      Last 20 lines of build output:")
@@ -3858,7 +3947,7 @@ ls -lh /mnt/waa-storage/
   -p 8006:8006 \
   -p 5000:5000 \
   -p 7200:7200 \
-  -v /mnt/docker/storage:/storage \
+  -v /mnt/winarena-storage:/storage \
   -v ~/waa-results:/results \
   {env_args} \
   {docker_image} \
@@ -4167,7 +4256,7 @@ ls -lh /mnt/waa-storage/
         print()
 
         # Check disk space before
-        print("[1/3] Current disk usage...")
+        print("[1/4] Current disk usage...")
         df_result = subprocess.run(
             [
                 "ssh",
@@ -4181,7 +4270,7 @@ ls -lh /mnt/waa-storage/
         print(f"  {df_result.stdout}")
 
         # Docker system prune
-        print("[2/3] Cleaning Docker (images, containers, build cache)...")
+        print("[2/4] Cleaning Docker (images, containers, build cache)...")
         prune_result = subprocess.run(
             [
                 "ssh",
@@ -4204,8 +4293,43 @@ ls -lh /mnt/waa-storage/
         else:
             print(f"  Warning: {prune_result.stderr[:200]}")
 
+        # Deep cleanup: containerd snapshotter and buildkit cache
+        # These can accumulate even after docker prune
+        print("[3/4] Deep cleanup (containerd snapshotter, buildkit)...")
+        deep_clean_cmd = """
+# Stop services to release file locks
+sudo systemctl stop docker.socket docker.service containerd.service 2>/dev/null
+sleep 2
+# Kill any remaining containerd processes
+sudo pkill -9 containerd 2>/dev/null || true
+sleep 1
+# Clean containerd overlayfs snapshots (can be 30+ GB)
+sudo rm -rf /mnt/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/* 2>/dev/null || true
+sudo rm -rf /mnt/containerd/io.containerd.content.v1.content/blobs/* 2>/dev/null || true
+# Clean buildkit cache
+sudo rm -rf /mnt/docker/buildkit/containerd-overlayfs 2>/dev/null || true
+# Restart Docker
+sudo systemctl start docker 2>/dev/null
+echo "deep_clean_done"
+"""
+        deep_result = subprocess.run(
+            [
+                "ssh",
+                *SSH_OPTS,
+                f"azureuser@{ip}",
+                deep_clean_cmd,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if "deep_clean_done" in deep_result.stdout:
+            print("  ✓ Deep cleanup complete")
+        else:
+            print(f"  Warning: Deep cleanup may have failed")
+
         # Check disk space after
-        print("[3/3] Disk usage after cleanup...")
+        print("[4/4] Disk usage after cleanup...")
         df_result = subprocess.run(
             [
                 "ssh",
@@ -4217,6 +4341,34 @@ ls -lh /mnt/waa-storage/
             text=True,
         )
         print(f"  {df_result.stdout}")
+
+        # Configure BuildKit GC to prevent future cache bloat
+        print("[Bonus] Configuring BuildKit garbage collection (30GB limit)...")
+        buildkit_config = (
+            "[worker.oci]\\n"
+            "  gc = true\\n"
+            "  gckeepstorage = 30000000000\\n"
+            "[[worker.oci.gcpolicy]]\\n"
+            "  keepBytes = 30000000000\\n"
+            "  keepDuration = 172800\\n"
+            '  filters = ["type==source.local", "type==exec.cachemount", "type==source.git.checkout"]'
+        )
+        gc_result = subprocess.run(
+            [
+                "ssh",
+                *SSH_OPTS,
+                f"azureuser@{ip}",
+                f"sudo mkdir -p /etc/buildkit && echo -e '{buildkit_config}' | sudo tee /etc/buildkit/buildkitd.toml >/dev/null && echo 'configured'",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if gc_result.returncode == 0 and "configured" in gc_result.stdout:
+            print("  ✓ BuildKit GC configured (max 30GB cache)")
+        else:
+            print("  Warning: Could not configure BuildKit GC")
+
         print(
             "\n  Retry build: uv run python -m openadapt_ml.benchmarks.cli vm run-waa --rebuild"
         )
@@ -5368,12 +5520,12 @@ ls -lh /mnt/waa-storage/
   -p 8006:8006 \
   -p 5000:5000 \
   -p 7200:7200 \
-  -v /mnt/docker/storage:/storage \
+  -v /mnt/winarena-storage:/storage \
   -v ~/waa-results:/results \
   waa-auto:latest \
-  "/copy-oem.sh echo OEM_FILES_COPIED && ls -la /tmp/smb/"'''
+  "/entry.sh echo OEM_FILES_COPIED && ls -la /tmp/smb/"'''
 
-        print("\n[3/3] Testing docker run with copy-oem.sh...")
+        print("\n[3/3] Testing docker run with waa-entry.sh...")
         print(f"  Command: {docker_cmd[:100]}...")
 
         result = subprocess.run(
@@ -5785,20 +5937,235 @@ echo "killed"
         print(f"\n  VNC: http://{ip}:8006")
         print(f"  SSH: ssh azureuser@{ip}")
 
+    elif args.action == "start-windows":
+        """Start the Windows container using waa-auto image.
+
+        This starts the winarena container with the waa-auto image, which
+        includes automatic Windows setup and WAA server installation.
+        """
+        print("\n=== Starting Windows Container ===\n")
+
+        ip = get_vm_ip(resource_group, vm_name)
+        if not ip:
+            print(f"✗ VM '{vm_name}' not found. Run 'vm setup-waa' first.")
+            sys.exit(1)
+
+        print(f"  VM IP: {ip}")
+        print()
+
+        # Check if waa-auto image exists
+        print("[1/3] Checking for waa-auto image...")
+        check_cmd = "docker images waa-auto:latest --format '{{.ID}}' | head -1"
+        check_result = subprocess.run(
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}", check_cmd],
+            capture_output=True,
+            text=True,
+        )
+        if not check_result.stdout.strip():
+            print("  ✗ waa-auto image not found!")
+            print("  Build it with: uv run python -m openadapt_ml.benchmarks.cli vm run-waa --rebuild")
+            sys.exit(1)
+        print("  ✓ waa-auto image found")
+
+        # Stop any existing container
+        print("[2/3] Stopping any existing container...")
+        subprocess.run(
+            [
+                "ssh",
+                *SSH_OPTS,
+                f"azureuser@{ip}",
+                "docker stop winarena 2>/dev/null; docker rm -f winarena 2>/dev/null",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        print("  ✓ Cleaned up")
+
+        # Start the container
+        print("[3/3] Starting Windows container...")
+        docker_cmd = """docker run -d \
+  --name winarena \
+  --device=/dev/kvm \
+  --cap-add NET_ADMIN \
+  -p 8006:8006 \
+  -p 5000:5000 \
+  -p 7200:7200 \
+  -v /mnt/waa-storage:/storage \
+  -e VERSION=11e \
+  -e RAM_SIZE=12G \
+  -e CPU_CORES=4 \
+  -e DISK_SIZE=64G \
+  waa-auto:latest"""
+
+        result = subprocess.run(
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}", docker_cmd],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            print(f"  ✗ Failed to start container: {result.stderr}")
+            sys.exit(1)
+
+        print("  ✓ Container started")
+        print(f"\n  VNC: http://{ip}:8006")
+        print("  Check probe: uv run python -m openadapt_ml.benchmarks.cli vm probe --wait")
+
+    elif args.action == "restart-windows":
+        """Stop and restart the Windows container.
+
+        This is useful when Windows becomes unresponsive or you need to
+        apply changes to the container configuration.
+        """
+        print("\n=== Restarting Windows Container ===\n")
+
+        ip = get_vm_ip(resource_group, vm_name)
+        if not ip:
+            print(f"✗ VM '{vm_name}' not found. Run 'vm setup-waa' first.")
+            sys.exit(1)
+
+        print(f"  VM IP: {ip}")
+        print()
+
+        # Stop container
+        print("[1/2] Stopping container...")
+        stop_result = subprocess.run(
+            [
+                "ssh",
+                *SSH_OPTS,
+                f"azureuser@{ip}",
+                "docker stop winarena 2>&1 && echo 'stopped' || echo 'not_running'",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if "stopped" in stop_result.stdout:
+            print("  ✓ Container stopped")
+        else:
+            print("  Container was not running")
+
+        # Restart container
+        print("[2/2] Starting container...")
+        # Always remove old container and create fresh one to ensure correct settings
+        start_result = subprocess.run(
+            [
+                "ssh",
+                *SSH_OPTS,
+                f"azureuser@{ip}",
+                "docker rm -f winarena 2>/dev/null; docker run -d "
+                "--name winarena "
+                "--device=/dev/kvm "
+                "--cap-add NET_ADMIN "
+                "-p 8006:8006 "
+                "-p 5000:5000 "
+                "-p 7200:7200 "
+                "-v /mnt/waa-storage:/storage "
+                "-e VERSION=11e "
+                "-e RAM_SIZE=12G "
+                "-e CPU_CORES=4 "
+                "-e DISK_SIZE=64G "
+                "waa-auto:latest",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if start_result.returncode == 0:
+            print("  ✓ Container started")
+        else:
+            print(f"  ✗ Failed: {start_result.stderr[:200]}")
+            sys.exit(1)
+
+        print(f"\n  VNC: http://{ip}:8006")
+        print("  Windows will resume where it left off.")
+        print("  Check status: uv run python -m openadapt_ml.benchmarks.cli vm probe --wait")
+
+    elif args.action == "check-build":
+        """Check Docker build status from /tmp/waa_build.log.
+
+        Useful for monitoring background builds started with nohup.
+        """
+        print("\n=== Docker Build Status ===\n")
+
+        ip = get_vm_ip(resource_group, vm_name)
+        if not ip:
+            print(f"✗ VM '{vm_name}' not found. Run 'vm setup-waa' first.")
+            sys.exit(1)
+
+        print(f"  VM IP: {ip}")
+        print()
+
+        # Check if build process is running
+        print("[1/3] Checking for running build process...")
+        ps_result = subprocess.run(
+            [
+                "ssh",
+                *SSH_OPTS,
+                f"azureuser@{ip}",
+                "pgrep -fa 'docker build' 2>/dev/null || echo 'no_build_running'",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if "no_build_running" in ps_result.stdout:
+            print("  No Docker build currently running")
+        else:
+            print(f"  Build in progress: {ps_result.stdout.strip()[:80]}")
+
+        # Check if waa-auto image exists (build completed successfully)
+        print("\n[2/3] Checking for waa-auto image...")
+        check_cmd = "docker images waa-auto:latest --format '{{.Repository}}:{{.Tag}} {{.Size}} {{.CreatedAt}}'"
+        check_result = subprocess.run(
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}", check_cmd],
+            capture_output=True,
+            text=True,
+        )
+        if check_result.stdout.strip():
+            print(f"  ✓ Image exists: {check_result.stdout.strip()}")
+        else:
+            print("  ✗ waa-auto image not found")
+
+        # Show build log if it exists
+        print("\n[3/3] Build log (last 30 lines)...")
+        log_result = subprocess.run(
+            [
+                "ssh",
+                *SSH_OPTS,
+                f"azureuser@{ip}",
+                "tail -30 /tmp/waa_build.log 2>/dev/null || echo 'No build log found'",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        print("-" * 60)
+        print(log_result.stdout)
+        print("-" * 60)
+
+        # Helpful next steps
+        if "no_build_running" in ps_result.stdout:
+            if check_result.stdout.strip():
+                print("\n  Build complete! Run benchmark:")
+                print("    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5")
+            else:
+                print("\n  No image found. Start a build:")
+                print("    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --rebuild")
+        else:
+            print("\n  Build in progress. Check again later or stop it:")
+            print("    uv run python -m openadapt_ml.benchmarks.cli vm stop-build")
+
 
 def cmd_view(args: argparse.Namespace) -> None:
     """View benchmark results from collected data.
 
     Generates an HTML viewer for benchmark results and optionally serves it.
+    Uses cmd_serve from local.py for full API support (including /api/vms).
 
     Usage:
         uv run python -m openadapt_ml.benchmarks.cli view --run-name {name}
     """
-    import http.server
-    import socketserver
-    import webbrowser
-
     from openadapt_ml.benchmarks.viewer import generate_benchmark_viewer
+    from openadapt_ml.cloud.local import cmd_serve
 
     benchmark_dir = Path(args.output) / args.run_name
 
@@ -5830,36 +6197,20 @@ def cmd_view(args: argparse.Namespace) -> None:
     )
     print(f"  Generated: {output_path}")
 
-    # Serve the viewer
-    port = args.port
+    # Serve the viewer using cmd_serve for full API support
+    print(f"\n[2/2] Starting server on port {args.port}...")
 
-    print(f"\n[2/2] Starting server on port {port}...")
+    # Create args namespace for cmd_serve
+    serve_args = argparse.Namespace(
+        port=args.port,
+        benchmark=str(benchmark_dir),
+        no_regenerate=True,  # Already generated above
+        start_page="benchmark.html",
+        quiet=True,
+        open=not getattr(args, "no_open", False),
+    )
 
-    class QuietHandler(http.server.SimpleHTTPRequestHandler):
-        def __init__(self, *handler_args, **kwargs):
-            super().__init__(*handler_args, directory=str(benchmark_dir), **kwargs)
-
-        def log_message(self, format, *log_args):
-            pass  # Suppress logging
-
-    try:
-        with socketserver.TCPServer(("", port), QuietHandler) as httpd:
-            url = f"http://localhost:{port}/benchmark.html"
-            print(f"\n  Viewer: {url}")
-            print("  Press Ctrl+C to stop\n")
-
-            if not getattr(args, "no_open", False):
-                webbrowser.open(url)
-
-            httpd.serve_forever()
-    except KeyboardInterrupt:
-        print("\nStopped.")
-    except OSError as e:
-        if "Address already in use" in str(e):
-            print(f"\n  Error: Port {port} is already in use.")
-            print(f"  Try a different port: --port {port + 1}")
-        else:
-            raise
+    cmd_serve(serve_args)
 
 
 def cmd_export_traces(args: argparse.Namespace) -> None:
@@ -5968,6 +6319,80 @@ def cmd_export_traces(args: argparse.Namespace) -> None:
 
             traceback.print_exc()
         sys.exit(1)
+
+
+def cmd_screenshot(args: argparse.Namespace) -> None:
+    """Capture screenshots of dashboards and VMs for documentation.
+
+    Usage:
+        uv run python -m openadapt_ml.benchmarks.cli screenshot
+        uv run python -m openadapt_ml.benchmarks.cli screenshot --target terminal
+        uv run python -m openadapt_ml.benchmarks.cli screenshot --list
+    """
+    from openadapt_ml.scripts.capture_screenshots import (
+        TARGETS,
+        capture_azure_ops_dashboard,
+        capture_training_dashboard,
+        capture_vm_monitor,
+        capture_vm_screenshot_from_vm,
+        capture_vnc_screenshot,
+        get_timestamp,
+    )
+
+    # List available targets
+    if getattr(args, "list", False):
+        print("\nAvailable screenshot targets:\n")
+        for name, info in TARGETS.items():
+            print(f"  {name:15} - {info['description']}")
+        print()
+        return
+
+    # Determine targets
+    targets = args.target or list(TARGETS.keys())
+    output_dir = Path(args.output)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print("=" * 60)
+    print(" Screenshot Capture ".center(60))
+    print("=" * 60)
+    print(f"\nOutput: {output_dir}")
+    print(f"Targets: {', '.join(targets)}\n")
+
+    timestamp = get_timestamp() if not args.no_timestamp else ""
+    results = {}
+
+    for target in targets:
+        info = TARGETS[target]
+        print(f"\n[{target}] {info['description']}")
+
+        filename = info["filename"]
+        if timestamp:
+            filename = f"{filename}_{timestamp}"
+        output_path = output_dir / f"{filename}.png"
+
+        try:
+            success = info["capture_fn"](output_path)
+            if success:
+                size_kb = output_path.stat().st_size / 1024
+                print(f"  OK: {output_path.name} ({size_kb:.1f} KB)")
+                results[target] = str(output_path)
+            else:
+                print("  SKIP: Not available or capture failed")
+                results[target] = None
+        except Exception as e:
+            print(f"  ERROR: {e}")
+            results[target] = None
+
+    # Summary
+    print("\n" + "-" * 60)
+    successful = [t for t, p in results.items() if p]
+    failed = [t for t, p in results.items() if not p]
+
+    if successful:
+        print(f"Captured ({len(successful)}): {', '.join(successful)}")
+    if failed:
+        print(f"Skipped ({len(failed)}): {', '.join(failed)}")
+    print()
 
 
 def cmd_setup(args: argparse.Namespace) -> None:
@@ -6331,10 +6756,13 @@ Quick Start:
             "setup-waa",
             "run-waa",
             "prepare-windows",
+            "start-windows",
+            "restart-windows",
             "fix-storage",
             "docker-prune",
             "docker-move",
             "stop-build",
+            "check-build",
             "fix-oem",
             "reset-windows",
             "screenshot",
@@ -6604,6 +7032,36 @@ Quick Start:
         "--verbose", "-v", action="store_true", help="Verbose output with stack traces"
     )
 
+    # Screenshot capture
+    p_screenshot = subparsers.add_parser(
+        "screenshot",
+        help="Capture screenshots of dashboards and VMs for documentation",
+    )
+    p_screenshot.add_argument(
+        "--target",
+        "-t",
+        action="append",
+        choices=["azure-ops", "vnc", "terminal", "terminal-live", "training", "vm-screen"],
+        help="Target to capture (can specify multiple, default: all)",
+    )
+    p_screenshot.add_argument(
+        "--output",
+        "-o",
+        default="docs/screenshots",
+        help="Output directory for screenshots (default: docs/screenshots)",
+    )
+    p_screenshot.add_argument(
+        "--list",
+        "-l",
+        action="store_true",
+        help="List available screenshot targets",
+    )
+    p_screenshot.add_argument(
+        "--no-timestamp",
+        action="store_true",
+        help="Don't add timestamp to filenames",
+    )
+
     args = parser.parse_args()
 
     if args.command == "setup":
@@ -6650,6 +7108,8 @@ Quick Start:
         cmd_view(args)
     elif args.command == "export-traces":
         cmd_export_traces(args)
+    elif args.command == "screenshot":
+        cmd_screenshot(args)
     else:
         parser.print_help()
 
