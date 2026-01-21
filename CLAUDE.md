@@ -597,6 +597,53 @@ pgrep -f "openadapt" -l  # Lists matching processes before killing
 3. Use the most specific pattern possible
 4. Prefer port-based or PID-based killing
 
+## Git Commit Style (Angular Convention)
+
+**ALWAYS use Angular-style commit messages** for all commits across all OpenAdapt repositories.
+
+**Format:**
+```
+<type>(<scope>): <subject>
+
+<body>
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+```
+
+**Types:**
+- `feat`: New feature
+- `fix`: Bug fix
+- `docs`: Documentation only
+- `style`: Code style (formatting, semicolons, etc.)
+- `refactor`: Code change that neither fixes a bug nor adds a feature
+- `perf`: Performance improvement
+- `test`: Adding or fixing tests
+- `chore`: Maintenance tasks (deps, build, etc.)
+- `ci`: CI/CD changes
+
+**Examples:**
+```bash
+# Feature
+git commit -m "feat(viewer): add keyboard shortcuts for navigation"
+
+# Bug fix
+git commit -m "fix(waa): resolve Docker storage path issue"
+
+# Documentation
+git commit -m "docs: remove archived OpenAdapter from repository listing"
+
+# Refactor
+git commit -m "refactor(cli): consolidate VM commands into single subcommand"
+```
+
+**Subject line rules:**
+- Use imperative mood ("add" not "added" or "adds")
+- No period at the end
+- Max 50 characters
+- Lowercase first letter after type
+
+---
+
 ## Don't Do
 
 - Don't add timelines/estimates to plans
@@ -604,6 +651,7 @@ pgrep -f "openadapt" -l  # Lists matching processes before killing
 - Don't over-engineer - keep solutions minimal
 - Don't use `os.environ` directly - use `config.settings` instead
 - Don't use `pip install` - always use `uv add` for dependencies or `uv sync` for the project
+- Don't use non-Angular commit messages
 - **Don't run Azure/VM operations without starting the dashboard first**
   - ❌ WRONG: `vm probe` then `vm diag` then telling user to run `vm monitor`
   - ✅ RIGHT: `vm monitor` FIRST (it does probe, tunnels, everything)
@@ -718,8 +766,8 @@ az ml workspace sync-keys -n openadapt-ml -g openadapt-agents
 **How it works**:
 - Our `waa-auto` Dockerfile uses `dockurr/windows:latest` as base
 - dockurr/windows **automatically downloads Windows 11** based on `VERSION` env var
-- Setting `VERSION=11` downloads Windows 11 Pro (~6.6 GB) - **fully unattended, no dialogs**
-- Note: `VERSION=11e` downloads Enterprise Evaluation which shows an edition picker dialog
+- Setting `VERSION=11e` downloads Windows 11 Enterprise Evaluation (~6.6 GB) - **fully unattended, no dialogs** (has built-in GVLK key)
+- Note: `VERSION=11` (Pro) may prompt for product key if autounattend.xml is misconfigured
 - First run: Downloads ISO + installs Windows (~15-20 min)
 - Subsequent runs: Boots from cached disk image (~2-3 min)
 
@@ -765,7 +813,7 @@ Azure VM (Standard_D4ds_v5, nested virt enabled)
 ```
 
 **What waa-auto does**:
-1. Uses `dockurr/windows:latest` (auto-downloads Windows Pro via `VERSION=11`)
+1. Uses `dockurr/windows:latest` (auto-downloads Windows Enterprise Eval via `VERSION=11e`)
 2. Copies WAA client/server from `windowsarena/winarena:latest`
 3. Patches IP addresses (20.20.20.21 -> 172.30.0.2)
 4. Injects FirstLogonCommands to run install.bat automatically
