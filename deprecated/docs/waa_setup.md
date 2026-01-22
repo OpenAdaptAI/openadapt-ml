@@ -2,6 +2,9 @@
 
 This document describes how to set up and run the Windows Agent Arena benchmark for evaluating GUI automation agents.
 
+## Status
+Legacy. Use the vanilla flow in `docs/waa_vanilla_automation.md` instead.
+
 ## Overview
 
 Windows Agent Arena (WAA) is a benchmark with 154 tasks across 11 Windows application domains. It runs Windows 11 inside a Docker container using QEMU virtualization.
