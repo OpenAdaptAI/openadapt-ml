@@ -12,9 +12,8 @@ This keeps the WAA repo pristine and avoids custom Dockerfiles or internal patch
 
 ## One-Time Local Bootstrap
 Use the wrapper script in this repo to download/copy the ISO and run the official prep command.
-If `--waa-path` is omitted, the script will auto-clone WAA into
-`/Users/abrichr/oa/src/openadapt-evals/vendor/WindowsAgentArena` when available,
-falling back to `openadapt-ml/vendor/WindowsAgentArena`.
+If `--waa-path` is omitted, the script will auto-detect WAA in standard locations
+(`vendor/WindowsAgentArena` relative to the repo root) or clone it if not found.
 
 ```bash
 ./scripts/waa_bootstrap_local.sh \
@@ -32,6 +31,12 @@ If Docker requires root:
 
 ```bash
 ./scripts/waa_bootstrap_local.sh --iso-path /path/to/Windows11.iso --sudo
+```
+
+If you need a guided manual download step, open the Microsoft Eval Center page:
+
+```bash
+./scripts/waa_bootstrap_local.sh --open-iso-page
 ```
 
 ## Helper Check
