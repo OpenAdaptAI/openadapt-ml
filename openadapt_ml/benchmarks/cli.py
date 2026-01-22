@@ -1354,7 +1354,7 @@ def cmd_create_config(args: argparse.Namespace) -> None:
         subscription_id="<your-subscription-id>",
         resource_group="agents",
         workspace_name="agents_ml",
-        vm_size="Standard_D4_v3",
+        vm_size="Standard_D8ds_v5",  # 300GB temp storage for WAA
     )
 
     output_path = Path(args.output)
@@ -1664,6 +1664,118 @@ def get_vm_ip(resource_group: str, vm_name: str) -> str | None:
     if result.returncode == 0 and result.stdout.strip():
         return result.stdout.strip()
     return None
+
+
+def cleanup_waa_resources(resource_group: str, vm_name: str) -> None:
+    """Clean up leftover Azure resources from a VM.
+
+    When VM deletion fails or is incomplete, resources like VNETs, NICs, NSGs,
+    PublicIPs, and OS disks may be left behind, blocking new VM creation.
+
+    This function deletes all resources with names starting with the VM name
+    in the correct order:
+    1. NICs first (depend on VNET, NSG, PublicIP)
+    2. VNETs, NSGs, PublicIPs (can be deleted in parallel)
+    3. OS disks last
+
+    Args:
+        resource_group: Azure resource group name
+        vm_name: Base name of the VM (e.g., "waa-eval-vm")
+    """
+    import subprocess
+
+    print(f"  Cleaning up leftover resources for {vm_name}...")
+
+    # List all resources in the resource group that match the VM name prefix
+    result = subprocess.run(
+        [
+            "az", "resource", "list",
+            "-g", resource_group,
+            "--query", f"[?starts_with(name, '{vm_name}')].[name, type]",
+            "-o", "tsv",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        print(f"    Warning: Could not list resources: {result.stderr[:100]}")
+        return
+
+    if not result.stdout.strip():
+        print("    No leftover resources found")
+        return
+
+    # Parse resources and categorize by type
+    resources = []
+    for line in result.stdout.strip().split("\n"):
+        if "\t" in line:
+            name, res_type = line.split("\t", 1)
+            resources.append((name.strip(), res_type.strip()))
+
+    if not resources:
+        print("    No leftover resources found")
+        return
+
+    print(f"    Found {len(resources)} resource(s) to clean up:")
+    for name, res_type in resources:
+        short_type = res_type.split("/")[-1] if "/" in res_type else res_type
+        print(f"      - {name} ({short_type})")
+
+    # Delete in correct order: NICs first, then VNET/NSG/PublicIP, then disks
+    # Order matters because NICs depend on other resources
+    type_order = [
+        "Microsoft.Network/networkInterfaces",
+        "Microsoft.Network/virtualNetworks",
+        "Microsoft.Network/networkSecurityGroups",
+        "Microsoft.Network/publicIPAddresses",
+        "Microsoft.Compute/disks",
+    ]
+
+    for target_type in type_order:
+        for name, res_type in resources:
+            if res_type == target_type:
+                short_type = res_type.split("/")[-1]
+                print(f"    Deleting {name} ({short_type})...", end="", flush=True)
+                del_result = subprocess.run(
+                    [
+                        "az", "resource", "delete",
+                        "-g", resource_group,
+                        "-n", name,
+                        "--resource-type", res_type,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                if del_result.returncode == 0:
+                    print(" done")
+                else:
+                    print(f" failed: {del_result.stderr[:50]}")
+
+    # Handle any remaining resource types not in our order list
+    known_types = set(type_order)
+    for name, res_type in resources:
+        if res_type not in known_types:
+            short_type = res_type.split("/")[-1] if "/" in res_type else res_type
+            print(f"    Deleting {name} ({short_type})...", end="", flush=True)
+            del_result = subprocess.run(
+                [
+                    "az", "resource", "delete",
+                    "-g", resource_group,
+                    "-n", name,
+                    "--resource-type", res_type,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if del_result.returncode == 0:
+                print(" done")
+            else:
+                print(f" failed: {del_result.stderr[:50]}")
+
+    print("    Resource cleanup complete")
 
 
 def ensure_docker_running(ip: str) -> bool:
@@ -2236,6 +2348,10 @@ def cmd_viewer(args: argparse.Namespace) -> None:
     This starts the local server configured to poll the specified VM
     for benchmark status and opens the browser.
     """
+    print("\n=== Deprecated Viewer ===\n")
+    print("benchmark.html is legacy and will be deprecated.")
+    print("Use `vm monitor` (azure_ops.html) for live VM status + VNC panel.")
+
     vm_ip = args.vm_ip
     port = getattr(args, "port", 8765)
     no_open = getattr(args, "no_open", False)
@@ -2292,10 +2408,10 @@ def cmd_vm(args: argparse.Namespace) -> None:
 
         print(result.stdout)
         print("\nRecommended sizes for WAA (support nested virt):")
-        print("  - Standard_D4s_v3  (4 vCPU, 16GB) ~$0.19/hr")
-        print("  - Standard_D8s_v3  (8 vCPU, 32GB) ~$0.38/hr")
-        print("  - Standard_D4ds_v5 (4 vCPU, 16GB) ~$0.19/hr")
-        print("  - Standard_D8ds_v5 (8 vCPU, 32GB) ~$0.38/hr")
+        print("  - Standard_D4s_v3  (4 vCPU, 16GB, 32GB temp) ~$0.19/hr")
+        print("  - Standard_D8s_v3  (8 vCPU, 32GB, 64GB temp) ~$0.38/hr")
+        print("  - Standard_D4ds_v5 (4 vCPU, 16GB, 150GB temp) ~$0.19/hr")
+        print("  - Standard_D8ds_v5 (8 vCPU, 32GB, 300GB temp) ~$0.38/hr [RECOMMENDED]")
         print(
             "\nTry different locations if sizes are unavailable: westus2, centralus, westeurope"
         )
@@ -2714,143 +2830,13 @@ def cmd_vm(args: argparse.Namespace) -> None:
         print(f"\n  Image ready: {image}")
         print("  Run WAA with: uv run python -m openadapt_ml.benchmarks.cli vm ssh")
 
-    elif args.action == "setup-waa":
-        print("\n=== Deprecated: Vanilla WAA Only ===\n")
-        print("This setup flow is legacy and has been moved to deprecated/.")
-        print("Use scripts/waa_bootstrap_local.sh and WAA's run-local.sh/run_azure.py instead.")
-        sys.exit(1)
-        from openadapt_ml.benchmarks.vm_monitor import VMPoolRegistry
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+    # NOTE: Deprecated actions removed (Jan 2026):
+    # - setup-waa: Replaced by top-level 'waa' command
+    # - prepare-windows: Replaced by top-level 'waa' command
+    # - run-waa: Replaced by top-level 'waa' command
+    # Use: uv run python -m openadapt_ml.benchmarks.cli waa --help
 
-        # Comprehensive one-command WAA setup with multi-worker support
-        num_workers = getattr(args, "workers", 1)
-
-        print(f"\n{'=' * 60}")
-        print("  WAA Benchmark Setup - Full Automation")
-        print(f"{'=' * 60}\n")
-        print("This will set up everything needed to run WAA benchmarks:")
-        print("  1. Create Azure VM(s) with nested virtualization")
-        print("  2. Install Docker with proper disk configuration")
-        print("  3. Pull WAA Docker image from ACR")
-        print("  4. Clone WindowsAgentArena repository")
-        print("  5. Prepare Windows 11 VM image (~20 min download)")
-        if num_workers > 1:
-            print(f"\n  [Multi-worker mode: creating {num_workers} VMs in parallel]")
-        print()
-
-        def create_single_vm(
-            worker_name: str, worker_location: str
-        ) -> tuple[str, str | None]:
-            """Create a single VM. Returns (name, ip) or (name, None) on failure."""
-            locations_to_try = [worker_location, "westus2", "centralus", "eastus2"]
-            for loc in locations_to_try:
-                result = subprocess.run(
-                    [
-                        "az",
-                        "vm",
-                        "create",
-                        "--resource-group",
-                        resource_group,
-                        "--name",
-                        worker_name,
-                        "--location",
-                        loc,
-                        "--image",
-                        "Ubuntu2204",
-                        "--size",
-                        "Standard_D4ds_v5",
-                        "--admin-username",
-                        "azureuser",
-                        "--generate-ssh-keys",
-                        "--public-ip-sku",
-                        "Standard",
-                        "--no-wait" if num_workers > 1 else "",
-                    ],
-                    capture_output=True,
-                    text=True,
-                )
-                if result.returncode == 0:
-                    if num_workers == 1:
-                        import json as json_mod
-
-                        vm_info = json_mod.loads(result.stdout)
-                        return (worker_name, vm_info.get("publicIpAddress", ""))
-                    else:
-                        return (worker_name, loc)  # Return location for async creation
-            return (worker_name, None)
-
-        def setup_single_vm(worker_name: str, ip: str, api_key: str) -> bool:
-            """Set up Docker and WAA on a single VM. Returns True on success."""
-            docker_cmds = [
-                "sudo apt-get update -qq",
-                "sudo apt-get install -y -qq docker.io",
-                "sudo systemctl start docker",
-                "sudo systemctl enable docker",
-                "sudo usermod -aG docker $USER",
-                "sudo systemctl stop docker",
-                "sudo mkdir -p /mnt/docker",
-                # Configure Docker to use /mnt and enable BuildKit with cache limits
-                # keepBytes: max 30GB cache, gcPolicy: auto-prune when over limit
-                'echo \'{"data-root": "/mnt/docker", "features": {"buildkit": true}}\' | sudo tee /etc/docker/daemon.json',
-                # Configure BuildKit garbage collection (30GB max cache)
-                "sudo mkdir -p /etc/buildkit",
-                'echo \'[worker.oci]\\n  gc = true\\n  gckeepstorage = 30000000000\\n[[worker.oci.gcpolicy]]\\n  keepBytes = 30000000000\\n  keepDuration = 172800\\n  filters = ["type==source.local", "type==exec.cachemount", "type==source.git.checkout"]\' | sudo tee /etc/buildkit/buildkitd.toml',
-                "sudo systemctl start docker",
-            ]
-            result = subprocess.run(
-                [
-                    "ssh",
-                    *SSH_OPTS,
-                    "-o",
-                    "ConnectTimeout=30",
-                    f"azureuser@{ip}",
-                    " && ".join(docker_cmds),
-                ],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode != 0:
-                return False
-
-            # Pull Windows image
-            subprocess.run(
-                [
-                    "ssh",
-                    *SSH_OPTS,
-                    f"azureuser@{ip}",
-                    "sudo docker pull dockurr/windows:latest 2>&1 | tail -5",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
-
-            # Clone WAA repo
-            subprocess.run(
-                [
-                    "ssh",
-                    *SSH_OPTS,
-                    f"azureuser@{ip}",
-                    "cd ~ && git clone --depth 1 https://github.com/microsoft/WindowsAgentArena.git 2>/dev/null || echo 'Already cloned'",
-                ],
-                capture_output=True,
-                text=True,
-            )
-
-            # Create config
-            config_cmd = f'''cat > ~/WindowsAgentArena/config.json << 'EOF'
-{{
-    "OPENAI_API_KEY": "{api_key}",
-    "AZURE_API_KEY": "",
-    "AZURE_ENDPOINT": ""
-}}
-EOF'''
-            subprocess.run(
-                ["ssh", *SSH_OPTS, f"azureuser@{ip}", config_cmd],
-                capture_output=True,
-                text=True,
-            )
-            return True
+    # DEAD CODE REMOVED - more to clean up
 
         # Handle single worker (backward compatible)
         if num_workers == 1:
@@ -2898,7 +2884,7 @@ EOF'''
                             "--image",
                             "Ubuntu2204",
                             "--size",
-                            "Standard_D4ds_v5",  # v5 series supports nested virt
+                            "Standard_D8ds_v5",  # v5 series supports nested virt
                             "--admin-username",
                             "azureuser",
                             "--generate-ssh-keys",
@@ -2923,7 +2909,7 @@ EOF'''
                 print("✗ Could not create VM in any region")
                 sys.exit(1)
 
-            print("\n[2/6] Installing Docker with /mnt storage (147GB)...")
+            print("\n[2/6] Installing Docker with /mnt storage (300GB)...")
             docker_cmds = [
                 "sudo apt-get update -qq",
                 "sudo apt-get install -y -qq docker.io",
@@ -3037,10 +3023,10 @@ EOF'''
             print(f"{'=' * 60}")
             print(f"\n  VM IP: {ip}")
             print("\n  Next step: Prepare Windows image (one-time, ~20 min):")
-            print("    uv run python -m openadapt_ml.benchmarks.cli vm prepare-windows")
+            print("    uv run python -m openadapt_ml.benchmarks.cli waa --setup-only")
             print("\n  Or run WAA directly (will auto-prepare on first run):")
             print(
-                "    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5"
+                "    uv run python -m openadapt_ml.benchmarks.cli waa --num-tasks 5"
             )
 
         else:
@@ -3138,7 +3124,7 @@ EOF'''
                 workers=workers_with_ips,
                 resource_group=resource_group,
                 location=location,
-                vm_size="Standard_D4ds_v5",
+                vm_size="Standard_D8ds_v5",
             )
             print(
                 f"  ✓ Pool {pool.pool_id} registered with {len(pool.workers)} workers"
@@ -3154,1080 +3140,11 @@ EOF'''
             print("    1. Check pool status:")
             print("       uv run python -m openadapt_ml.benchmarks.cli vm pool-status")
             print("    2. Prepare Windows on all workers (in parallel):")
-            print("       # TODO: implement prepare-windows --pool")
+            print("       # Workers run waa command individually")
             print("    3. Run parallel benchmark:")
             print(
-                "       uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 30"
+                "       uv run python -m openadapt_ml.benchmarks.cli waa --num-tasks 30"
             )
-
-    elif args.action == "prepare-windows":
-        print("\n=== Deprecated: Vanilla WAA Only ===\n")
-        print("This custom Windows prep flow is legacy and has been moved to deprecated/.")
-        print("Use scripts/waa_bootstrap_local.sh and WAA's run-local.sh instead.")
-        sys.exit(1)
-        print("\n=== Preparing Windows 11 VM for WAA (Fully Automated) ===\n")
-        print("This builds a custom WAA container with automatic setup scripts.")
-        print(
-            "First run downloads Windows 11 (~7GB). Setup is fully automatic - no VNC needed.\n"
-        )
-
-        # Get VM IP
-        result = subprocess.run(
-            [
-                "az",
-                "vm",
-                "show",
-                "-d",
-                "-g",
-                resource_group,
-                "-n",
-                vm_name,
-                "--query",
-                "publicIps",
-                "-o",
-                "tsv",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0 or not result.stdout.strip():
-            print(f"✗ VM '{vm_name}' not found. Run 'vm setup-waa' first.")
-            sys.exit(1)
-        ip = result.stdout.strip()
-
-        print(f"  VM IP: {ip}")
-        print(f"  Monitor progress: http://{ip}:8006 (VNC) or via viewer")
-        print()
-
-        # Step 1: Build automated WAA image with custom unattend.xml
-        print("[1/4] Building automated WAA image (with custom unattend.xml)...")
-
-        # Find the simplified Dockerfile in our repo
-        dockerfile_path = Path(__file__).parent / "waa_deploy" / "Dockerfile.simplified"
-        if not dockerfile_path.exists():
-            print(f"  ✗ Dockerfile not found at: {dockerfile_path}")
-            sys.exit(1)
-
-        support_files = [
-            Path(__file__).parent / "waa_deploy" / "start_waa_server.bat",
-            Path(__file__).parent / "waa_deploy" / "api_agent.py",
-        ]
-        missing_files = [path for path in support_files if not path.exists()]
-        if missing_files:
-            print("  ✗ Missing required WAA files:")
-            for path in missing_files:
-                print(f"    - {path}")
-            sys.exit(1)
-
-        import os
-
-        waa_source_image = os.getenv("WAA_SOURCE_IMAGE", "windowsarena/winarena:latest")
-        print(f"  WAA source image: {waa_source_image}")
-
-        # Ensure build directory exists on VM
-        subprocess.run(
-            ["ssh", *SSH_OPTS, f"azureuser@{ip}", "mkdir -p ~/build-waa"],
-            capture_output=True,
-            text=True,
-        )
-
-        # Sync Dockerfile + support files to VM and build
-        subprocess.run(
-            [
-                "scp",
-                *SSH_OPTS,
-                str(dockerfile_path),
-                *(str(path) for path in support_files),
-                f"azureuser@{ip}:~/build-waa/",
-            ],
-            capture_output=True,
-            text=True,
-        )
-
-        build_cmd = f"""
-cd ~/build-waa && docker build --no-cache --pull \
-  --build-arg WAA_SOURCE_IMAGE={waa_source_image} \
-  -t waa-auto:latest \
-  -f Dockerfile.simplified . 2>&1 | tail -10
-"""
-        result = subprocess.run(
-            ["ssh", *SSH_OPTS, f"azureuser@{ip}", build_cmd],
-            capture_output=True,
-            text=True,
-            timeout=1800,  # 30 min for Docker build
-        )
-        if "Successfully" not in result.stdout and result.returncode != 0:
-            print(f"  ✗ Failed to build image: {result.stderr}")
-            print(f"  Output: {result.stdout}")
-            sys.exit(1)
-        print("  ✓ WAA image built (waa-auto:latest)")
-
-        # Step 2: Stop existing container and clean up for fresh install
-        # Use /data/waa-storage for 128GB data disk instead of /mnt (32GB temp) or ~/waa-storage (root, <10GB)
-        print("\n[2/4] Cleaning up for fresh Windows installation...")
-        subprocess.run(
-            [
-                "ssh",
-                *SSH_OPTS,
-                f"azureuser@{ip}",
-                "docker stop winarena 2>/dev/null; docker rm -f winarena 2>/dev/null; "
-                + "rm -f /data/waa-storage/data.img /data/waa-storage/windows.* 2>/dev/null; "
-                + "sudo mkdir -p /data/waa-storage /mnt/waa-results; "
-                + "sudo chown azureuser:azureuser /data/waa-storage /mnt/waa-results; "
-                + "# Migrate old storage if exists\n"
-                + "[ -d ~/waa-storage ] && mv ~/waa-storage/* /data/waa-storage/ 2>/dev/null; "
-                + "rm -rf ~/waa-storage 2>/dev/null",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        print("  ✓ Cleanup complete (using /mnt for 115GB temp disk)")
-
-        # Step 3: Start automated WAA container
-        # Use VERSION=11e for Windows 11 Enterprise Eval (has built-in GVLK key, no product key prompt)
-        # Note: VERSION=11 downloads Windows 11 Pro which may prompt for product key
-        print("\n[3/4] Starting automated WAA container...")
-        docker_cmd = """docker run -d \
-  --name winarena \
-  --device=/dev/kvm \
-  --cap-add NET_ADMIN \
-  -p 8006:8006 \
-  -p 5000:5000 \
-  -p 7100:7100 \
-  -p 7200:7200 \
-  -v /data/waa-storage:/storage \
-  -e VERSION=11e \
-  -e RAM_SIZE=12G \
-  -e CPU_CORES=4 \
-  -e DISK_SIZE=64G \
-  waa-auto:latest"""
-
-        result = subprocess.run(
-            ["ssh", *SSH_OPTS, f"azureuser@{ip}", docker_cmd],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        if result.returncode != 0:
-            print(f"  ✗ Failed to start container: {result.stderr}")
-            sys.exit(1)
-        print("  ✓ WAA container started")
-
-        # Step 4: Wait for Windows to boot (Enterprise edition with GVLK should skip product key)
-        print("\n[4/5] Waiting for Windows to boot...")
-        print(
-            "      Using Windows 11 Enterprise with GVLK key (should skip product key dialog)"
-        )
-
-        import time as time_module
-
-        # Wait for Windows installer to start (boot + load installer UI)
-        # This typically takes 60-90 seconds
-        for i in range(12):  # Wait up to 2 minutes
-            time_module.sleep(10)
-            # Check docker logs for progress
-            log_result = subprocess.run(
-                [
-                    "ssh",
-                    *SSH_OPTS,
-                    f"azureuser@{ip}",
-                    "docker logs winarena 2>&1 | tail -1",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            last_log = (
-                log_result.stdout.strip()[:60] if log_result.stdout else "Starting..."
-            )
-            print(f"      [{(i + 1) * 10}s] {last_log}...")
-
-            # If Windows has started, the log will show "Windows started successfully"
-            if "Windows started" in log_result.stdout:
-                print("      Windows installer UI ready")
-                break
-        else:
-            print("      Continuing (Windows may still be loading)...")
-
-        print("      Unattended install should proceed without prompts (VERSION=11e)")
-        print("      If it stalls, treat as a regression and check the recurring issues docs")
-
-        # Step 5: Poll /probe endpoint until WAA server is ready
-        print("\n[5/5] Waiting for Windows install + WAA server (fully automatic)...")
-        print(f"      VNC: http://{ip}:8006")
-        print("      Expected time: ~10-15 minutes\n")
-
-        import time
-
-        for i in range(90):  # Wait up to 15 minutes
-            time.sleep(10)
-
-            # Check if WAA server /probe endpoint responds
-            # Use localhost - Docker port forwarding handles routing to QEMU VM
-            # See docs/waa_network_architecture.md for architecture details
-            try:
-                probe_result = subprocess.run(
-                    [
-                        "ssh",
-                        *SSH_OPTS,
-                        "-o",
-                        "ConnectTimeout=5",
-                        f"azureuser@{ip}",
-                        "curl -s --connect-timeout 3 http://localhost:5000/probe 2>/dev/null",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                )
-            except subprocess.TimeoutExpired:
-                probe_result = None
-
-            if probe_result and probe_result.stdout.strip():
-                print("\n✓ WAA Server ready!")
-                print(f"\n  Windows VNC: http://{ip}:8006")
-                print(f"  WAA Server: http://{ip}:5000 (internal via localhost:5000)")
-                print(f"  QMP Port: {ip}:7200")
-                print("\n  To run WAA benchmarks:")
-                print(
-                    "    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5"
-                )
-                break
-
-            # Show progress from docker logs
-            log_result = subprocess.run(
-                [
-                    "ssh",
-                    *SSH_OPTS,
-                    f"azureuser@{ip}",
-                    "docker logs winarena 2>&1 | tail -2",
-                ],
-                capture_output=True,
-                text=True,
-            )
-            last_log = (
-                log_result.stdout.strip().split("\n")[-1][:70]
-                if log_result.stdout
-                else "Starting..."
-            )
-            print(f"  [{(i + 1) * 10}s] {last_log}...")
-        else:
-            print(f"\n⚠ Timeout waiting for WAA server. Check: http://{ip}:8006")
-            print("  The Windows VM may still be installing. Try again later.")
-            print("  Note: First-time Windows setup can take 15-20 minutes.")
-
-    elif args.action == "run-waa":
-        print("\n=== Deprecated: Vanilla WAA Only ===\n")
-        print("This custom run flow is legacy and has been moved to deprecated/.")
-        print("Use WAA's run-local.sh or run_azure.py directly.")
-        sys.exit(1)
-        import threading
-        import os
-        import webbrowser
-        import json
-        import re
-        from datetime import datetime
-
-        # Ensure unbuffered output for real-time streaming
-        os.environ["PYTHONUNBUFFERED"] = "1"
-
-        print("\n=== Running WAA Benchmark ===\n", flush=True)
-
-        # Initialize azure ops tracker for dashboard live updates
-        from openadapt_ml.benchmarks.azure_ops_tracker import get_tracker
-        from openadapt_ml.benchmarks.session_tracker import start_session
-
-        azure_ops_tracker = get_tracker()
-
-        # Helper function to write live status for the viewer
-        def write_live_status(
-            status: str,
-            phase: str = None,
-            detail: str = None,
-            task_id: str = None,
-            step: int = None,
-            total_steps: int = None,
-            tasks_completed: int = 0,
-            total_tasks: int = 0,
-            current_task: dict = None,
-            log_line: str = None,
-        ):
-            """Write status to benchmark_live.json and azure_ops_tracker for live viewer updates."""
-            from pathlib import Path
-
-            # Use training_output/current symlink directly to avoid path issues
-            output_dir = Path("training_output/current")
-            if not output_dir.exists():
-                output_dir = Path("training_output")
-            output_dir.mkdir(parents=True, exist_ok=True)
-            live_file = output_dir / "benchmark_live.json"
-
-            data = {
-                "status": status,
-                "timestamp": datetime.now().isoformat(),
-                "tasks_completed": tasks_completed,
-                "total_tasks": total_tasks,
-            }
-            if phase:
-                data["phase"] = phase
-            if detail:
-                data["detail"] = detail
-            if task_id:
-                data["task_id"] = task_id
-            if step is not None:
-                data["step"] = step
-            if total_steps is not None:
-                data["total_steps"] = total_steps
-            if current_task:
-                data["current_task"] = current_task
-
-            live_file.write_text(json.dumps(data, indent=2))
-
-            # Also update azure_ops_tracker for azure_ops.html dashboard
-            # Map benchmark status to operation type
-            operation_map = {
-                "setup": "docker_build",
-                "running": "benchmark",
-                "complete": "complete",
-                "error": "failed",
-            }
-            azure_ops_tracker.update(
-                phase=detail or phase or status,
-                step=tasks_completed,
-                total_steps=total_tasks,
-                log_lines=[log_line] if log_line else [detail or phase or status],
-            )
-
-        # Initialize with waiting status
-        write_live_status(
-            "setup", phase="initializing", detail="Connecting to Azure VM..."
-        )
-
-        # Get VM IP
-        result = subprocess.run(
-            [
-                "az",
-                "vm",
-                "show",
-                "-d",
-                "-g",
-                resource_group,
-                "-n",
-                vm_name,
-                "--query",
-                "publicIps",
-                "-o",
-                "tsv",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0 or not result.stdout.strip():
-            print(f"✗ VM '{vm_name}' not found. Run 'vm setup-waa' first.")
-            sys.exit(1)
-        ip = result.stdout.strip()
-
-        # Start session tracking and initialize azure_ops_tracker with VM info
-        session = start_session(vm_size="Standard_D4ds_v5", vm_ip=ip)
-        azure_ops_tracker.start_operation(
-            operation="benchmark",
-            phase="Setting up benchmark",
-            vm_ip=ip,
-            vm_state="running",
-        )
-
-        num_tasks = args.num_tasks
-        model = getattr(args, "model", "gpt-4o")
-        agent = getattr(args, "agent", "navi")
-        open_viewer = getattr(args, "open", True)
-        port = getattr(args, "port", 8765)
-        internal_ip = getattr(args, "internal_ip", "172.30.0.2")
-        domain = getattr(args, "domain", None)
-        task_ids = getattr(args, "task_ids", None)
-
-        print(f"  VM IP: {ip}")
-        print(f"  Model: {model}")
-        print(f"  Agent: {agent}")
-        print(f"  Tasks: {num_tasks}")
-        if domain:
-            print(f"  Domain: {domain}")
-        if task_ids:
-            print(f"  Task IDs: {task_ids}")
-        print(f"\n  Monitor Windows at: http://{ip}:8006")
-
-        # Get API key based on agent type
-        # For api-claude, need ANTHROPIC_API_KEY; for navi/api-openai, need OPENAI_API_KEY
-        api_key = args.api_key if hasattr(args, "api_key") and args.api_key else None
-        anthropic_key = settings.anthropic_api_key or os.environ.get(
-            "ANTHROPIC_API_KEY", ""
-        )
-        openai_key = api_key or settings.openai_api_key or ""
-
-        if agent == "api-claude":
-            if not anthropic_key:
-                print("✗ No Anthropic API key provided for api-claude agent.")
-                print("  Set ANTHROPIC_API_KEY env var or in .env file")
-                sys.exit(1)
-            api_key = anthropic_key
-            print("  API Key: ANTHROPIC_API_KEY (set)")
-        else:
-            # navi and api-openai both use OpenAI
-            if not openai_key:
-                print(
-                    "✗ No OpenAI API key provided. Set with --api-key, OPENAI_API_KEY env var, or in .env file"
-                )
-                sys.exit(1)
-            api_key = openai_key
-            print("  API Key: OPENAI_API_KEY (set)")
-
-        # Set environment variables for the server to use (for SSE endpoint)
-        os.environ["WAA_VM_IP"] = ip
-        os.environ["WAA_INTERNAL_IP"] = internal_ip
-
-        # Launch dashboard in background if --open is set
-        # Use azure_ops.html for live SSE updates (cost, logs, progress)
-        if open_viewer:
-            print(
-                f"\n  Launching Azure ops dashboard at http://localhost:{port}/azure_ops.html"
-            )
-
-            def start_server():
-                # Use the full-featured server from local.py with API endpoints
-                from openadapt_ml.cloud.local import (
-                    get_current_output_dir,
-                    _regenerate_benchmark_viewer_if_available,
-                    cmd_serve,
-                )
-                import argparse
-
-                serve_dir = get_current_output_dir()
-                if not serve_dir.exists():
-                    serve_dir.mkdir(parents=True)
-                # Regenerate benchmark viewer
-                _regenerate_benchmark_viewer_if_available(serve_dir)
-
-                # Use cmd_serve with the proper handler that has API endpoints
-                fake_args = argparse.Namespace(
-                    port=port, open=False, no_regenerate=True, quiet=True
-                )
-                cmd_serve(fake_args)
-
-            server_thread = threading.Thread(target=start_server, daemon=True)
-            server_thread.start()
-
-            # Give server time to start
-            import time
-
-            time.sleep(1)
-
-            # Open browser - use azure_ops.html for live SSE updates
-            webbrowser.open(f"http://localhost:{port}/azure_ops.html")
-
-        print()
-
-        # Ensure Docker is running (may not auto-start after VM restart)
-        print("[1/5] Ensuring Docker is running...", flush=True)
-        write_live_status(
-            "setup",
-            phase="docker",
-            detail="Ensuring Docker is running...",
-            total_tasks=num_tasks,
-        )
-        if not ensure_docker_running(ip):
-            write_live_status(
-                "error",
-                phase="docker",
-                detail="Docker is not running and could not be started",
-            )
-            print("✗ Docker is not running and could not be started.", flush=True)
-            print(
-                "  Try: uv run python -m openadapt_ml.benchmarks.cli vm diag",
-                flush=True,
-            )
-            sys.exit(1)
-        print("      ✓ Docker is running", flush=True)
-
-        # Stop any existing container
-        fresh = getattr(args, "fresh", False)
-        step = 2
-        print(f"[{step}/5] Stopping any existing WAA container...")
-        write_live_status(
-            "setup",
-            phase="container_stop",
-            detail="Stopping any existing WAA container...",
-            total_tasks=num_tasks,
-        )
-        subprocess.run(
-            [
-                "ssh",
-                *SSH_OPTS,
-                f"azureuser@{ip}",
-                "docker stop winarena 2>/dev/null; docker rm -f winarena 2>/dev/null",
-            ],
-            capture_output=True,
-            text=True,
-        )
-
-        # If --fresh, delete Windows storage and reinstall
-        if fresh:
-            step += 1
-            print(f"\n[{step}/5] Deleting Windows storage for fresh install...")
-            cleanup_cmd = """
-# Ensure storage is on /mnt
-sudo mkdir -p /data/waa-storage
-sudo chown azureuser:azureuser /data/waa-storage
-# Move from home if needed
-[ -d ~/waa-storage ] && mv ~/waa-storage/* /data/waa-storage/ 2>/dev/null && rm -rf ~/waa-storage
-# Delete disk image but keep ISO cache (for faster reinstall)
-rm -f /data/waa-storage/data.img /data/waa-storage/windows.mac /data/waa-storage/windows.rom /data/waa-storage/windows.vars
-echo "Deleted corrupted Windows disk image. ISO cache preserved."
-ls -lh /data/waa-storage/
-"""
-            result = subprocess.run(
-                ["ssh", *SSH_OPTS, f"azureuser@{ip}", cleanup_cmd],
-                capture_output=True,
-                text=True,
-            )
-            if result.stdout.strip():
-                for line in result.stdout.strip().split("\n"):
-                    print(f"      {line}")
-            print("      ✓ Windows storage reset - fresh install will begin")
-
-        # Ensure storage directory exists on /mnt (not home dir - home only has ~10GB)
-        # The /mnt partition on Azure VMs has 32GB temp disk
-        subprocess.run(
-            [
-                "ssh",
-                *SSH_OPTS,
-                f"azureuser@{ip}",
-                "sudo mkdir -p /data/waa-storage && sudo chown azureuser:azureuser /data/waa-storage",
-            ],
-            capture_output=True,
-            text=True,
-        )
-
-        # Ensure waa-auto image exists (auto-rebuild if needed)
-        rebuild = getattr(args, "rebuild", False)
-        print("[3/5] Checking waa-auto Docker image...", flush=True)
-        write_live_status(
-            "setup",
-            phase="image_check",
-            detail="Checking waa-auto Docker image...",
-            total_tasks=num_tasks,
-        )
-
-        # Check if waa-auto exists and is recent (built with current dockurr/windows)
-        check_image_cmd = "docker images waa-auto:latest --format '{{.ID}}' | head -1"
-        check_result = subprocess.run(
-            ["ssh", *SSH_OPTS, f"azureuser@{ip}", check_image_cmd],
-            capture_output=True,
-            text=True,
-        )
-        waa_auto_exists = bool(check_result.stdout.strip())
-
-        if rebuild:
-            print("      --rebuild flag set, forcing image rebuild...")
-            waa_auto_exists = False  # Force rebuild
-
-        if not waa_auto_exists:
-            print("      waa-auto image not found, building...")
-
-            # Clean up Docker build cache BEFORE building to prevent disk space issues
-            # The build cache can grow to 90+ GB and exhaust /mnt (147GB)
-            print("      Cleaning Docker build cache before build...")
-            prune_before_result = subprocess.run(
-                [
-                    "ssh",
-                    *SSH_OPTS,
-                    f"azureuser@{ip}",
-                    "docker builder prune -af 2>&1 | tail -3",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            if "Total reclaimed space" in prune_before_result.stdout:
-                for line in prune_before_result.stdout.strip().split("\n"):
-                    if "Total reclaimed space" in line:
-                        print(f"      {line.strip()}")
-
-            # Check available disk space on /mnt (where Docker data lives)
-            df_result = subprocess.run(
-                [
-                    "ssh",
-                    *SSH_OPTS,
-                    f"azureuser@{ip}",
-                    "df -h /mnt | tail -1 | awk '{print $4}'",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            if df_result.returncode == 0:
-                avail = df_result.stdout.strip()
-                print(f"      Available disk space on /mnt: {avail}")
-                # Parse available space and warn if less than 50GB
-                try:
-                    avail_num = float(avail.replace("G", ""))
-                    if avail_num < 50:
-                        print(
-                            f"      WARNING: Low disk space ({avail}). Build may fail."
-                        )
-                        print(
-                            "      Consider running: uv run python -m openadapt_ml.benchmarks.cli vm docker-prune"
-                        )
-                except (ValueError, AttributeError):
-                    pass  # Could not parse, continue anyway
-
-            # Copy Dockerfile, api_agent.py, and start_waa_server.bat to VM
-            waa_deploy_dir = Path(__file__).parent / "waa_deploy"
-            dockerfile_path = waa_deploy_dir / "Dockerfile"
-            api_agent_path = waa_deploy_dir / "api_agent.py"
-            start_script_path = waa_deploy_dir / "start_waa_server.bat"
-            if dockerfile_path.exists():
-                scp_result = subprocess.run(
-                    [
-                        "scp",
-                        *SSH_OPTS,
-                        str(dockerfile_path),
-                        f"azureuser@{ip}:~/Dockerfile.waa",
-                    ],
-                    capture_output=True,
-                    text=True,
-                )
-                if scp_result.returncode != 0:
-                    print(f"      ✗ Failed to copy Dockerfile: {scp_result.stderr}")
-                    sys.exit(1)
-
-                # Copy api_agent.py (required by Dockerfile)
-                if api_agent_path.exists():
-                    scp_result = subprocess.run(
-                        [
-                            "scp",
-                            *SSH_OPTS,
-                            str(api_agent_path),
-                            f"azureuser@{ip}:~/api_agent.py",
-                        ],
-                        capture_output=True,
-                        text=True,
-                    )
-                    if scp_result.returncode != 0:
-                        print(
-                            f"      ✗ Failed to copy api_agent.py: {scp_result.stderr}"
-                        )
-                        sys.exit(1)
-                else:
-                    print(f"      ✗ api_agent.py not found at {api_agent_path}")
-                    sys.exit(1)
-
-                # Copy start_waa_server.bat (required by Dockerfile for Windows automation)
-                if start_script_path.exists():
-                    scp_result = subprocess.run(
-                        [
-                            "scp",
-                            *SSH_OPTS,
-                            str(start_script_path),
-                            f"azureuser@{ip}:~/start_waa_server.bat",
-                        ],
-                        capture_output=True,
-                        text=True,
-                    )
-                    if scp_result.returncode != 0:
-                        print(
-                            f"      ✗ Failed to copy start_waa_server.bat: {scp_result.stderr}"
-                        )
-                        sys.exit(1)
-                else:
-                    print(f"      ✗ start_waa_server.bat not found at {start_script_path}")
-                    sys.exit(1)
-
-                # Auto-cleanup: Clear Docker build cache before building to prevent disk space issues
-                # This is lighter than full prune - keeps existing images but clears build cache
-                print("      Clearing Docker build cache...")
-                cleanup_result = subprocess.run(
-                    [
-                        "ssh",
-                        *SSH_OPTS,
-                        f"azureuser@{ip}",
-                        "docker builder prune -af 2>&1 | tail -3",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                )
-                if "reclaimed" in cleanup_result.stdout.lower():
-                    print(f"      {cleanup_result.stdout.strip()}")
-                else:
-                    print("      Build cache cleared")
-
-                # Build the image (using /home/azureuser as context to avoid /tmp issues)
-                print("      Building waa-auto image (streaming output)...")
-                print(
-                    "      This may take 5-15 minutes for first build (model weights are ~2GB)..."
-                )
-                print(flush=True)
-
-                # Update live status for build phase
-                write_live_status(
-                    "setup",
-                    phase="docker_build",
-                    detail="Building waa-auto Docker image...",
-                    total_tasks=num_tasks,
-                )
-
-                # Stream build output so user can see progress
-                # Note: --progress=plain requires BuildKit; fall back to legacy builder without it
-                # SSH_OPTS already includes keepalive settings to prevent timeout during long builds
-                build_cmd = "cd ~ && docker build --pull -t waa-auto:latest -f ~/Dockerfile.waa . 2>&1"
-                build_process = subprocess.Popen(
-                    ["ssh", *SSH_OPTS, f"azureuser@{ip}", build_cmd],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                )
-
-                build_output = []
-                last_status_update = 0
-                try:
-                    while True:
-                        line = build_process.stdout.readline()
-                        if not line and build_process.poll() is not None:
-                            break
-                        if line:
-                            line = line.rstrip()
-                            build_output.append(line)
-                            # Show key progress lines
-                            if any(
-                                x in line.lower()
-                                for x in [
-                                    "step",
-                                    "copying",
-                                    "downloading",
-                                    "#",
-                                    "cached",
-                                    "done",
-                                    "error",
-                                    "failed",
-                                ]
-                            ):
-                                print(
-                                    f"      {line[-100:]}", flush=True
-                                )  # Truncate long lines, flush immediately
-                                # Update live status periodically (every 10 lines)
-                                if len(build_output) - last_status_update >= 10:
-                                    last_status_update = len(build_output)
-                                    write_live_status(
-                                        "setup",
-                                        phase="docker_build",
-                                        detail=f"Building... {line[-60:]}",
-                                        total_tasks=num_tasks,
-                                    )
-                except subprocess.TimeoutExpired:
-                    build_process.kill()
-                    print("      ✗ Build timed out after 30 minutes", flush=True)
-                    write_live_status(
-                        "error", phase="docker_build", detail="Build timed out"
-                    )
-                    sys.exit(1)
-
-                full_output = "\n".join(build_output)
-                if (
-                    "Successfully tagged waa-auto:latest" in full_output
-                    or "naming to docker.io/library/waa-auto:latest" in full_output
-                ):
-                    print()
-                    print("      ✓ waa-auto image built successfully")
-
-                    # Clean up Docker build cache AFTER successful build to free space
-                    # This prevents cache accumulation across multiple builds
-                    print("      Cleaning Docker build cache after build...")
-                    prune_after_result = subprocess.run(
-                        [
-                            "ssh",
-                            *SSH_OPTS,
-                            f"azureuser@{ip}",
-                            "docker builder prune -af 2>&1 | tail -3",
-                        ],
-                        capture_output=True,
-                        text=True,
-                        timeout=120,
-                    )
-                    if "Total reclaimed space" in prune_after_result.stdout:
-                        for line in prune_after_result.stdout.strip().split("\n"):
-                            if "Total reclaimed space" in line:
-                                print(f"      {line.strip()}")
-
-                    # Also remove dangling images (intermediate layers not tagged)
-                    subprocess.run(
-                        [
-                            "ssh",
-                            *SSH_OPTS,
-                            f"azureuser@{ip}",
-                            "docker image prune -f 2>/dev/null",
-                        ],
-                        capture_output=True,
-                        text=True,
-                        timeout=60,
-                    )
-                else:
-                    print()
-                    print("      Last 20 lines of build output:")
-                    for line in build_output[-20:]:
-                        print(f"        {line}")
-                    print()
-                    print("      ✗ CRITICAL: waa-auto build failed!")
-                    print(
-                        "      The official windowsarena/winarena image is BROKEN (uses outdated dockurr/windows v0.00)"
-                    )
-                    print(
-                        "      The waa-auto image is REQUIRED for Windows 11 to auto-download."
-                    )
-                    print()
-                    print("      Troubleshooting:")
-                    print(
-                        "        1. Check Docker storage: uv run python -m openadapt_ml.benchmarks.cli vm diag"
-                    )
-                    print(
-                        "        2. If disk full: uv run python -m openadapt_ml.benchmarks.cli vm fix-storage"
-                    )
-                    print(
-                        "        3. Clean Docker: ssh azureuser@<ip> 'docker system prune -af'"
-                    )
-                    print(
-                        "        4. Retry: uv run python -m openadapt_ml.benchmarks.cli vm run-waa --rebuild"
-                    )
-                    sys.exit(1)
-            else:
-                print(f"      ✗ CRITICAL: Dockerfile not found at {dockerfile_path}")
-                print("      Cannot proceed without waa-auto image.")
-                sys.exit(1)
-        else:
-            print("      ✓ waa-auto image found")
-
-        # Verify waa-auto image exists (required - official image is broken)
-        print("[4/5] Verifying waa-auto image...")
-        verify_cmd = "docker images waa-auto:latest --format '{{.Repository}}:{{.Tag}}' | head -1"
-        verify_result = subprocess.run(
-            ["ssh", *SSH_OPTS, f"azureuser@{ip}", verify_cmd],
-            capture_output=True,
-            text=True,
-        )
-        if verify_result.stdout.strip() == "waa-auto:latest":
-            docker_image = "waa-auto:latest"
-            print(f"      ✓ Using: {docker_image} (with dockurr/windows auto-download)")
-        else:
-            print("      ✗ CRITICAL: waa-auto image not found!")
-            print(
-                "      The official windowsarena/winarena image is BROKEN and cannot be used."
-            )
-            print()
-            print("      Run with --rebuild to build waa-auto:")
-            print(
-                f"        uv run python -m openadapt_ml.benchmarks.cli vm run-waa --rebuild --num-tasks {num_tasks}"
-            )
-            sys.exit(1)
-
-        # Start WAA container with full benchmark run
-        print("[5/5] Starting WAA benchmark (this will take a while)...")
-        print(f"      Agent will run {num_tasks} tasks using {model}")
-        if open_viewer:
-            print(f"      Viewer running at: http://localhost:{port}/benchmark.html")
-        print()
-
-        # Build task filtering arguments
-        task_filter_args = ""
-        if domain:
-            task_filter_args += f" --domain {domain}"
-        if task_ids:
-            task_filter_args += f" --task-ids {task_ids}"
-
-        # Build environment variable arguments for docker
-        # Pass the appropriate API key based on agent type
-        if agent == "api-claude":
-            env_args = f'-e ANTHROPIC_API_KEY="{api_key}"'
-        else:
-            env_args = f'-e OPENAI_API_KEY="{api_key}"'
-
-        docker_cmd = f'''docker run --rm \
-  --name winarena \
-  --device=/dev/kvm \
-  --cap-add NET_ADMIN \
-  -p 8006:8006 \
-  -p 5000:5000 \
-  -p 7200:7200 \
-  -v /data/waa-storage:/storage \
-  -v ~/waa-results:/results \
-  {env_args} \
-  {docker_image} \
-  "/entry.sh --start-client true --model {model} --agent {agent} --result-dir /results{task_filter_args}"'''
-
-        # Update status to running
-        write_live_status(
-            "running",
-            phase="benchmark",
-            detail="Starting WAA benchmark...",
-            total_tasks=num_tasks,
-            tasks_completed=0,
-        )
-
-        # Use Popen to stream output and parse progress in real-time
-        # SSH_OPTS includes keepalive settings (ServerAliveInterval=60, ServerAliveCountMax=10)
-        # to prevent timeout during long benchmark runs (1.5+ hours)
-        process = subprocess.Popen(
-            [
-                "ssh",
-                *SSH_OPTS,
-                f"azureuser@{ip}",
-                f"mkdir -p ~/waa-results && {docker_cmd}",
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,  # Line buffered
-        )
-
-        # Parse output in real-time to update live status
-        tasks_completed = 0
-        current_task_id = None
-        current_step = 0
-
-        # Patterns for WAA output parsing
-        task_start_pattern = re.compile(
-            r"(?:Starting|Running)\s+task[:\s]+(\S+)", re.IGNORECASE
-        )
-        task_complete_pattern = re.compile(
-            r"(?:Task|Completed)[:\s]+(\S+)[:\s]+(?:PASS|FAIL|SUCCESS|FAILED|score)",
-            re.IGNORECASE,
-        )
-        step_pattern = re.compile(r"(?:Step|Action)\s+(\d+)", re.IGNORECASE)
-        windows_boot_pattern = re.compile(
-            r"(?:Booting|Starting|Windows|QEMU|KVM)", re.IGNORECASE
-        )
-
-        try:
-            for line in process.stdout:
-                line = line.rstrip()
-                print(line)  # Still show in terminal
-
-                # Parse Windows boot progress
-                if windows_boot_pattern.search(line):
-                    if "download" in line.lower():
-                        write_live_status(
-                            "setup",
-                            phase="windows_download",
-                            detail=line[:100],
-                            total_tasks=num_tasks,
-                        )
-                    elif "install" in line.lower() or "boot" in line.lower():
-                        write_live_status(
-                            "setup",
-                            phase="windows_boot",
-                            detail=line[:100],
-                            total_tasks=num_tasks,
-                        )
-
-                # Parse task start
-                task_start = task_start_pattern.search(line)
-                if task_start:
-                    current_task_id = task_start.group(1)
-                    current_step = 0
-                    write_live_status(
-                        "running",
-                        phase="task",
-                        detail=f"Running task: {current_task_id}",
-                        task_id=current_task_id,
-                        step=current_step,
-                        tasks_completed=tasks_completed,
-                        total_tasks=num_tasks,
-                        current_task={"task_id": current_task_id, "instruction": ""},
-                    )
-
-                # Parse step progress
-                step_match = step_pattern.search(line)
-                if step_match and current_task_id:
-                    current_step = int(step_match.group(1))
-                    write_live_status(
-                        "running",
-                        phase="step",
-                        detail=line[:100],
-                        task_id=current_task_id,
-                        step=current_step,
-                        tasks_completed=tasks_completed,
-                        total_tasks=num_tasks,
-                    )
-
-                # Parse task completion
-                task_complete = task_complete_pattern.search(line)
-                if task_complete:
-                    completed_task = task_complete.group(1)
-                    tasks_completed += 1
-                    success = "pass" in line.lower() or "success" in line.lower()
-                    write_live_status(
-                        "running",
-                        phase="task_complete",
-                        detail=f"Completed: {completed_task} ({'PASS' if success else 'FAIL'})",
-                        task_id=completed_task,
-                        tasks_completed=tasks_completed,
-                        total_tasks=num_tasks,
-                    )
-
-            # Wait for process to complete
-            process.wait()
-            returncode = process.returncode
-
-        except Exception as e:
-            print(f"\n⚠ Error streaming output: {e}")
-            process.kill()
-            returncode = 1
-
-        if returncode == 0:
-            write_live_status(
-                "complete",
-                detail=f"Benchmark complete! {tasks_completed}/{num_tasks} tasks",
-                tasks_completed=tasks_completed,
-                total_tasks=num_tasks,
-            )
-            print("\n✓ WAA evaluation complete!")
-            print("\n  Results saved to: ~/waa-results on the VM")
-            print(
-                f"  To download: scp azureuser@{ip}:~/waa-results/* ./benchmark_results/"
-            )
-        else:
-            write_live_status(
-                "error",
-                detail=f"Benchmark finished with errors (exit code: {returncode})",
-                tasks_completed=tasks_completed,
-                total_tasks=num_tasks,
-            )
-            print(f"\n⚠ WAA run finished with issues (exit code: {returncode})")
-
-        # Auto-shutdown VM if --auto-shutdown flag is set
-        auto_shutdown = getattr(args, "auto_shutdown", False)
-        if auto_shutdown:
-            print("\n=== Auto-shutdown: Deallocating VM to save costs ===\n")
-            deallocate_result = subprocess.run(
-                [
-                    "az",
-                    "vm",
-                    "deallocate",
-                    "-g",
-                    resource_group,
-                    "-n",
-                    vm_name,
-                    "--no-wait",
-                ],
-                capture_output=True,
-                text=True,
-            )
-            if deallocate_result.returncode == 0:
-                print(f"✓ VM '{vm_name}' deallocation initiated")
-                print("\n  Cost savings: Deallocated VMs do not incur compute charges.")
-                print(
-                    "  Note: Storage costs still apply. Delete VM with 'vm delete' to stop all charges."
-                )
-                print(f"  To restart: az vm start -g {resource_group} -n {vm_name}")
-            else:
-                print(f"✗ Failed to deallocate VM: {deallocate_result.stderr}")
 
     elif args.action == "fix-storage":
         print("\n=== Fix WAA Storage (Move to /mnt for More Space) ===\n")
@@ -4478,11 +3395,11 @@ echo "deep_clean_done"
             print("  Warning: Could not configure BuildKit GC")
 
         print(
-            "\n  Retry build: uv run python -m openadapt_ml.benchmarks.cli vm run-waa --rebuild"
+            "\n  Retry build: uv run python -m openadapt_ml.benchmarks.cli waa --rebuild"
         )
 
     elif args.action == "docker-move":
-        print("\n=== Move Docker Data to /mnt (147GB) ===\n")
+        print("\n=== Move Docker Data to /mnt (300GB) ===\n")
         print("Reconfigures Docker to use /mnt/docker for all images and layers.")
         print("This solves 'no space left on device' errors during docker build.\n")
 
@@ -4613,9 +3530,9 @@ echo "configured"
         print("  Docker Data Moved to /mnt!")
         print(f"{'=' * 60}")
         print("\n  Root disk now has space for OS only.")
-        print("  Docker images will use /mnt/docker (147GB available).")
+        print("  Docker images will use /mnt/docker (300GB available).")
         print(
-            "\n  Next: uv run python -m openadapt_ml.benchmarks.cli vm run-waa --rebuild"
+            "\n  Next: uv run python -m openadapt_ml.benchmarks.cli waa --rebuild"
         )
 
     elif args.action == "reset-windows":
@@ -4744,7 +3661,7 @@ ls -lh /data/waa-storage/
                 print(f"  Probe response: {probe_result.stdout.strip()[:100]}")
                 print("\n  To run benchmarks:")
                 print(
-                    "    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5"
+                    "    uv run python -m openadapt_ml.benchmarks.cli waa --num-tasks 5"
                 )
                 break
 
@@ -4821,7 +3738,7 @@ ls -lh /data/waa-storage/
             ):
                 print("\n  Ready to run benchmarks:")
                 print(
-                    "    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5"
+                    "    uv run python -m openadapt_ml.benchmarks.cli waa --num-tasks 5"
                 )
             else:
                 print("\n  VNC (via SSH tunnel): http://localhost:8006")
@@ -4838,7 +3755,7 @@ ls -lh /data/waa-storage/
                 print(f"  Response: {response[:100] if response else '(empty)'}")
                 print("\n  Ready to run benchmarks:")
                 print(
-                    "    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5"
+                    "    uv run python -m openadapt_ml.benchmarks.cli waa --num-tasks 5"
                 )
             else:
                 print("  ✗ WAA server NOT responding")
@@ -5237,7 +4154,7 @@ ls -lh /data/waa-storage/
         if use_mock:
             # Generate realistic mock data for screenshots/testing
             ip = "172.171.112.41"
-            vm_size = "Standard_D4ds_v5"
+            vm_size = "Standard_D8ds_v5"
             power_state = "VM running"
             uptime_hours = 2.5
 
@@ -5318,7 +4235,7 @@ ls -lh /data/waa-storage/
                     text=True,
                     timeout=10,
                 )
-                vm_size = "Standard_D4ds_v5"  # default
+                vm_size = "Standard_D8ds_v5"  # default
                 power_state = "unknown"
                 if vm_info_result.returncode == 0:
                     vm_info = json.loads(vm_info_result.stdout)
@@ -5648,7 +4565,7 @@ ls -lh /data/waa-storage/
             ["ssh", *SSH_OPTS, f"azureuser@{ip}", cleanup_cmd], capture_output=True
         )
 
-        # Build the same docker command as run-waa but with timeout
+        # Build the same docker command as waa command but with timeout
         # Note: waa-auto has ENTRYPOINT ["/bin/bash", "-c"] so we pass the command as a string
         docker_cmd = '''docker run --rm \
   --name winarena-test \
@@ -5975,7 +4892,7 @@ echo "killed"
         )
         print(f"  {prune_result.stdout}")
         print(
-            "\n  Ready to retry: uv run python -m openadapt_ml.benchmarks.cli vm run-waa --rebuild"
+            "\n  Ready to retry: uv run python -m openadapt_ml.benchmarks.cli waa --rebuild"
         )
 
     elif args.action == "diag":
@@ -6100,7 +5017,7 @@ echo "killed"
         )
         if not check_result.stdout.strip():
             print("  ✗ waa-auto image not found!")
-            print("  Build it with: uv run python -m openadapt_ml.benchmarks.cli vm run-waa --rebuild")
+            print("  Build it with: uv run python -m openadapt_ml.benchmarks.cli waa --rebuild")
             sys.exit(1)
         print("  ✓ waa-auto image found")
 
@@ -6283,145 +5200,82 @@ echo "killed"
         if "no_build_running" in ps_result.stdout:
             if check_result.stdout.strip():
                 print("\n  Build complete! Run benchmark:")
-                print("    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5")
+                print("    uv run python -m openadapt_ml.benchmarks.cli waa --num-tasks 5")
             else:
                 print("\n  No image found. Start a build:")
-                print("    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --rebuild")
+                print("    uv run python -m openadapt_ml.benchmarks.cli waa --rebuild")
         else:
             print("\n  Build in progress. Check again later or stop it:")
             print("    uv run python -m openadapt_ml.benchmarks.cli vm stop-build")
 
-    elif args.action == "waa-native":
-        """Run WAA using Microsoft's native scripts (simplified approach).
+    elif args.action == "fix-docker":
+        """Fix Docker/containerd services on the VM.
 
-        This syncs the vendor/WindowsAgentArena directory to the VM and runs
-        Microsoft's build-container-image.sh and run.sh scripts directly.
-
-        Benefits:
-        - Uses upstream WAA infrastructure (no custom Dockerfile to maintain)
-        - All 25+ CLI parameters work automatically
-        - Future WAA updates apply cleanly
+        Restarts containerd and docker services to recover from common failures
+        like 'containerd socket not responding' or 'docker daemon failed to start'.
 
         Usage:
-            uv run python -m openadapt_ml.benchmarks.cli vm waa-native
-            uv run python -m openadapt_ml.benchmarks.cli vm waa-native --rebuild
+            uv run python -m openadapt_ml.benchmarks.cli vm fix-docker
         """
-        print("\n=== WAA Native Setup (Microsoft Scripts) ===\n")
+        print("\n=== Fixing Docker/Containerd Services ===\n")
 
         ip = get_vm_ip(resource_group, vm_name)
         if not ip:
-            print(f"✗ VM '{vm_name}' not found. Create one first.")
+            print(f"✗ VM '{vm_name}' not found or not running.")
             sys.exit(1)
 
         print(f"  VM IP: {ip}")
-
-        # Get parameters
-        rebuild = getattr(args, "rebuild", False)
-        num_tasks = getattr(args, "num_tasks", 5)
-        api_key = args.api_key if hasattr(args, "api_key") and args.api_key else None
-        openai_key = api_key or settings.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
-
-        if not openai_key:
-            print("✗ No OpenAI API key provided.")
-            print("  Set with --api-key, OPENAI_API_KEY env var, or in .env file")
-            sys.exit(1)
-
-        # Find vendor/WindowsAgentArena directory
-        waa_dir = Path(__file__).parent.parent.parent / "vendor" / "WindowsAgentArena"
-        if not waa_dir.exists():
-            print(f"✗ WindowsAgentArena not found at {waa_dir}")
-            print("  Run: git submodule update --init --recursive")
-            sys.exit(1)
-
-        print(f"  WAA source: {waa_dir}")
         print()
 
-        # Step 1: Sync WAA directory to VM
-        print("[1/4] Syncing WindowsAgentArena to VM...")
-        rsync_cmd = [
-            "rsync", "-avz", "--delete",
-            "-e", f"ssh {' '.join(SSH_OPTS)}",
-            f"{waa_dir}/",
-            f"azureuser@{ip}:~/WindowsAgentArena/",
-        ]
-        result = subprocess.run(rsync_cmd, capture_output=True, text=True, timeout=300)
-        if result.returncode != 0:
-            print(f"  ✗ rsync failed: {result.stderr[:200]}")
-            sys.exit(1)
-        print("  ✓ Synced")
-
-        # Step 2: Check if winarena image exists (skip build if it does)
-        print("[2/4] Checking for winarena image...")
-        check_cmd = "docker images winarena:latest --format '{{.ID}}' | head -1"
-        check_result = subprocess.run(
-            ["ssh", *SSH_OPTS, f"azureuser@{ip}", check_cmd],
-            capture_output=True, text=True,
-        )
-        winarena_exists = bool(check_result.stdout.strip())
-
-        if rebuild:
-            print("  --rebuild flag set, forcing image rebuild...")
-            winarena_exists = False
-
-        if not winarena_exists:
-            print("  Image not found, building (this may take 10-15 min)...")
-
-            # Build using Microsoft's script
-            build_cmd = (
-                "cd ~/WindowsAgentArena/scripts && "
-                "./build-container-image.sh --build-base-image true --mode azure 2>&1"
-            )
-            build_process = subprocess.Popen(
-                ["ssh", *SSH_OPTS, f"azureuser@{ip}", build_cmd],
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
-            )
-            for line in build_process.stdout:
-                line = line.rstrip()
-                if any(x in line.lower() for x in ["step", "building", "copying", "downloading", "error", "successfully"]):
-                    print(f"    {line[:100]}", flush=True)
-            build_process.wait()
-            if build_process.returncode != 0:
-                print("  ✗ Build failed. Check logs above.")
-                sys.exit(1)
-            print("  ✓ Build complete")
-        else:
-            print("  ✓ winarena image already exists")
-
-        # Step 3: Run using Microsoft's script
-        print("[3/4] Starting WAA container...")
-        run_cmd = (
-            f"cd ~/WindowsAgentArena/scripts && "
-            f"OPENAI_API_KEY='{openai_key}' ./run.sh "
-            f"--skip-build true "
-            f"--use-kvm true "
-            f"--ram-size 12G "
-            f"--cpu-cores 4 "
-            f"--browser-port 8006 "
-            f"--start-client false "
-            f"2>&1"
-        )
+        # Step 1: Stop services
+        print("[1/4] Stopping services...")
         result = subprocess.run(
-            ["ssh", *SSH_OPTS, f"azureuser@{ip}", run_cmd],
-            capture_output=True, text=True, timeout=120,
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}",
+             "sudo systemctl stop docker containerd 2>&1 || true"],
+            capture_output=True, text=True, timeout=30,
         )
-        print(result.stdout[-500:] if len(result.stdout) > 500 else result.stdout)
+        print("  ✓ Services stopped")
 
-        # Step 4: Wait for WAA server
-        print("[4/4] Waiting for WAA server...")
-        import time
-        for i in range(12):
-            time.sleep(10)
-            is_ready, response = check_waa_probe(ip)
-            if is_ready:
-                print(f"\n✓ WAA server ready!")
-                print(f"  VNC: http://localhost:8006 (via SSH tunnel)")
-                print(f"\n  Run benchmark:")
-                print(f"    uv run python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks {num_tasks}")
-                break
-            print(f"    Attempt {i+1}/12: Not ready yet...")
+        # Step 2: Clean up stale sockets
+        print("[2/4] Cleaning up stale sockets...")
+        result = subprocess.run(
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}",
+             "sudo rm -f /run/containerd/containerd.sock /var/run/docker.sock 2>&1 || true"],
+            capture_output=True, text=True, timeout=30,
+        )
+        print("  ✓ Sockets cleaned")
+
+        # Step 3: Restart containerd first (docker depends on it)
+        print("[3/4] Starting containerd...")
+        result = subprocess.run(
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}",
+             "sudo systemctl start containerd && sleep 3 && sudo systemctl status containerd --no-pager | head -10"],
+            capture_output=True, text=True, timeout=60,
+        )
+        if "active (running)" in result.stdout:
+            print("  ✓ containerd running")
         else:
-            print("\n⚠ WAA server not responding after 2 minutes.")
-            print(f"  VNC: http://{ip}:8006")
+            print(f"  ⚠ containerd status:\n{result.stdout[:300]}")
+
+        # Step 4: Start docker
+        print("[4/4] Starting docker...")
+        result = subprocess.run(
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}",
+             "sudo systemctl start docker && sleep 3 && docker ps 2>&1"],
+            capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode == 0:
+            print("  ✓ Docker running")
+            print(f"\n  Output:\n{result.stdout}")
+        else:
+            print(f"  ✗ Docker failed:\n{result.stderr[:300]}")
+            print("\n  Try recreating the VM if Docker won't recover:")
+            print("    uv run python -m openadapt_ml.benchmarks.cli vm delete -y")
+            print("    uv run python -m openadapt_ml.benchmarks.cli vm setup-waa")
+            sys.exit(1)
+
+        print("\n✓ Docker services recovered!")
+        print("  Next: uv run python -m openadapt_ml.benchmarks.cli vm diag")
 
 
 def cmd_view(args: argparse.Namespace) -> None:
@@ -6714,6 +5568,425 @@ def cmd_setup(args: argparse.Namespace) -> None:
     print()
 
 
+def cmd_waa(args: argparse.Namespace) -> None:
+    """One-command WAA benchmark setup and execution.
+
+    This command handles everything needed to run WAA benchmarks:
+    1. Creates Azure VM if not exists
+    2. Sets up Docker with proper disk configuration
+    3. Builds the waa-auto Docker image
+    4. Starts Windows container
+    5. Waits for WAA server to be ready
+    6. Optionally runs benchmark tasks
+
+    The command is idempotent - safe to run multiple times.
+
+    Usage:
+        # Full setup + run benchmark
+        uv run python -m openadapt_ml.benchmarks.cli waa --api-key $OPENAI_API_KEY
+
+        # Just setup (no benchmark run)
+        uv run python -m openadapt_ml.benchmarks.cli waa --api-key $OPENAI_API_KEY --setup-only
+
+        # Force rebuild of Docker image
+        uv run python -m openadapt_ml.benchmarks.cli waa --api-key $OPENAI_API_KEY --rebuild
+
+        # Fresh install (delete Windows storage)
+        uv run python -m openadapt_ml.benchmarks.cli waa --api-key $OPENAI_API_KEY --fresh
+    """
+    import subprocess
+    import time
+    import webbrowser
+    import threading
+
+    resource_group = args.resource_group
+    vm_name = args.name
+    location = args.location
+
+    # Get API key
+    api_key = args.api_key or settings.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
+        print("ERROR: OpenAI API key required.")
+        print("  Set with --api-key, OPENAI_API_KEY env var, or in .env file")
+        sys.exit(1)
+
+    print("\n" + "=" * 60)
+    print("  WAA Benchmark - One Command Setup")
+    print("=" * 60)
+    print()
+    print("This will:")
+    print("  1. Create/verify Azure VM with nested virtualization")
+    print("  2. Install/verify Docker with /mnt storage (300GB)")
+    print("  3. Build/verify waa-auto Docker image")
+    print("  4. Start Windows container")
+    print("  5. Wait for WAA server to be ready")
+    if not args.setup_only:
+        print(f"  6. Run benchmark with {args.num_tasks} tasks")
+    print()
+
+    # Track overall progress
+    total_steps = 6 if not args.setup_only else 5
+    current_step = 0
+
+    def step(msg: str) -> None:
+        nonlocal current_step
+        current_step += 1
+        print(f"\n[{current_step}/{total_steps}] {msg}")
+
+    # ========================================
+    # Step 1: Create/verify Azure VM
+    # ========================================
+    step("Creating/verifying Azure VM...")
+
+    ip = get_vm_ip(resource_group, vm_name)
+    if ip:
+        print(f"  VM already exists: {ip}")
+    else:
+        if args.fresh:
+            # Delete existing VM first
+            print("  --fresh flag: Deleting existing VM...")
+            subprocess.run(
+                ["az", "vm", "delete", "-g", resource_group, "-n", vm_name, "-y"],
+                capture_output=True, text=True,
+            )
+
+        # Always clean up leftover resources before creating VM
+        # This prevents failures from orphaned VNETs, NICs, NSGs, PublicIPs, disks
+        cleanup_waa_resources(resource_group, vm_name)
+
+        print("  Creating new VM (this takes 2-3 minutes)...")
+        # Try multiple sizes (in case quota is unavailable) and locations
+        # D8ds_v5: 300GB temp, best for WAA. D8s_v3: 64GB temp, fallback.
+        sizes_to_try = ["Standard_D8ds_v5", "Standard_D8s_v3", "Standard_D4ds_v4"]
+        locations_to_try = [location, "westus2", "centralus", "eastus2"]
+
+        vm_created = False
+        last_error = ""
+        for size in sizes_to_try:
+            if vm_created:
+                break
+            for loc in locations_to_try:
+                result = subprocess.run(
+                    [
+                        "az", "vm", "create",
+                        "--resource-group", resource_group,
+                        "--name", vm_name,
+                        "--location", loc,
+                        "--image", "Ubuntu2204",
+                        "--size", size,
+                        "--admin-username", "azureuser",
+                        "--generate-ssh-keys",
+                        "--public-ip-sku", "Standard",
+                    ],
+                    capture_output=True, text=True,
+                )
+                if result.returncode == 0:
+                    vm_info = json.loads(result.stdout)
+                    ip = vm_info.get("publicIpAddress", "")
+                    print(f"  VM created: {size} in {loc}, IP: {ip}")
+                    vm_created = True
+                    break
+                else:
+                    last_error = result.stderr[:200]
+                    # Check if it's a quota error vs location error
+                    if "quota" in result.stderr.lower() or "limit" in result.stderr.lower():
+                        print(f"  {size}: quota unavailable, trying smaller size...")
+                        break  # Try next size
+                    else:
+                        print(f"  {size} in {loc}: unavailable, trying next...")
+
+        if not vm_created:
+            print("ERROR: Could not create VM with any size/region combination")
+            print(f"  Last error: {last_error}")
+            print("\n  Try requesting quota increase for DDSv5 family in Azure portal.")
+            sys.exit(1)
+
+    # ========================================
+    # Step 2: Install/verify Docker
+    # ========================================
+    step("Setting up Docker with /mnt storage...")
+
+    # Check if Docker is already configured correctly
+    check_docker = subprocess.run(
+        ssh_cmd(ip, "docker info 2>/dev/null | grep -q 'Docker Root Dir: /mnt/docker' && echo OK"),
+        capture_output=True, text=True, timeout=30,
+    )
+
+    if "OK" in check_docker.stdout:
+        print("  Docker already configured correctly")
+    else:
+        print("  Installing Docker with /mnt storage (300GB)...")
+        docker_cmds = [
+            "sudo apt-get update -qq",
+            "sudo apt-get install -y -qq docker.io",
+            "sudo systemctl start docker",
+            "sudo systemctl enable docker",
+            "sudo usermod -aG docker $USER",
+            "sudo systemctl stop docker",
+            "sudo mkdir -p /mnt/docker",
+            # Configure Docker to use /mnt and enable BuildKit with cache limits
+            'echo \'{"data-root": "/mnt/docker", "features": {"buildkit": true}}\' | sudo tee /etc/docker/daemon.json',
+            # Configure BuildKit garbage collection (30GB max cache)
+            "sudo mkdir -p /etc/buildkit",
+            'echo \'[worker.oci]\\n  gc = true\\n  gckeepstorage = 30000000000\\n[[worker.oci.gcpolicy]]\\n  keepBytes = 30000000000\\n  keepDuration = 172800\\n  filters = ["type==source.local", "type==exec.cachemount", "type==source.git.checkout"]\' | sudo tee /etc/buildkit/buildkitd.toml',
+            "sudo systemctl start docker",
+        ]
+        result = subprocess.run(
+            ssh_cmd(ip, " && ".join(docker_cmds)),
+            capture_output=True, text=True, timeout=180,
+        )
+        if result.returncode != 0:
+            print(f"  WARNING: Docker setup may have issues: {result.stderr[:200]}")
+        else:
+            print("  Docker installed with /mnt storage")
+
+    # Verify nested virtualization
+    virt_check = subprocess.run(
+        ssh_cmd(ip, "egrep -c '(vmx|svm)' /proc/cpuinfo"),
+        capture_output=True, text=True, timeout=30,
+    )
+    cpu_count = virt_check.stdout.strip()
+    if cpu_count and int(cpu_count) > 0:
+        print(f"  Nested virtualization: OK ({cpu_count} CPUs with vmx/svm)")
+    else:
+        print("  ERROR: Nested virtualization not supported - WAA won't work")
+        print("  Make sure VM size is Standard_D8ds_v5 or similar v5 series")
+        sys.exit(1)
+
+    # ========================================
+    # Step 3: Build waa-auto Docker image
+    # ========================================
+    step("Building waa-auto Docker image...")
+
+    # Check if waa-auto exists
+    check_image = subprocess.run(
+        ssh_cmd(ip, "docker images waa-auto:latest --format '{{.ID}}' | head -1"),
+        capture_output=True, text=True, timeout=30,
+    )
+    waa_auto_exists = bool(check_image.stdout.strip())
+
+    if args.rebuild:
+        print("  --rebuild flag: Forcing image rebuild...")
+        waa_auto_exists = False
+
+    if waa_auto_exists:
+        print("  waa-auto image already exists")
+    else:
+        print("  Building waa-auto image (this takes 5-15 minutes)...")
+
+        # Clean Docker build cache first
+        print("  Cleaning Docker build cache...")
+        subprocess.run(
+            ssh_cmd(ip, "docker builder prune -af 2>&1 | tail -3"),
+            capture_output=True, text=True, timeout=120,
+        )
+
+        # Check disk space
+        df_result = subprocess.run(
+            ssh_cmd(ip, "df -h /mnt | tail -1 | awk '{print $4}'"),
+            capture_output=True, text=True, timeout=30,
+        )
+        if df_result.returncode == 0:
+            avail = df_result.stdout.strip()
+            print(f"  Available disk space: {avail}")
+            try:
+                avail_num = float(avail.replace("G", ""))
+                if avail_num < 50:
+                    print(f"  WARNING: Low disk space ({avail}). Build may fail.")
+            except (ValueError, AttributeError):
+                pass
+
+        # Copy Dockerfile and supporting files to VM
+        waa_deploy_dir = Path(__file__).parent / "waa_deploy"
+        dockerfile_path = waa_deploy_dir / "Dockerfile"
+        api_agent_path = waa_deploy_dir / "api_agent.py"
+        start_script_path = waa_deploy_dir / "start_waa_server.bat"
+
+        if not dockerfile_path.exists():
+            print(f"  ERROR: Dockerfile not found at {dockerfile_path}")
+            sys.exit(1)
+
+        for src, dest in [
+            (dockerfile_path, "~/Dockerfile.waa"),
+            (api_agent_path, "~/api_agent.py"),
+            (start_script_path, "~/start_waa_server.bat"),
+        ]:
+            if src.exists():
+                result = subprocess.run(
+                    scp_cmd(str(src), f"azureuser@{ip}:{dest}"),
+                    capture_output=True, text=True, timeout=60,
+                )
+                if result.returncode != 0:
+                    print(f"  ERROR: Failed to copy {src.name}: {result.stderr}")
+                    sys.exit(1)
+            else:
+                print(f"  ERROR: {src.name} not found at {src}")
+                sys.exit(1)
+
+        # Build the image
+        print("  Building image (streaming output)...")
+        build_cmd = "cd ~ && docker build --pull -t waa-auto:latest -f ~/Dockerfile.waa . 2>&1"
+        build_process = subprocess.Popen(
+            ssh_cmd(ip, build_cmd),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+        )
+
+        for line in build_process.stdout:
+            line = line.rstrip()
+            if any(x in line.lower() for x in ["step", "copying", "downloading", "cached", "done", "error", "failed", "successfully"]):
+                print(f"    {line[-100:]}", flush=True)
+
+        build_process.wait()
+        if build_process.returncode != 0:
+            print("  ERROR: Docker build failed")
+            sys.exit(1)
+        print("  waa-auto image built successfully")
+
+        # Clean up after build
+        subprocess.run(
+            ssh_cmd(ip, "docker builder prune -af 2>&1 | tail -1"),
+            capture_output=True, text=True, timeout=60,
+        )
+
+    # ========================================
+    # Step 4: Start Windows container
+    # ========================================
+    step("Starting Windows container...")
+
+    # Stop any existing container
+    subprocess.run(
+        ssh_cmd(ip, "docker stop winarena 2>/dev/null; docker rm -f winarena 2>/dev/null"),
+        capture_output=True, text=True, timeout=30,
+    )
+
+    # Handle --fresh flag
+    if args.fresh:
+        print("  --fresh flag: Deleting Windows storage...")
+        subprocess.run(
+            ssh_cmd(ip, "sudo rm -rf /mnt/waa-storage/* 2>/dev/null || true"),
+            capture_output=True, text=True, timeout=30,
+        )
+
+    # Ensure storage directory exists
+    subprocess.run(
+        ssh_cmd(ip, "sudo mkdir -p /mnt/waa-storage && sudo chown azureuser:azureuser /mnt/waa-storage"),
+        capture_output=True, text=True, timeout=30,
+    )
+
+    # Start the container
+    docker_run_cmd = f"""docker run -d --name winarena \\
+        --device=/dev/kvm \\
+        --cap-add NET_ADMIN \\
+        -p 8006:8006 -p 3389:3389 \\
+        -v /mnt/waa-storage:/storage \\
+        -e VERSION=11e \\
+        -e RAM_SIZE=12G \\
+        -e CPU_CORES=4 \\
+        -e OPENAI_API_KEY='{api_key}' \\
+        waa-auto:latest"""
+
+    result = subprocess.run(
+        ssh_cmd(ip, docker_run_cmd),
+        capture_output=True, text=True, timeout=60,
+    )
+    if result.returncode != 0:
+        print(f"  ERROR: Failed to start container: {result.stderr[:200]}")
+        sys.exit(1)
+    print("  Container started")
+
+    # ========================================
+    # Step 5: Wait for WAA server
+    # ========================================
+    step("Waiting for WAA server to be ready...")
+    print("  (Windows boots in 2-3 min if cached, 15-20 min on first run)")
+    print(f"  VNC available at: http://{ip}:8006 (or via SSH tunnel)")
+
+    # Open VNC in browser if requested
+    if args.open:
+        print("  Opening VNC in browser...")
+        webbrowser.open(f"http://{ip}:8006")
+
+    # Poll for WAA server readiness
+    max_wait_minutes = 25
+    poll_interval = 15
+    max_attempts = (max_wait_minutes * 60) // poll_interval
+
+    for attempt in range(max_attempts):
+        is_ready, response = check_waa_probe(ip, timeout=5, internal_ip="172.30.0.2")
+        if is_ready:
+            print(f"\n  WAA server is ready!")
+            break
+
+        elapsed = (attempt + 1) * poll_interval
+        elapsed_min = elapsed // 60
+        elapsed_sec = elapsed % 60
+        print(f"    Attempt {attempt + 1}/{max_attempts}: Not ready yet ({elapsed_min}m {elapsed_sec}s elapsed)")
+        time.sleep(poll_interval)
+    else:
+        print(f"\n  WARNING: WAA server not responding after {max_wait_minutes} minutes")
+        print(f"  Check VNC at http://{ip}:8006 for Windows installation status")
+        if args.setup_only:
+            sys.exit(0)  # Setup is complete even if server not ready yet
+        else:
+            sys.exit(1)
+
+    # ========================================
+    # Step 6: Run benchmark (if not --setup-only)
+    # ========================================
+    if not args.setup_only:
+        step(f"Running benchmark with {args.num_tasks} tasks...")
+
+        # Run benchmark using navi agent
+        run_cmd = f"""cd ~/WindowsAgentArena && \\
+            OPENAI_API_KEY='{api_key}' python -m client.run \\
+            --model {args.model} \\
+            --agent navi \\
+            --num_tasks {args.num_tasks} \\
+            --som_origin omniparser \\
+            --som_config omniparser_config.yaml \\
+            --result_dir results 2>&1"""
+
+        print(f"  Model: {args.model}")
+        print(f"  Tasks: {args.num_tasks}")
+        print()
+
+        # Stream output
+        run_process = subprocess.Popen(
+            ssh_cmd(ip, run_cmd),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+        )
+
+        for line in run_process.stdout:
+            print(f"  {line.rstrip()}", flush=True)
+
+        run_process.wait()
+        if run_process.returncode != 0:
+            print("\n  Benchmark run had errors (see output above)")
+        else:
+            print("\n  Benchmark completed!")
+
+    # ========================================
+    # Done
+    # ========================================
+    print("\n" + "=" * 60)
+    print("  WAA Setup Complete!")
+    print("=" * 60)
+    print()
+    print(f"  VM IP: {ip}")
+    print(f"  VNC:   http://{ip}:8006")
+    print()
+    print("  Next steps:")
+    print("    # Monitor VM and manage SSH tunnels:")
+    print("    uv run python -m openadapt_ml.benchmarks.cli vm monitor")
+    print()
+    print("    # Run more benchmark tasks:")
+    print(f"    uv run python -m openadapt_ml.benchmarks.cli waa --num-tasks 20")
+    print()
+    print("    # Deallocate VM when done (stops billing):")
+    print("    uv run python -m openadapt_ml.benchmarks.cli vm deallocate -y")
+    print()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="WAA Benchmark CLI - Windows Agent Arena evaluation toolkit",
@@ -6742,6 +6015,99 @@ Quick Start:
     )
     p_setup.add_argument("--force", action="store_true", help="Continue on errors")
     p_setup.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+
+    # WAA - One command to setup and run WAA benchmarks
+    p_waa = subparsers.add_parser(
+        "waa",
+        help="One-command WAA benchmark setup and execution",
+        description="""
+One-command WAA benchmark setup and execution.
+
+This command handles everything needed to run WAA benchmarks:
+  1. Creates Azure VM if not exists
+  2. Sets up Docker with proper disk configuration
+  3. Builds the waa-auto Docker image
+  4. Starts Windows container
+  5. Waits for WAA server to be ready
+  6. Optionally runs benchmark tasks
+
+The command is idempotent - safe to run multiple times.
+
+Examples:
+  # Full setup + run benchmark
+  uv run python -m openadapt_ml.benchmarks.cli waa --api-key $OPENAI_API_KEY
+
+  # Just setup (no benchmark run)
+  uv run python -m openadapt_ml.benchmarks.cli waa --api-key $OPENAI_API_KEY --setup-only
+
+  # Run 20 tasks
+  uv run python -m openadapt_ml.benchmarks.cli waa --num-tasks 20
+
+  # Force rebuild of Docker image
+  uv run python -m openadapt_ml.benchmarks.cli waa --rebuild
+
+  # Fresh install (delete VM and Windows storage)
+  uv run python -m openadapt_ml.benchmarks.cli waa --fresh
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_waa.add_argument(
+        "--api-key",
+        help="OpenAI API key (or set OPENAI_API_KEY env var)",
+    )
+    p_waa.add_argument(
+        "--num-tasks",
+        type=int,
+        default=5,
+        help="Number of benchmark tasks to run (default: 5)",
+    )
+    p_waa.add_argument(
+        "--model",
+        default="gpt-4o",
+        help="OpenAI model to use (default: gpt-4o)",
+    )
+    p_waa.add_argument(
+        "--setup-only",
+        action="store_true",
+        help="Only setup VM/Docker/image, don't run benchmark",
+    )
+    p_waa.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="Force rebuild of waa-auto Docker image",
+    )
+    p_waa.add_argument(
+        "--fresh",
+        action="store_true",
+        help="Delete VM and Windows storage, start fresh",
+    )
+    p_waa.add_argument(
+        "--open",
+        action="store_true",
+        default=True,
+        help="Open VNC in browser when ready (default: True)",
+    )
+    p_waa.add_argument(
+        "--no-open",
+        action="store_false",
+        dest="open",
+        help="Don't open VNC in browser",
+    )
+    p_waa.add_argument(
+        "--resource-group",
+        default="openadapt-agents",
+        help="Azure resource group (default: openadapt-agents)",
+    )
+    p_waa.add_argument(
+        "--name",
+        default="waa-eval-vm",
+        help="VM name (default: waa-eval-vm)",
+    )
+    p_waa.add_argument(
+        "--location",
+        default="eastus",
+        help="Azure region (default: eastus)",
+    )
 
     # Status
     p_status = subparsers.add_parser("status", help="Check Azure and WAA status")
@@ -7012,49 +6378,51 @@ Quick Start:
     p_vm.add_argument(
         "action",
         choices=[
-            "monitor",
-            "create",
+            # Primary commands
+            "monitor",  # THE GO-TO: dashboard + VNC + status
             "status",
             "ssh",
-            "delete",
-            "deallocate",
             "start",
-            "list-sizes",
+            "deallocate",
+            "delete",
+            # Setup commands
+            "create",
             "setup",
-            "pull-image",
-            "setup-waa",
-            "run-waa",
-            "prepare-windows",
+            "list-sizes",
+            # Docker/container management
             "start-windows",
             "restart-windows",
-            "fix-storage",
+            "reset-windows",
             "docker-prune",
             "docker-move",
+            "fix-docker",
+            "fix-storage",
             "stop-build",
             "check-build",
             "fix-oem",
-            "reset-windows",
-            "screenshot",
+            # Diagnostics
+            "diag",
+            "logs",
             "probe",
+            "exec",
+            "host-exec",
+            "screenshot",
+            # Legacy (prefer top-level 'waa' command)
+            "pull-image",
+            "test-docker",
+            "start-server",
             "pool-status",
             "delete-pool",
             "cleanup-stale",
-            "diag",
-            "logs",
-            "exec",
-            "host-exec",
-            "test-docker",
-            "start-server",
-            "waa-native",
         ],
-        help="Action to perform",
+        help="Action to perform (use 'waa' command for full benchmark workflow)",
     )
     p_vm.add_argument(
         "--resource-group", default="openadapt-agents", help="Azure resource group"
     )
     p_vm.add_argument("--name", default="waa-eval-vm", help="VM name")
     p_vm.add_argument(
-        "--size", default="Standard_D4s_v3", help="VM size (must support nested virt)"
+        "--size", default="Standard_D8ds_v5", help="VM size (must support nested virt, recommend D8ds_v5 for 300GB temp storage)"
     )
     p_vm.add_argument("--location", default="eastus", help="Azure region")
     p_vm.add_argument(
@@ -7067,7 +6435,7 @@ Quick Start:
         "--tasks", help="Comma-separated task IDs to run (e.g., notepad_1,notepad_2)"
     )
     p_vm.add_argument(
-        "--num-tasks", type=int, default=5, help="Number of tasks to run (for run-waa)"
+        "--num-tasks", type=int, default=5, help="Number of tasks to run (for waa command)"
     )
     p_vm.add_argument(
         "--domain",
@@ -7084,11 +6452,11 @@ Quick Start:
             "gaming",
             "utility",
         ],
-        help="WAA domain to filter tasks (for run-waa)",
+        help="WAA domain to filter tasks (for waa command)",
     )
     p_vm.add_argument(
         "--task-ids",
-        help="Comma-separated task IDs to run (e.g., 'task_001,task_015,task_042') for run-waa",
+        help="Comma-separated task IDs to run (e.g., 'task_001,task_015,task_042') for waa command",
     )
     p_vm.add_argument(
         "--model", default="gpt-4o", help="Model to use (gpt-4o, gpt-5.2, etc.)"
@@ -7130,7 +6498,7 @@ Quick Start:
     p_vm.add_argument(
         "--yes", "-y", action="store_true", help="Skip confirmation prompts"
     )
-    # Viewer auto-launch options (for run-waa)
+    # Viewer auto-launch options (for waa command)
     p_vm.add_argument(
         "--open",
         action="store_true",
@@ -7149,12 +6517,12 @@ Quick Start:
         default=8765,
         help="Port for local dashboard server (default: 8765)",
     )
-    # Auto-shutdown option (for run-waa)
+    # Auto-shutdown option (for waa command)
     p_vm.add_argument(
         "--auto-shutdown",
         action="store_true",
         default=False,
-        help="Deallocate VM after benchmark completes to save costs (for run-waa)",
+        help="Deallocate VM after benchmark completes to save costs (for waa command)",
     )
     p_vm.add_argument(
         "--auto-shutdown-hours",
@@ -7172,13 +6540,13 @@ Quick Start:
         "--rebuild",
         action="store_true",
         default=False,
-        help="Force rebuild of waa-auto Docker image (for run-waa)",
+        help="Force rebuild of waa-auto Docker image (for waa command)",
     )
     p_vm.add_argument(
         "--fresh",
         action="store_true",
         default=False,
-        help="Delete Windows storage and start fresh installation (for run-waa)",
+        help="Delete Windows storage and start fresh installation (for waa command)",
     )
     # Log viewing options (for logs action)
     p_vm.add_argument(
@@ -7336,6 +6704,8 @@ Quick Start:
 
     if args.command == "setup":
         cmd_setup(args)
+    elif args.command == "waa":
+        cmd_waa(args)
     elif args.command == "status":
         cmd_status(args)
     elif args.command == "az-status":
