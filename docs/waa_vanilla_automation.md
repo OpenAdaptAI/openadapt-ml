@@ -12,14 +12,16 @@ This keeps the WAA repo pristine and avoids custom Dockerfiles or internal patch
 
 ## One-Time Local Bootstrap
 Use the wrapper script in this repo to download/copy the ISO and run the official prep command.
-If `--waa-path` is omitted, the script will auto-clone WAA into `vendor/WindowsAgentArena`.
+If `--waa-path` is omitted, the script will auto-clone WAA into
+`/Users/abrichr/oa/src/openadapt-evals/vendor/WindowsAgentArena` when available,
+falling back to `openadapt-ml/vendor/WindowsAgentArena`.
 
 ```bash
 ./scripts/waa_bootstrap_local.sh \
   --iso-path /path/to/Windows11_Enterprise_Eval.iso
 ```
 
-If you have a direct ISO URL:
+If you have a direct ISO URL (pre-authorized download):
 
 ```bash
 ./scripts/waa_bootstrap_local.sh \
@@ -46,6 +48,11 @@ Once the golden image is created, you can use vanilla WAA commands:
 cd /path/to/WindowsAgentArena/scripts
 ./run-local.sh
 ```
+
+## Fully Unattended Note
+Microsoft's evaluation center download often requires a manual acceptance step.
+For fully unattended runs, host the ISO internally and pass a direct URL with
+`--iso-url`, or use a prebuilt golden image stored in Azure blob.
 
 ## Azure (Future)
 - Upload `src/win-arena-container/vm/storage` to Azure blob as described in the official WAA README.

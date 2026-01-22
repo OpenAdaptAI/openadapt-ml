@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT_DIR=$(cd "${SCRIPT_DIR}/.." && pwd)
+WORKSPACE_ROOT=$(cd "${ROOT_DIR}/.." && pwd)
 
 WAA_PATH=""
 ISO_URL=""
@@ -46,14 +47,22 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$WAA_PATH" ]]; then
-    if [[ -d "${ROOT_DIR}/vendor/WindowsAgentArena" ]]; then
+    if [[ -d "${WORKSPACE_ROOT}/openadapt-evals/vendor/WindowsAgentArena" ]]; then
+        WAA_PATH="${WORKSPACE_ROOT}/openadapt-evals/vendor/WindowsAgentArena"
+    elif [[ -d "${WORKSPACE_ROOT}/openadapt-evals/external/WindowsAgentArena" ]]; then
+        WAA_PATH="${WORKSPACE_ROOT}/openadapt-evals/external/WindowsAgentArena"
+    elif [[ -d "${ROOT_DIR}/vendor/WindowsAgentArena" ]]; then
         WAA_PATH="${ROOT_DIR}/vendor/WindowsAgentArena"
     elif [[ -d "${ROOT_DIR}/external/WindowsAgentArena" ]]; then
         WAA_PATH="${ROOT_DIR}/external/WindowsAgentArena"
     elif [[ -d "${HOME}/WindowsAgentArena" ]]; then
         WAA_PATH="${HOME}/WindowsAgentArena"
     else
-        WAA_PATH="${ROOT_DIR}/vendor/WindowsAgentArena"
+        if [[ -d "${WORKSPACE_ROOT}/openadapt-evals" ]]; then
+            WAA_PATH="${WORKSPACE_ROOT}/openadapt-evals/vendor/WindowsAgentArena"
+        else
+            WAA_PATH="${ROOT_DIR}/vendor/WindowsAgentArena"
+        fi
         echo "Cloning WindowsAgentArena into ${WAA_PATH}..."
         git clone --depth 1 https://github.com/microsoft/WindowsAgentArena.git "$WAA_PATH"
     fi
