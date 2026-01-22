@@ -19,6 +19,93 @@
 
 ---
 
+## 🚨🚨🚨 CRITICAL: CLI-FIRST, NEVER RAW COMMANDS 🚨🚨🚨
+
+### THIS IS THE #1 RULE. VIOLATIONS FRUSTRATE THE USER.
+
+**NEVER run commands that require user permission. ALWAYS use or extend the CLI.**
+
+❌ **BANNED** (these require permission, waste user's time):
+```bash
+# Raw Azure CLI
+az vm start --name ...
+az vm run-command invoke ...
+
+# Raw SSH
+ssh azureuser@IP "command"
+
+# Raw Python one-liners
+uv run python -c "import subprocess; ..."
+
+# Any command not in the pre-approved CLI
+```
+
+✅ **REQUIRED** (these are pre-approved, don't ask permission):
+```bash
+# ALL VM operations go through the CLI
+uv run python -m openadapt_ml.benchmarks.cli vm start
+uv run python -m openadapt_ml.benchmarks.cli vm host-exec --cmd "command"
+uv run python -m openadapt_ml.benchmarks.cli vm diag
+uv run python -m openadapt_ml.benchmarks.cli vm logs
+```
+
+### When Functionality Is Missing
+
+**If a CLI command doesn't exist for what you need:**
+1. **EDIT the CLI** to add the new command/action
+2. **THEN call the CLI** command you just added
+3. **NEVER use raw commands** as a workaround
+
+**Example**: Need to restart Docker services?
+```python
+# 1. Add to cli.py under cmd_vm():
+elif action == "fix-docker":
+    # Restart containerd and docker
+    commands = [
+        "sudo systemctl restart containerd",
+        "sudo systemctl restart docker",
+        "docker ps"
+    ]
+    for cmd in commands:
+        run_on_vm(cmd)
+
+# 2. Then call it:
+uv run python -m openadapt_ml.benchmarks.cli vm fix-docker
+```
+
+**This rule exists because:**
+- Raw commands require user approval every time
+- CLI commands are pre-approved and don't interrupt workflow
+- CLI commands are documented and reusable
+- The user has told you this MANY times - LISTEN
+
+---
+
+## 🔄 STANDARD WORKFLOW: VM Configuration Changes
+
+**When VM config needs to change (disk size, VM size, etc.):**
+
+1. **Delete the current VM** (if running):
+   ```bash
+   uv run python -m openadapt_ml.benchmarks.cli vm delete -y
+   ```
+
+2. **Update the code** that launches the VM (e.g., `cli.py` defaults)
+
+3. **Launch new VM** with the updated code:
+   ```bash
+   uv run python -m openadapt_ml.benchmarks.cli vm setup-waa --api-key $OPENAI_API_KEY
+   ```
+
+**DO NOT** try to resize/modify running VMs. It's simpler and faster to delete + recreate.
+
+**Current VM defaults** (in `cli.py`):
+- Size: `Standard_D8ds_v5` (300GB temp storage on /mnt)
+- Location: `eastus`
+- OS: Ubuntu 22.04 LTS
+
+---
+
 ## Project Status & Priorities
 
 **IMPORTANT**: Before starting work, always check the project-wide status document:
@@ -691,7 +778,7 @@ vm stop-build      # Stop running Docker build and clean build cache
 vm fix-oem         # Copy OEM files to Samba share (for manual install.bat)
 vm reset-windows   # Delete Windows storage and start fresh installation
 vm docker-prune    # Clean Docker images, containers, build cache (free disk space)
-vm docker-move     # Move Docker/containerd to /mnt via symlinks (147GB space)
+vm docker-move     # Move Docker/containerd to /mnt via symlinks (300GB space with D8ds_v5)
 vm status          # Azure VM status
 vm ssh             # Interactive SSH
 vm deallocate      # Stop VM billing (preserves disk), use -y to skip confirmation
@@ -798,13 +885,13 @@ uv run python -m openadapt_ml.benchmarks.cli vm logs     # View container logs
 ```
 
 **Key requirements**:
-1. **VM Size**: `Standard_D4ds_v5` or larger (nested virtualization required)
+1. **VM Size**: `Standard_D8ds_v5` recommended (8 vCPU, 32GB RAM, 300GB temp storage for nested virtualization)
 2. **API key**: `config.json` with OPENAI_API_KEY (or set env var)
 3. **Valid model**: Use real OpenAI model name (gpt-4o, gpt-4o-mini)
 
 **Architecture**:
 ```
-Azure VM (Standard_D4ds_v5, nested virt enabled)
+Azure VM (Standard_D8ds_v5, nested virt enabled, 300GB /mnt)
   └── Docker (data on /mnt)
        └── waa-auto:latest (based on dockurr/windows)
             └── QEMU running Windows 11 (IP: 172.30.0.2)
@@ -831,7 +918,7 @@ Azure VM (Standard_D4ds_v5, nested virt enabled)
 ### Docker Disk Space Management
 **Status**: FIXED - Automatic cleanup (Jan 2026)
 
-**Problem**: Docker build cache on /mnt (147GB) was growing to 90+ GB during builds, exhausting disk space and causing builds to fail with "no space left on device".
+**Problem**: Docker build cache on /mnt was growing to 90+ GB during builds, exhausting disk space and causing builds to fail with "no space left on device". Note: With Standard_D8ds_v5, /mnt is now 300GB which should be sufficient.
 
 **Root cause**: Docker's build cache and containerd snapshotter accumulate data that isn't cleaned by `docker system prune`:
 - `/mnt/docker/buildkit/containerd-overlayfs` - BuildKit layer cache
