@@ -30,19 +30,21 @@ COPY --from=windowsarena/winarena:latest /oem /oem
 # Copy our WAA server startup script
 COPY start_waa_server.bat /oem/start_waa_server.bat
 
-# Copy unattend.xml (use the windowsarena version which has proper FirstLogonCommands)
-COPY --from=windowsarena/winarena:latest /run/assets/win11x64-enterprise-eval.xml /run/assets/win11x64.xml
-COPY --from=windowsarena/winarena:latest /run/assets/win11x64-enterprise-eval.xml /run/assets/win11x64-enterprise-eval.xml
-
 # -----------------------------------------------------------------------------
-# Add InstallFrom element to prevent "Select operating system" dialog
-# This is needed because install.wim may contain multiple editions
-# VERSION=11e (Enterprise Eval) has built-in GVLK key, so no product key prompt
+# DO NOT replace dockurr/windows's autounattend.xml - it handles fresh OOBE properly
+# Instead, we rely on dockurr/windows's OEM mechanism:
+# 1. It copies /oem → C:\OEM automatically during Windows setup
+# 2. It runs C:\OEM\install.bat via autounattend.xml FirstLogonCommands
+# We just need to ensure our install.bat in /oem sets up WAA correctly
 # -----------------------------------------------------------------------------
 
-RUN sed -i 's|<InstallTo>|<InstallFrom>\n            <MetaData wcm:action="add">\n              <Key>/IMAGE/INDEX</Key>\n              <Value>1</Value>\n            </MetaData>\n          </InstallFrom>\n          <InstallTo>|' /run/assets/win11x64.xml && \
-    sed -i 's|<InstallTo>|<InstallFrom>\n            <MetaData wcm:action="add">\n              <Key>/IMAGE/INDEX</Key>\n              <Value>1</Value>\n            </MetaData>\n          </InstallFrom>\n          <InstallTo>|' /run/assets/win11x64-enterprise-eval.xml && \
-    echo "Added InstallFrom element for automatic image selection"
+# Patch autounattend.xml to add InstallFrom element (prevents "Select OS" dialog)
+# This modifies dockurr/windows's existing XML rather than replacing it
+RUN for xml in /run/assets/win11x64.xml /run/assets/win11x64-enterprise-eval.xml; do \
+        if [ -f "$xml" ] && ! grep -q "InstallFrom" "$xml"; then \
+            sed -i 's|<InstallTo>|<InstallFrom>\n            <MetaData wcm:action="add">\n              <Key>/IMAGE/INDEX</Key>\n              <Value>1</Value>\n            </MetaData>\n          </InstallFrom>\n          <InstallTo>|' "$xml"; \
+        fi; \
+    done && echo "Added InstallFrom element for automatic image selection"
 
 # -----------------------------------------------------------------------------
 # Azure mode: Patch scripts to use C:\oem instead of \\host.lan\Data
@@ -89,21 +91,8 @@ RUN sed -i 's|20\.20\.20\.21|172.30.0.2|g' /entry_setup.sh /entry.sh /start_clie
     echo "Patched IP addresses"
 
 # -----------------------------------------------------------------------------
-# Add API-backed agent support (Claude / GPT)
-# -----------------------------------------------------------------------------
-
-COPY api_agent.py /client/mm_agents/api_agent.py
-
-# Patch run.py to support api-claude and api-openai agents
-RUN python3 -c "import re; \
-f = open('/client/run.py', 'r'); c = f.read(); f.close(); \
-patch = '''    elif cfg_args[\"agent_name\"] in [\"api-claude\", \"api-openai\"]:\n        from mm_agents.api_agent import ApiAgent\n        provider = \"anthropic\" if cfg_args[\"agent_name\"] == \"api-claude\" else \"openai\"\n        agent = ApiAgent(provider=provider, temperature=args.temperature)\n'''; \
-c = c.replace('    else:\\n        raise ValueError', patch + '    else:\\n        raise ValueError'); \
-f = open('/client/run.py', 'w'); f.write(c); f.close(); \
-print('Patched run.py for API agents')"
-
-# -----------------------------------------------------------------------------
 # Install Python dependencies for benchmark client (runs on Linux host, not Windows)
+# NOTE: Must be installed BEFORE any python3 commands
 # -----------------------------------------------------------------------------
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -116,6 +105,20 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     pip3 install --no-cache-dir --break-system-packages \
     gymnasium openai anthropic tiktoken pyyaml tenacity httpx \
     pillow pytesseract requests flask numpy pandas
+
+# -----------------------------------------------------------------------------
+# Add API-backed agent support (Claude / GPT)
+# -----------------------------------------------------------------------------
+
+COPY api_agent.py /client/mm_agents/api_agent.py
+
+# Patch run.py to support api-claude and api-openai agents
+RUN python3 -c "import re; \
+f = open('/client/run.py', 'r'); c = f.read(); f.close(); \
+patch = '''    elif cfg_args[\"agent_name\"] in [\"api-claude\", \"api-openai\"]:\n        from mm_agents.api_agent import ApiAgent\n        provider = \"anthropic\" if cfg_args[\"agent_name\"] == \"api-claude\" else \"openai\"\n        agent = ApiAgent(provider=provider, temperature=args.temperature)\n'''; \
+c = c.replace('    else:\\n        raise ValueError', patch + '    else:\\n        raise ValueError'); \
+f = open('/client/run.py', 'w'); f.write(c); f.close(); \
+print('Patched run.py for API agents')"
 
 # -----------------------------------------------------------------------------
 # Environment configuration
