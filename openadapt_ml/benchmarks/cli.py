@@ -2,26 +2,18 @@
 
 Usage:
     # ============================================
-    # WAA on Dedicated VM (RECOMMENDED for real evaluation)
+    # WAA (Vanilla + Automated)
     # ============================================
 
-    # One-command setup: Creates VM, installs Docker, pulls image, clones WAA repo
-    python -m openadapt_ml.benchmarks.cli vm setup-waa --api-key YOUR_OPENAI_KEY
+    # Check for WAA repo + setup.iso + config.json
+    ./scripts/waa_bootstrap_helper.sh --clone
 
-    # Prepare Windows 11 image (one-time, ~20 min)
-    python -m openadapt_ml.benchmarks.cli vm prepare-windows
+    # Prepare Windows 11 golden image (one-time, ~20 min)
+    ./scripts/waa_bootstrap_local.sh --iso-path /path/to/Windows11_Enterprise_Eval.iso
 
-    # Run WAA benchmark with default Navi agent (auto-opens viewer)
-    python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5
-
-    # Run with Claude Sonnet 4.5 (requires ANTHROPIC_API_KEY)
-    python -m openadapt_ml.benchmarks.cli vm run-waa --agent api-claude --num-tasks 5
-
-    # Run with GPT-5.1 (requires OPENAI_API_KEY)
-    python -m openadapt_ml.benchmarks.cli vm run-waa --agent api-openai --num-tasks 5
-
-    # Run without auto-opening viewer
-    python -m openadapt_ml.benchmarks.cli vm run-waa --num-tasks 5 --no-open
+    # Run vanilla WAA benchmarks
+    cd /path/to/WindowsAgentArena/scripts
+    ./run-local.sh
 
     # Check VM status
     python -m openadapt_ml.benchmarks.cli vm status
@@ -86,6 +78,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import logging
 import sys
@@ -2722,6 +2715,10 @@ def cmd_vm(args: argparse.Namespace) -> None:
         print("  Run WAA with: uv run python -m openadapt_ml.benchmarks.cli vm ssh")
 
     elif args.action == "setup-waa":
+        print("\n=== Deprecated: Vanilla WAA Only ===\n")
+        print("This setup flow is legacy and has been moved to deprecated/.")
+        print("Use scripts/waa_bootstrap_local.sh and WAA's run-local.sh/run_azure.py instead.")
+        sys.exit(1)
         from openadapt_ml.benchmarks.vm_monitor import VMPoolRegistry
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -3164,6 +3161,10 @@ EOF'''
             )
 
     elif args.action == "prepare-windows":
+        print("\n=== Deprecated: Vanilla WAA Only ===\n")
+        print("This custom Windows prep flow is legacy and has been moved to deprecated/.")
+        print("Use scripts/waa_bootstrap_local.sh and WAA's run-local.sh instead.")
+        sys.exit(1)
         print("\n=== Preparing Windows 11 VM for WAA (Fully Automated) ===\n")
         print("This builds a custom WAA container with automatic setup scripts.")
         print(
@@ -3201,28 +3202,53 @@ EOF'''
         # Step 1: Build automated WAA image with custom unattend.xml
         print("[1/4] Building automated WAA image (with custom unattend.xml)...")
 
-        # Find the Dockerfile in our repo
-        dockerfile_path = Path(__file__).parent / "waa_deploy" / "Dockerfile"
+        # Find the simplified Dockerfile in our repo
+        dockerfile_path = Path(__file__).parent / "waa_deploy" / "Dockerfile.simplified"
         if not dockerfile_path.exists():
             print(f"  ✗ Dockerfile not found at: {dockerfile_path}")
             sys.exit(1)
 
-        # Sync Dockerfile to VM and build
+        support_files = [
+            Path(__file__).parent / "waa_deploy" / "start_waa_server.bat",
+            Path(__file__).parent / "waa_deploy" / "api_agent.py",
+        ]
+        missing_files = [path for path in support_files if not path.exists()]
+        if missing_files:
+            print("  ✗ Missing required WAA files:")
+            for path in missing_files:
+                print(f"    - {path}")
+            sys.exit(1)
+
+        import os
+
+        waa_source_image = os.getenv("WAA_SOURCE_IMAGE", "windowsarena/winarena:latest")
+        print(f"  WAA source image: {waa_source_image}")
+
+        # Ensure build directory exists on VM
+        subprocess.run(
+            ["ssh", *SSH_OPTS, f"azureuser@{ip}", "mkdir -p ~/build-waa"],
+            capture_output=True,
+            text=True,
+        )
+
+        # Sync Dockerfile + support files to VM and build
         subprocess.run(
             [
                 "scp",
                 *SSH_OPTS,
                 str(dockerfile_path),
-                f"azureuser@{ip}:~/build-waa/Dockerfile",
+                *(str(path) for path in support_files),
+                f"azureuser@{ip}:~/build-waa/",
             ],
             capture_output=True,
             text=True,
         )
 
-        build_cmd = """
-mkdir -p ~/build-waa
-cp -r ~/WindowsAgentArena/src/win-arena-container/vm ~/build-waa/
-cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tail -10
+        build_cmd = f"""
+cd ~/build-waa && docker build --no-cache --pull \
+  --build-arg WAA_SOURCE_IMAGE={waa_source_image} \
+  -t waa-auto:latest \
+  -f Dockerfile.simplified . 2>&1 | tail -10
 """
         result = subprocess.run(
             ["ssh", *SSH_OPTS, f"azureuser@{ip}", build_cmd],
@@ -3323,17 +3349,8 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
         else:
             print("      Continuing (Windows may still be loading)...")
 
-        # Send keystrokes to bypass product key dialog
-        # We need to try multiple times as the dialog timing can vary
-        print("      Sending Tab+Enter to click 'I don't have a product key'...")
-        for attempt in range(5):
-            time_module.sleep(5)  # Give dialog time to appear
-            bypass_product_key_dialog(ip)
-
-        print("  ✓ Product key dialog bypass attempted")
-        print(f"      If stuck at product key, VNC to http://{ip}:8006 and:")
-        print("        1. Click 'I don't have a product key' link")
-        print("        2. Select 'Windows 11 Enterprise Evaluation'")
+        print("      Unattended install should proceed without prompts (VERSION=11e)")
+        print("      If it stalls, treat as a regression and check the recurring issues docs")
 
         # Step 5: Poll /probe endpoint until WAA server is ready
         print("\n[5/5] Waiting for Windows install + WAA server (fully automatic)...")
@@ -3399,6 +3416,10 @@ cd ~/build-waa && docker build --no-cache --pull -t waa-auto:latest . 2>&1 | tai
             print("  Note: First-time Windows setup can take 15-20 minutes.")
 
     elif args.action == "run-waa":
+        print("\n=== Deprecated: Vanilla WAA Only ===\n")
+        print("This custom run flow is legacy and has been moved to deprecated/.")
+        print("Use WAA's run-local.sh or run_azure.py directly.")
+        sys.exit(1)
         import threading
         import os
         import webbrowser

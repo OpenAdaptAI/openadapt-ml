@@ -41,8 +41,9 @@ COPY --from=windowsarena/winarena:latest /client /client
 # Copy our WAA server startup script
 COPY start_waa_server.bat /oem/start_waa_server.bat
 
-# Copy model weights (GroundingDINO, OmniParser, etc.)
-COPY --from=windowsarena/winarena:latest /models /models
+# Skip model weights (GroundingDINO, OmniParser, etc.) - not needed for api-agent
+# This saves ~2GB of disk space
+# COPY --from=windowsarena/winarena:latest /models /models
 
 # Copy Windows setup scripts (install.bat, setup.ps1, etc.)
 COPY --from=windowsarena/winarena:latest /oem /oem
@@ -81,7 +82,18 @@ RUN sed -i '/^return 0$/i nohup /port_forward.sh >/dev/null 2>\&1 \&' /run/samba
     echo "Inserted port forwarder startup in samba.sh"
 
 # Copy unattend.xml for automated Windows installation
+# dockurr/windows uses win11x64.xml for VERSION=11/11p/win11 and win11x64-enterprise-eval.xml for VERSION=11e
+# Copy both to ensure the correct one is used regardless of VERSION detection
 COPY --from=windowsarena/winarena:latest /run/assets/win11x64-enterprise-eval.xml /run/assets/win11x64.xml
+COPY --from=windowsarena/winarena:latest /run/assets/win11x64-enterprise-eval.xml /run/assets/win11x64-enterprise-eval.xml
+
+# Add InstallFrom element to auto-select image index 1
+# This fixes "Select the operating system" prompt when install.wim has multiple editions
+# The sed command injects the InstallFrom element just before InstallTo
+# Apply to both possible XML files that might be used
+RUN sed -i 's|<InstallTo>|<InstallFrom>\n            <MetaData wcm:action="add">\n              <Key>/IMAGE/INDEX</Key>\n              <Value>1</Value>\n            </MetaData>\n          </InstallFrom>\n          <InstallTo>|' /run/assets/win11x64.xml && \
+    sed -i 's|<InstallTo>|<InstallFrom>\n            <MetaData wcm:action="add">\n              <Key>/IMAGE/INDEX</Key>\n              <Value>1</Value>\n            </MetaData>\n          </InstallFrom>\n          <InstallTo>|' /run/assets/win11x64-enterprise-eval.xml && \
+    echo "Added InstallFrom element for automatic image selection"
 
 # -----------------------------------------------------------------------------
 # Create start_vm.sh that uses our dockurr/windows entrypoint
@@ -116,65 +128,15 @@ COPY api_agent.py /client/mm_agents/api_agent.py
 # -----------------------------------------------------------------------------
 
 # Set password for AutoLogon (Windows 11 requires password for login)
-RUN sed -i 's|<Value></Value>|<Value>docker</Value>|g' /run/assets/win11x64.xml 2>/dev/null || true
-RUN sed -i 's|<Value />|<Value>docker</Value>|g' /run/assets/win11x64.xml 2>/dev/null || true
-
-# Add firewall disable and other automation commands to FirstLogonCommands
-# CRITICAL: Also create a scheduled task so WAA server starts on EVERY boot, not just first logon
-RUN if grep -q "</FirstLogonCommands>" /run/assets/win11x64.xml; then \
-    LAST_ORDER=$(grep -oP "Order>\K[0-9]+" /run/assets/win11x64.xml | sort -n | tail -1) && \
-    N1=$((LAST_ORDER + 1)) && \
-    N2=$((LAST_ORDER + 2)) && \
-    N3=$((LAST_ORDER + 3)) && \
-    N4=$((LAST_ORDER + 4)) && \
-    N5=$((LAST_ORDER + 5)) && \
-    N6=$((LAST_ORDER + 6)) && \
-    sed -i "s|</FirstLogonCommands>|\
-        <SynchronousCommand wcm:action=\"add\">\n\
-          <Order>$N1</Order>\n\
-          <CommandLine>netsh advfirewall set allprofiles state off</CommandLine>\n\
-          <Description>Disable Windows Firewall</Description>\n\
-        </SynchronousCommand>\n\
-        <SynchronousCommand wcm:action=\"add\">\n\
-          <Order>$N2</Order>\n\
-          <CommandLine>powercfg /change standby-timeout-ac 0</CommandLine>\n\
-          <Description>Disable sleep</Description>\n\
-        </SynchronousCommand>\n\
-        <SynchronousCommand wcm:action=\"add\">\n\
-          <Order>$N3</Order>\n\
-          <CommandLine>powercfg /change monitor-timeout-ac 0</CommandLine>\n\
-          <Description>Disable monitor timeout</Description>\n\
-        </SynchronousCommand>\n\
-        <SynchronousCommand wcm:action=\"add\">\n\
-          <Order>$N4</Order>\n\
-          <CommandLine>reg add \"HKLM\\\\SOFTWARE\\\\Policies\\\\Microsoft\\\\Windows\\\\Personalization\" /v NoLockScreen /t REG_DWORD /d 1 /f</CommandLine>\n\
-          <Description>Disable lock screen</Description>\n\
-        </SynchronousCommand>\n\
-        <SynchronousCommand wcm:action=\"add\">\n\
-          <Order>$N5</Order>\n\
-          <CommandLine>cmd /c start /wait \\\\\\\\host.lan\\\\Data\\\\install.bat</CommandLine>\n\
-          <Description>Run WAA setup script to install Python, Chrome, etc.</Description>\n\
-        </SynchronousCommand>\n\
-        <SynchronousCommand wcm:action=\"add\">\n\
-          <Order>$N6</Order>\n\
-          <CommandLine>schtasks /create /tn \"WAAServer\" /tr \"\\\\\\\\host.lan\\\\Data\\\\start_waa_server.bat\" /sc onlogon /rl highest /f</CommandLine>\n\
-          <Description>Create scheduled task for WAA server auto-start on every boot</Description>\n\
-        </SynchronousCommand>\n\
-        <SynchronousCommand wcm:action=\"add\">\n\
-          <Order>$((N6 + 1))</Order>\n\
-          <CommandLine>reg add \"HKCU\\\\SOFTWARE\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\" /v WAAServer /t REG_SZ /d \"cmd /c \\\\\\\\host.lan\\\\Data\\\\start_waa_server.bat\" /f</CommandLine>\n\
-          <Description>Add registry entry for WAA server auto-start (backup)</Description>\n\
-        </SynchronousCommand>\n\
-        <SynchronousCommand wcm:action=\"add\">\n\
-          <Order>$((N6 + 2))</Order>\n\
-          <CommandLine>\\\\\\\\host.lan\\\\Data\\\\start_waa_server.bat</CommandLine>\n\
-          <Description>Start WAA server immediately</Description>\n\
-        </SynchronousCommand>\n\
-      </FirstLogonCommands>|" /run/assets/win11x64.xml; \
-    fi
+# CRITICAL: Apply to BOTH XML files since VERSION=11e uses win11x64-enterprise-eval.xml
+RUN sed -i 's|<Value></Value>|<Value>docker</Value>|g' /run/assets/win11x64.xml 2>/dev/null || true && \
+    sed -i 's|<Value></Value>|<Value>docker</Value>|g' /run/assets/win11x64-enterprise-eval.xml 2>/dev/null || true
+RUN sed -i 's|<Value />|<Value>docker</Value>|g' /run/assets/win11x64.xml 2>/dev/null || true && \
+    sed -i 's|<Value />|<Value>docker</Value>|g' /run/assets/win11x64-enterprise-eval.xml 2>/dev/null || true
 
 # -----------------------------------------------------------------------------
 # Install Python and dependencies directly
+# NOTE: Python must be installed BEFORE the XML patching script below
 # dockurr/windows base is Debian trixie which has Python 3.12
 # -----------------------------------------------------------------------------
 
@@ -228,6 +190,82 @@ f = open('/client/run.py', 'w'); f.write(c); f.close(); \
 print('Patched run.py for API agents')"
 
 # -----------------------------------------------------------------------------
+# Add custom FirstLogonCommands to Windows autounattend.xml
+# This runs AFTER Python install because we use Python for XML patching
+# The original shell for-loop with sed was failing silently in the Docker build
+# -----------------------------------------------------------------------------
+
+COPY <<'EOF' /tmp/patch_xml.py
+#!/usr/bin/env python3
+"""Patch Windows autounattend XML files to add WAA automation commands."""
+import re
+import sys
+
+# Commands to add after existing FirstLogonCommands
+# These run AFTER the default dockurr/windows commands (1-25)
+# CRITICAL: UNC paths need DOUBLE escaping for XML CommandLine:
+#   - XML needs \\\\host.lan\\Data\\ (4 backslashes before host, 2 elsewhere)
+#   - Python string needs 8 backslashes to produce 4 in output
+#   - Windows then parses \\\\host.lan\\Data\\ as \\host.lan\Data\ (correct UNC)
+EXTRA_COMMANDS = [
+    ("netsh advfirewall set allprofiles state off", "Disable Windows Firewall"),
+    ("powercfg /change standby-timeout-ac 0", "Disable sleep"),
+    ("powercfg /change monitor-timeout-ac 0", "Disable monitor timeout"),
+    ('reg add "HKLM\\\\SOFTWARE\\\\Policies\\\\Microsoft\\\\Windows\\\\Personalization" /v NoLockScreen /t REG_DWORD /d 1 /f', "Disable lock screen"),
+    ('cmd /c start /wait \\\\\\\\host.lan\\\\Data\\\\install.bat', "Run WAA setup script"),
+    ('schtasks /create /tn "WAAServer" /tr "\\\\\\\\host.lan\\\\Data\\\\start_waa_server.bat" /sc onlogon /rl highest /f', "Create WAA server scheduled task"),
+    ('reg add "HKCU\\\\SOFTWARE\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run" /v WAAServer /t REG_SZ /d "cmd /c \\\\\\\\host.lan\\\\Data\\\\start_waa_server.bat" /f', "Add WAA server to registry Run"),
+    ('\\\\\\\\host.lan\\\\Data\\\\start_waa_server.bat', "Start WAA server immediately"),
+]
+
+def patch_xml(filepath):
+    with open(filepath, 'r') as f:
+        content = f.read()
+
+    # Find highest existing Order number
+    orders = [int(m) for m in re.findall(r'<Order>(\d+)</Order>', content)]
+    if not orders:
+        print(f"No Order tags found in {filepath}, skipping")
+        return
+
+    next_order = max(orders) + 1
+
+    # Build new commands XML
+    new_commands = ""
+    for i, (cmd, desc) in enumerate(EXTRA_COMMANDS):
+        # Escape XML special characters
+        cmd_escaped = cmd.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        new_commands += f'''        <SynchronousCommand wcm:action="add">
+          <Order>{next_order + i}</Order>
+          <CommandLine>{cmd_escaped}</CommandLine>
+          <Description>{desc}</Description>
+        </SynchronousCommand>
+'''
+
+    # Insert before </FirstLogonCommands>
+    if '</FirstLogonCommands>' not in content:
+        print(f"No </FirstLogonCommands> found in {filepath}, skipping")
+        return
+
+    content = content.replace('</FirstLogonCommands>', new_commands + '      </FirstLogonCommands>')
+
+    with open(filepath, 'w') as f:
+        f.write(content)
+
+    print(f"Patched {filepath}: added {len(EXTRA_COMMANDS)} commands starting at Order {next_order}")
+
+if __name__ == '__main__':
+    for path in sys.argv[1:]:
+        patch_xml(path)
+EOF
+
+RUN python3 /tmp/patch_xml.py /run/assets/win11x64.xml /run/assets/win11x64-enterprise-eval.xml && \
+    rm /tmp/patch_xml.py && \
+    echo "Verifying patch:" && \
+    grep -c "host.lan" /run/assets/win11x64.xml && \
+    grep -c "host.lan" /run/assets/win11x64-enterprise-eval.xml
+
+# -----------------------------------------------------------------------------
 # Environment configuration
 # -----------------------------------------------------------------------------
 
@@ -235,7 +273,9 @@ ENV YRES="900"
 ENV XRES="1440"
 ENV RAM_SIZE="6G"
 ENV CPU_CORES="4"
-ENV DISK_SIZE="30G"
+# DISK_SIZE reduced from 30G to 20G to fit in /mnt (32GB) with Windows ISO (~6GB)
+# Windows 11 needs ~15GB minimum; 20GB provides comfortable headroom
+ENV DISK_SIZE="20G"
 ENV VERSION="11e"
 ENV ARGUMENTS="-qmp tcp:0.0.0.0:7200,server,nowait"
 
