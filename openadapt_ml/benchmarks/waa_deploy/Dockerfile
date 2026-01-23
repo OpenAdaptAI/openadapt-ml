@@ -90,11 +90,9 @@ RUN find /client -name "*.py" -exec sed -i 's|20.20.20.21|172.30.0.2|g' {} \; &&
 # Copy api_agent.py to the client mm_agents directory
 COPY api_agent.py /client/mm_agents/api_agent.py
 
-# Patch run.py to support api-claude and api-openai agents
-# This adds elif blocks after the "navi" agent handling
-# Using sed to insert before the raise ValueError line (Python not installed yet)
-RUN sed -i '/raise ValueError(f"Unknown agent name: {cfg_args/i\    elif cfg_args["agent_name"] in ["api-claude", "api-openai"]:\n        from mm_agents.api_agent import ApiAgent\n        provider = "anthropic" if cfg_args["agent_name"] == "api-claude" else "openai"\n        agent = ApiAgent(provider=provider, temperature=args.temperature)' /client/run.py && \
-    echo "Patched run.py for API agents"
+# Note: API agent patching (api-claude, api-openai) skipped for now
+# The navi agent works out of the box - API agents can be added later via Python patch
+# after the apt-get install python3 step runs
 
 # -----------------------------------------------------------------------------
 # Fix Windows setup for automation
