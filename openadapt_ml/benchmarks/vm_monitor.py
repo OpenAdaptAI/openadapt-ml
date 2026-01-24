@@ -936,7 +936,7 @@ def detect_vm_activity(
     ip: str,
     ssh_user: str = "azureuser",
     docker_container: str = "winarena",
-    internal_ip: str = "172.30.0.2",
+    internal_ip: str = "localhost",  # WAA server bound to localhost via Docker port forward
 ) -> VMActivity:
     """Detect what the VM is currently doing.
 
@@ -993,11 +993,28 @@ def detect_vm_activity(
             probe_response = result.stdout.strip()
             try:
                 probe_data = json.loads(probe_response)
-                # WAA is ready and responsive
+                # WAA is ready and responsive - check if benchmark is actually running
+                # by looking for python processes (Navi agent or our client)
+                python_check = subprocess.run(
+                    [
+                        "ssh",
+                        "-o",
+                        "StrictHostKeyChecking=no",
+                        "-o",
+                        "ConnectTimeout=5",
+                        f"{ssh_user}@{ip}",
+                        f"docker exec {docker_container} pgrep -f 'python.*run' 2>/dev/null | head -1",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                is_running = bool(python_check.stdout.strip())
+
                 return VMActivity(
-                    is_active=True,
-                    activity_type="benchmark_running",
-                    description="WAA benchmark ready",
+                    is_active=is_running,
+                    activity_type="benchmark_running" if is_running else "idle",
+                    description="WAA benchmark running" if is_running else "WAA ready - idle",
                     benchmark_progress=probe_data,
                 )
             except json.JSONDecodeError:

@@ -431,9 +431,13 @@ def cmd_serve(args: argparse.Namespace) -> int:
     """Start local web server for dashboard.
 
     Automatically regenerates dashboard and viewer before serving to ensure
-    the latest code and data are reflected.
+    the latest code and data are reflected. Also ensures the 'current' symlink
+    points to the most recent training run.
     """
-    from openadapt_ml.training.trainer import regenerate_local_dashboard
+    from openadapt_ml.training.trainer import (
+        regenerate_local_dashboard,
+        update_current_symlink_to_latest,
+    )
 
     port = args.port
 
@@ -460,6 +464,17 @@ def cmd_serve(args: argparse.Namespace) -> int:
     else:
         serve_dir = get_current_output_dir()
 
+        # If current symlink doesn't exist or is broken, update to latest run
+        if not serve_dir.exists() or not serve_dir.is_dir():
+            print("Updating 'current' symlink to latest training run...")
+            latest = update_current_symlink_to_latest()
+            if latest:
+                serve_dir = get_current_output_dir()
+                print(f"  Updated to: {latest.name}")
+            else:
+                print(f"Error: {serve_dir} not found. Run training first.")
+                return 1
+
         if not serve_dir.exists():
             print(f"Error: {serve_dir} not found. Run training first.")
             return 1
@@ -468,7 +483,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
         if not args.no_regenerate:
             print("Regenerating dashboard and viewer...")
             try:
-                regenerate_local_dashboard(str(serve_dir))
+                # Use keep_polling=True so JavaScript fetches live data from training_log.json
+                # This ensures the dashboard shows current data instead of stale embedded data
+                regenerate_local_dashboard(str(serve_dir), keep_polling=True)
                 # Also regenerate viewer if comparison data exists
                 _regenerate_viewer_if_possible(serve_dir)
             except Exception as e:
@@ -1014,15 +1031,95 @@ def cmd_serve(args: argparse.Namespace) -> int:
                     self.send_error(500, f"SSE error: {e}")
             elif self.path.startswith("/api/azure-ops-status"):
                 # Return Azure operations status from JSON file
+                # Session tracker provides elapsed_seconds and cost_usd for
+                # persistence across page refreshes
                 try:
                     from openadapt_ml.benchmarks.azure_ops_tracker import read_status
+                    from openadapt_ml.benchmarks.session_tracker import (
+                        get_session,
+                        update_session_vm_state,
+                    )
 
+                    # Get operation status (current task)
                     status = read_status()
+
+                    # Get session data (persistent across refreshes)
+                    session = get_session()
+
+                    # Update session based on VM state if we have VM info
+                    # IMPORTANT: Only pass vm_ip if it's truthy to avoid
+                    # overwriting session's stable vm_ip with None
+                    if status.get("vm_state") and status.get("vm_state") != "unknown":
+                        status_vm_ip = status.get("vm_ip")
+                        # Build update kwargs - only include vm_ip if present
+                        update_kwargs = {
+                            "vm_state": status["vm_state"],
+                            "vm_size": status.get("vm_size"),
+                        }
+                        if status_vm_ip:  # Only include if truthy
+                            update_kwargs["vm_ip"] = status_vm_ip
+                        session = update_session_vm_state(**update_kwargs)
+
+                    # Use session's vm_ip as authoritative source
+                    # This prevents IP flickering when status file has stale/None values
+                    if session.get("vm_ip"):
+                        status["vm_ip"] = session["vm_ip"]
+
+                    # Use session's elapsed_seconds and cost_usd for persistence
+                    # These survive page refreshes and track total VM runtime
+                    if (
+                        session.get("is_active")
+                        or session.get("accumulated_seconds", 0) > 0
+                    ):
+                        status["elapsed_seconds"] = session.get("elapsed_seconds", 0.0)
+                        status["cost_usd"] = session.get("cost_usd", 0.0)
+                        status["started_at"] = session.get("started_at")
+                        # Include session metadata for debugging
+                        status["session_id"] = session.get("session_id")
+                        status["session_is_active"] = session.get("is_active", False)
+                        # Include accumulated time from previous sessions for hybrid display
+                        status["accumulated_seconds"] = session.get("accumulated_seconds", 0.0)
+                        # Calculate current session time (total - accumulated)
+                        current_session_seconds = max(0, status["elapsed_seconds"] - status["accumulated_seconds"])
+                        status["current_session_seconds"] = current_session_seconds
+                        status["current_session_cost_usd"] = (current_session_seconds / 3600) * session.get("hourly_rate_usd", 0.422)
+
+                    try:
+                        tunnel_mgr = get_tunnel_manager()
+                        tunnel_status = tunnel_mgr.get_tunnel_status()
+                        status["tunnels"] = {
+                            name: {
+                                "active": s.active,
+                                "local_port": s.local_port,
+                                "remote_endpoint": s.remote_endpoint,
+                                "pid": s.pid,
+                                "error": s.error,
+                            }
+                            for name, s in tunnel_status.items()
+                        }
+                    except Exception as e:
+                        status["tunnels"] = {"error": str(e)}
+
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.send_header("Access-Control-Allow-Origin", "*")
                     self.end_headers()
                     self.wfile.write(json.dumps(status).encode())
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
+            elif self.path.startswith("/api/vm-diagnostics"):
+                # Return VM diagnostics: disk usage, Docker stats, memory usage
+                try:
+                    diagnostics = self._get_vm_diagnostics()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps(diagnostics).encode())
                 except Exception as e:
                     self.send_response(500)
                     self.send_header("Content-Type", "application/json")
@@ -1393,6 +1490,219 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
             return dependencies
 
+        def _get_vm_diagnostics(self) -> dict:
+            """Get VM diagnostics: disk usage, Docker stats, memory usage.
+
+            Returns a dictionary with:
+            - vm_online: bool - whether VM is reachable
+            - disk_usage: list of disk partitions with usage stats
+            - docker_stats: list of container stats (CPU, memory)
+            - memory_usage: VM host memory stats
+            - docker_system: Docker system disk usage
+            - error: str if any error occurred
+            """
+            import subprocess
+
+            from openadapt_ml.benchmarks.session_tracker import get_session
+
+            diagnostics = {
+                "vm_online": False,
+                "disk_usage": [],
+                "docker_stats": [],
+                "memory_usage": {},
+                "docker_system": {},
+                "docker_images": [],
+                "error": None,
+            }
+
+            # Get VM IP from session
+            session = get_session()
+            vm_ip = session.get("vm_ip")
+
+            if not vm_ip:
+                diagnostics["error"] = (
+                    "VM IP not found in session. VM may not be running."
+                )
+                return diagnostics
+
+            # SSH options for Azure VM
+            ssh_opts = [
+                "-o",
+                "StrictHostKeyChecking=no",
+                "-o",
+                "UserKnownHostsFile=/dev/null",
+                "-o",
+                "ConnectTimeout=10",
+                "-o",
+                "ServerAliveInterval=30",
+            ]
+
+            # Test VM connectivity
+            try:
+                test_result = subprocess.run(
+                    ["ssh", *ssh_opts, f"azureuser@{vm_ip}", "echo 'online'"],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                if test_result.returncode != 0:
+                    diagnostics["error"] = f"Cannot connect to VM at {vm_ip}"
+                    return diagnostics
+                diagnostics["vm_online"] = True
+            except subprocess.TimeoutExpired:
+                diagnostics["error"] = f"Connection to VM at {vm_ip} timed out"
+                return diagnostics
+            except Exception as e:
+                diagnostics["error"] = f"SSH error: {str(e)}"
+                return diagnostics
+
+            # 1. Disk usage (df -h)
+            try:
+                df_result = subprocess.run(
+                    [
+                        "ssh",
+                        *ssh_opts,
+                        f"azureuser@{vm_ip}",
+                        "df -h / /mnt 2>/dev/null | tail -n +2",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                if df_result.returncode == 0 and df_result.stdout.strip():
+                    for line in df_result.stdout.strip().split("\n"):
+                        parts = line.split()
+                        if len(parts) >= 6:
+                            diagnostics["disk_usage"].append(
+                                {
+                                    "filesystem": parts[0],
+                                    "size": parts[1],
+                                    "used": parts[2],
+                                    "available": parts[3],
+                                    "use_percent": parts[4],
+                                    "mount_point": parts[5],
+                                }
+                            )
+            except Exception as e:
+                diagnostics["disk_usage"] = [{"error": str(e)}]
+
+            # 2. Docker container stats
+            try:
+                stats_result = subprocess.run(
+                    [
+                        "ssh",
+                        *ssh_opts,
+                        f"azureuser@{vm_ip}",
+                        "docker stats --no-stream --format '{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}|{{.NetIO}}|{{.BlockIO}}' 2>/dev/null || echo ''",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if stats_result.returncode == 0 and stats_result.stdout.strip():
+                    for line in stats_result.stdout.strip().split("\n"):
+                        if "|" in line:
+                            parts = line.split("|")
+                            if len(parts) >= 6:
+                                diagnostics["docker_stats"].append(
+                                    {
+                                        "container": parts[0],
+                                        "cpu_percent": parts[1],
+                                        "memory_usage": parts[2],
+                                        "memory_percent": parts[3],
+                                        "net_io": parts[4],
+                                        "block_io": parts[5],
+                                    }
+                                )
+            except Exception as e:
+                diagnostics["docker_stats"] = [{"error": str(e)}]
+
+            # 3. VM host memory usage (free -h)
+            try:
+                mem_result = subprocess.run(
+                    [
+                        "ssh",
+                        *ssh_opts,
+                        f"azureuser@{vm_ip}",
+                        "free -h | head -2 | tail -1",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                if mem_result.returncode == 0 and mem_result.stdout.strip():
+                    parts = mem_result.stdout.strip().split()
+                    if len(parts) >= 7:
+                        diagnostics["memory_usage"] = {
+                            "total": parts[1],
+                            "used": parts[2],
+                            "free": parts[3],
+                            "shared": parts[4],
+                            "buff_cache": parts[5],
+                            "available": parts[6],
+                        }
+            except Exception as e:
+                diagnostics["memory_usage"] = {"error": str(e)}
+
+            # 4. Docker system disk usage
+            try:
+                docker_df_result = subprocess.run(
+                    [
+                        "ssh",
+                        *ssh_opts,
+                        f"azureuser@{vm_ip}",
+                        "docker system df 2>/dev/null || echo ''",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                if docker_df_result.returncode == 0 and docker_df_result.stdout.strip():
+                    lines = docker_df_result.stdout.strip().split("\n")
+                    # Parse the table: TYPE, TOTAL, ACTIVE, SIZE, RECLAIMABLE
+                    for line in lines[1:]:  # Skip header
+                        parts = line.split()
+                        if len(parts) >= 5:
+                            dtype = parts[0]
+                            diagnostics["docker_system"][dtype.lower()] = {
+                                "total": parts[1],
+                                "active": parts[2],
+                                "size": parts[3],
+                                "reclaimable": " ".join(parts[4:]),
+                            }
+            except Exception as e:
+                diagnostics["docker_system"] = {"error": str(e)}
+
+            # 5. Docker images
+            try:
+                images_result = subprocess.run(
+                    [
+                        "ssh",
+                        *ssh_opts,
+                        f"azureuser@{vm_ip}",
+                        "docker images --format '{{.Repository}}:{{.Tag}}|{{.Size}}|{{.CreatedSince}}' 2>/dev/null || echo ''",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                if images_result.returncode == 0 and images_result.stdout.strip():
+                    for line in images_result.stdout.strip().split("\n"):
+                        if "|" in line:
+                            parts = line.split("|")
+                            if len(parts) >= 3:
+                                diagnostics["docker_images"].append(
+                                    {
+                                        "image": parts[0],
+                                        "size": parts[1],
+                                        "created": parts[2],
+                                    }
+                                )
+            except Exception as e:
+                diagnostics["docker_images"] = [{"error": str(e)}]
+
+            return diagnostics
+
         def _fetch_background_tasks(self):
             """Fetch status of all background tasks: Azure VM, Docker containers, benchmarks."""
             import subprocess
@@ -1736,22 +2046,69 @@ def cmd_serve(args: argparse.Namespace) -> int:
             return tasks
 
         def _fetch_vm_registry(self):
-            """Fetch VM registry with live status checks."""
+            """Fetch VM registry with live status checks.
+
+            NOTE: We now fetch the VM IP from Azure CLI at runtime to avoid
+            stale IP issues. The registry file is only used as a fallback.
+            """
             import subprocess
             from datetime import datetime
 
-            # Path to VM registry file (relative to project root)
-            project_root = Path(__file__).parent.parent.parent
-            registry_file = project_root / "benchmark_results" / "vm_registry.json"
-
-            if not registry_file.exists():
-                return []
-
+            # Try to get VM IP from Azure CLI (always fresh)
+            vm_ip = None
+            resource_group = "openadapt-agents"
+            vm_name = "azure-waa-vm"
             try:
-                with open(registry_file) as f:
-                    vms = json.load(f)
-            except Exception as e:
-                return {"error": f"Failed to read VM registry: {e}"}
+                result = subprocess.run(
+                    [
+                        "az",
+                        "vm",
+                        "show",
+                        "-d",
+                        "-g",
+                        resource_group,
+                        "-n",
+                        vm_name,
+                        "--query",
+                        "publicIps",
+                        "-o",
+                        "tsv",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    vm_ip = result.stdout.strip()
+            except Exception:
+                pass
+
+            # If we have a fresh IP from Azure, use it
+            if vm_ip:
+                vms = [
+                    {
+                        "name": vm_name,
+                        "ssh_host": vm_ip,
+                        "ssh_user": "azureuser",
+                        "vnc_port": 8006,
+                        "waa_port": 5000,
+                        "docker_container": "winarena",
+                        "internal_ip": "localhost",
+                    }
+                ]
+            else:
+                # Fallback to registry file
+                project_root = Path(__file__).parent.parent.parent
+                registry_file = project_root / "benchmark_results" / "vm_registry.json"
+
+                if not registry_file.exists():
+                    return []
+
+                try:
+                    with open(registry_file) as f:
+                        vms = json.load(f)
+                except Exception as e:
+                    return {"error": f"Failed to read VM registry: {e}"}
 
             # Check status for each VM
             for vm in vms:
@@ -2765,6 +3122,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
             # Track connection state
             client_connected = True
             last_mtime = 0.0
+            last_session_mtime = 0.0
             last_heartbeat = time.time()
 
             def send_event(event_type: str, data: dict) -> bool:
@@ -2810,8 +3168,74 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 DEFAULT_OUTPUT_FILE,
                 read_status,
             )
+            from openadapt_ml.benchmarks.session_tracker import (
+                get_session,
+                update_session_vm_state,
+                DEFAULT_SESSION_FILE,
+            )
 
             status_file = Path(DEFAULT_OUTPUT_FILE)
+            session_file = Path(DEFAULT_SESSION_FILE)
+
+            def compute_server_side_values(status: dict) -> dict:
+                """Get elapsed_seconds and cost_usd from session tracker for persistence."""
+                # Get session data (persistent across refreshes)
+                session = get_session()
+
+                # Update session based on VM state if we have VM info
+                # IMPORTANT: Only pass vm_ip if it's truthy to avoid
+                # overwriting session's stable vm_ip with None
+                if status.get("vm_state") and status.get("vm_state") != "unknown":
+                    status_vm_ip = status.get("vm_ip")
+                    # Build update kwargs - only include vm_ip if present
+                    update_kwargs = {
+                        "vm_state": status["vm_state"],
+                        "vm_size": status.get("vm_size"),
+                    }
+                    if status_vm_ip:  # Only include if truthy
+                        update_kwargs["vm_ip"] = status_vm_ip
+                    session = update_session_vm_state(**update_kwargs)
+
+                # Use session's vm_ip as authoritative source
+                # This prevents IP flickering when status file has stale/None values
+                if session.get("vm_ip"):
+                    status["vm_ip"] = session["vm_ip"]
+
+                # Use session's elapsed_seconds and cost_usd for persistence
+                if (
+                    session.get("is_active")
+                    or session.get("accumulated_seconds", 0) > 0
+                ):
+                    status["elapsed_seconds"] = session.get("elapsed_seconds", 0.0)
+                    status["cost_usd"] = session.get("cost_usd", 0.0)
+                    status["started_at"] = session.get("started_at")
+                    status["session_id"] = session.get("session_id")
+                    status["session_is_active"] = session.get("is_active", False)
+                    # Include accumulated time from previous sessions for hybrid display
+                    status["accumulated_seconds"] = session.get("accumulated_seconds", 0.0)
+                    # Calculate current session time (total - accumulated)
+                    current_session_seconds = max(0, status["elapsed_seconds"] - status["accumulated_seconds"])
+                    status["current_session_seconds"] = current_session_seconds
+                    hourly_rate = session.get("hourly_rate_usd", 0.422)
+                    status["current_session_cost_usd"] = (current_session_seconds / 3600) * hourly_rate
+
+                try:
+                    tunnel_mgr = get_tunnel_manager()
+                    tunnel_status = tunnel_mgr.get_tunnel_status()
+                    status["tunnels"] = {
+                        name: {
+                            "active": s.active,
+                            "local_port": s.local_port,
+                            "remote_endpoint": s.remote_endpoint,
+                            "pid": s.pid,
+                            "error": s.error,
+                        }
+                        for name, s in tunnel_status.items()
+                    }
+                except Exception as e:
+                    status["tunnels"] = {"error": str(e)}
+
+                return status
 
             # Send initial connected event
             if not send_event(
@@ -2822,7 +3246,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
             # Send initial status immediately
             try:
-                status = read_status()
+                status = compute_server_side_values(read_status())
                 if not send_event("status", status):
                     return
                 if status_file.exists():
@@ -2833,6 +3257,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
             try:
                 iteration_count = 0
                 max_iterations = 3600  # Max 1 hour of streaming
+                last_status_send = 0.0
+                STATUS_SEND_INTERVAL = 2  # Send status every 2 seconds for live updates
 
                 while client_connected and iteration_count < max_iterations:
                     iteration_count += 1
@@ -2848,16 +3274,34 @@ def cmd_serve(args: argparse.Namespace) -> int:
                             break
                         last_heartbeat = current_time
 
-                    # Check if status file changed
+                    # Check if status or session file changed OR if enough time passed
                     try:
+                        status_changed = False
+                        session_changed = False
+                        time_to_send = (
+                            current_time - last_status_send >= STATUS_SEND_INTERVAL
+                        )
+
                         if status_file.exists():
                             current_mtime = status_file.stat().st_mtime
                             if current_mtime > last_mtime:
-                                # File changed - send update
-                                status = read_status()
-                                if not send_event("status", status):
-                                    break
+                                status_changed = True
                                 last_mtime = current_mtime
+
+                        if session_file.exists():
+                            current_session_mtime = session_file.stat().st_mtime
+                            if current_session_mtime > last_session_mtime:
+                                session_changed = True
+                                last_session_mtime = current_session_mtime
+
+                        # Send status if file changed OR periodic timer expired
+                        # This ensures live elapsed time/cost updates even without file changes
+                        if status_changed or session_changed or time_to_send:
+                            # File changed or time to send - send update with session values
+                            status = compute_server_side_values(read_status())
+                            if not send_event("status", status):
+                                break
+                            last_status_send = current_time
                     except Exception as e:
                         # File access error - log but continue
                         print(f"Azure ops SSE file check error: {e}")
