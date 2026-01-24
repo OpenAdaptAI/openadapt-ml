@@ -1,0 +1,26 @@
+FROM dockurr/windows:latest
+
+RUN apt-get update && apt-get install -y fuse dos2unix wget curl python3 python3-pip git && rm -rf /var/lib/apt/lists/*
+
+ENV YRES="900"
+ENV XRES="1440"
+ENV RAM_SIZE="8G"
+ENV CPU_CORES="8"
+ENV VERSION="11e"
+ENV DISK_SIZE="30G"
+ENV ARGUMENTS="-qmp tcp:0.0.0.0:7200,server,nowait"
+
+COPY src/win-arena-container/client /client
+COPY src/win-arena-container/vm/setup /oem
+COPY src/win-arena-container/entry.sh /entry.sh
+COPY src/win-arena-container/entry_setup.sh /entry_setup.sh
+COPY src/win-arena-container/start_client.sh /start_client.sh
+COPY src/win-arena-container/start_vm.sh /start_vm.sh
+
+RUN pip3 install --no-cache-dir -r /client/requirements.txt 2>/dev/null || true
+
+RUN find / -maxdepth 3 -type f -name "*.sh" -exec dos2unix {} \; 2>/dev/null; chmod +x /*.sh 2>/dev/null || true
+
+RUN sed -i "s|20\.20\.20\.21|172.30.0.2|g" /entry_setup.sh /entry.sh /start_client.sh 2>/dev/null || true
+
+ENTRYPOINT ["/bin/bash", "-c"]

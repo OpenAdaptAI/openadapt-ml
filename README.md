@@ -827,6 +827,45 @@ uv run python -m openadapt_ml.benchmarks.cli vm monitor --auto-shutdown-hours 2
 
 For complete VM management commands and Azure setup instructions, see [`CLAUDE.md`](CLAUDE.md) and [`docs/azure_waa_setup.md`](docs/azure_waa_setup.md).
 
+### 13.5 Screenshot Capture Tool
+
+Capture screenshots of dashboards and VMs for documentation and PR purposes:
+
+```bash
+# Capture all available targets
+uv run python -m openadapt_ml.benchmarks.cli screenshot
+
+# List available targets
+uv run python -m openadapt_ml.benchmarks.cli screenshot --list
+
+# Capture specific targets
+uv run python -m openadapt_ml.benchmarks.cli screenshot --target terminal
+uv run python -m openadapt_ml.benchmarks.cli screenshot --target azure-ops --target vnc
+
+# Custom output directory
+uv run python -m openadapt_ml.benchmarks.cli screenshot --output /path/to/screenshots
+
+# Without timestamp in filename
+uv run python -m openadapt_ml.benchmarks.cli screenshot --target terminal --no-timestamp
+```
+
+**Available targets:**
+
+| Target | Description |
+|--------|-------------|
+| `azure-ops` | Azure ops dashboard (localhost:8765) |
+| `vnc` | VNC viewer (localhost:8006) - Windows VM |
+| `terminal` | VM monitor terminal output (mock mode) |
+| `terminal-live` | VM monitor terminal output (live, requires running VM) |
+| `training` | Training dashboard (localhost:8080) |
+| `vm-screen` | Windows VM screen capture via QEMU |
+
+**Notes:**
+- Terminal screenshots use PIL to render terminal output as PNG images
+- Web page screenshots work best with playwright installed (`uv add playwright && playwright install chromium`)
+- On macOS, interactive capture using `screencapture` is available as a fallback
+- Screenshots are saved to `docs/screenshots/` by default with timestamps
+
 ---
 
 ## 14. Limitations & Notes

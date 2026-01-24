@@ -1,0 +1,289 @@
+# =============================================================================
+# WAA (Windows Agent Arena) Docker Image
+# =============================================================================
+#
+# This image combines:
+# 1. dockurr/windows:latest - Modern base that auto-downloads Windows 11
+# 2. windowsarena/winarena:latest - Official WAA benchmark client and scripts
+#
+# The official windowsarena/winarena uses an outdated dockurr/windows (v0.00)
+# that doesn't auto-download Windows. This image fixes that while keeping
+# full compatibility with the official WAA benchmark.
+#
+# Usage:
+#   # Build the image
+#   docker build -t waa-auto:latest .
+#
+#   # Run benchmark (after Windows is set up)
+#   docker run --rm --device=/dev/kvm --cap-add NET_ADMIN \
+#     -p 8006:8006 -p 5000:5000 -p 7200:7200 \
+#     -v /path/to/storage:/storage \
+#     -e OPENAI_API_KEY="your-key" \
+#     waa-auto:latest \
+#     "/entry.sh --start-client true --model gpt-4o --num-tasks 5"
+#
+# =============================================================================
+
+FROM dockurr/windows:latest
+
+# -----------------------------------------------------------------------------
+# Copy official WAA components from windowsarena/winarena
+# -----------------------------------------------------------------------------
+
+# Copy benchmark client scripts
+COPY --from=windowsarena/winarena:latest /entry.sh /entry.sh
+COPY --from=windowsarena/winarena:latest /entry_setup.sh /entry_setup.sh
+COPY --from=windowsarena/winarena:latest /start_client.sh /start_client.sh
+
+# Copy the Python benchmark client code
+COPY --from=windowsarena/winarena:latest /client /client
+
+# Copy our WAA server startup script
+COPY start_waa_server.bat /oem/start_waa_server.bat
+
+# Skip model weights (GroundingDINO, OmniParser, etc.) - not needed for api-agent
+# This saves ~2GB of disk space
+# COPY --from=windowsarena/winarena:latest /models /models
+
+# Copy Windows setup scripts (install.bat, setup.ps1, etc.)
+COPY --from=windowsarena/winarena:latest /oem /oem
+
+# Patch samba.sh to copy OEM files to the samba share after it starts
+# The samba share is at /tmp/smb (or /shared if mounted)
+# OEM files are needed BEFORE Windows runs FirstLogonCommands
+RUN sed -i '/^return 0$/i\
+# Copy OEM files to samba share for Windows access\n\
+echo "[samba.sh] Copying OEM files to samba share..."\n\
+SHARE_DIR="/tmp/smb"\n\
+[ -d "/shared" ] && SHARE_DIR="/shared"\n\
+cp -rv /oem/* "$SHARE_DIR/" 2>/dev/null || echo "[samba.sh] OEM copy failed, files may already exist"\n\
+ls -la "$SHARE_DIR/" 2>/dev/null || true\
+' /run/samba.sh && echo "Patched samba.sh to copy OEM files"
+
+# -----------------------------------------------------------------------------
+# Port forwarding: Forward port 5000 from container to Windows VM (172.30.0.2)
+# dockurr/windows doesn't auto-forward ports to the Windows VM inside QEMU
+# We use a simple nc loop to forward WAA server traffic
+# -----------------------------------------------------------------------------
+
+# Create port forwarder script
+RUN printf '#!/bin/bash\n\
+# Wait for Windows VM to be ready (DHCP lease means VM is up)\n\
+while ! grep -q "172.30.0.2" /var/log/dnsmasq.log 2>/dev/null; do sleep 5; done\n\
+# Start port forwarder for WAA server (port 5000)\n\
+while true; do\n\
+    nc -lp 5000 -c "nc 172.30.0.2 5000" 2>/dev/null || sleep 1\n\
+done\n\
+' > /port_forward.sh && chmod +x /port_forward.sh
+
+# Inject port forwarder startup into dockurr entry script
+# This runs after network setup but before the main wait loop
+RUN sed -i '/^return 0$/i nohup /port_forward.sh >/dev/null 2>\&1 \&' /run/samba.sh && \
+    echo "Inserted port forwarder startup in samba.sh"
+
+# Copy unattend.xml for automated Windows installation
+# dockurr/windows uses win11x64.xml for VERSION=11/11p/win11 and win11x64-enterprise-eval.xml for VERSION=11e
+# Copy both to ensure the correct one is used regardless of VERSION detection
+COPY --from=windowsarena/winarena:latest /run/assets/win11x64-enterprise-eval.xml /run/assets/win11x64.xml
+COPY --from=windowsarena/winarena:latest /run/assets/win11x64-enterprise-eval.xml /run/assets/win11x64-enterprise-eval.xml
+
+# Add InstallFrom element to auto-select image index 1
+# This fixes "Select the operating system" prompt when install.wim has multiple editions
+# The sed command injects the InstallFrom element just before InstallTo
+# Apply to both possible XML files that might be used
+RUN sed -i 's|<InstallTo>|<InstallFrom>\n            <MetaData wcm:action="add">\n              <Key>/IMAGE/INDEX</Key>\n              <Value>1</Value>\n            </MetaData>\n          </InstallFrom>\n          <InstallTo>|' /run/assets/win11x64.xml && \
+    sed -i 's|<InstallTo>|<InstallFrom>\n            <MetaData wcm:action="add">\n              <Key>/IMAGE/INDEX</Key>\n              <Value>1</Value>\n            </MetaData>\n          </InstallFrom>\n          <InstallTo>|' /run/assets/win11x64-enterprise-eval.xml && \
+    echo "Added InstallFrom element for automatic image selection"
+
+# -----------------------------------------------------------------------------
+# Create start_vm.sh that uses our dockurr/windows entrypoint
+# -----------------------------------------------------------------------------
+
+RUN printf '#!/bin/bash\n/usr/bin/tini -s /run/entry.sh\n' > /start_vm.sh && chmod +x /start_vm.sh
+
+# -----------------------------------------------------------------------------
+# Patch IP addresses: official uses 20.20.20.21, dockurr/windows uses 172.30.0.2
+# -----------------------------------------------------------------------------
+
+# Patch entry scripts (must work - these files were just copied)
+RUN sed -i 's|20.20.20.21|172.30.0.2|g' /entry_setup.sh && \
+    sed -i 's|20.20.20.21|172.30.0.2|g' /entry.sh && \
+    sed -i 's|20.20.20.21|172.30.0.2|g' /start_client.sh && \
+    echo "Patched entry scripts"
+
+# Patch client Python files
+RUN find /client -name "*.py" -exec sed -i 's|20.20.20.21|172.30.0.2|g' {} \; && \
+    echo "Patched client Python files"
+
+# -----------------------------------------------------------------------------
+# Add API-backed agent support (Claude Sonnet 4.5 / GPT-5.1)
+# This allows using --agent api-claude or --agent api-openai instead of navi
+# -----------------------------------------------------------------------------
+
+# Copy api_agent.py to the client mm_agents directory
+COPY api_agent.py /client/mm_agents/api_agent.py
+
+# -----------------------------------------------------------------------------
+# Fix Windows setup for automation
+# -----------------------------------------------------------------------------
+
+# Set password for AutoLogon (Windows 11 requires password for login)
+# CRITICAL: Apply to BOTH XML files since VERSION=11e uses win11x64-enterprise-eval.xml
+RUN sed -i 's|<Value></Value>|<Value>docker</Value>|g' /run/assets/win11x64.xml 2>/dev/null || true && \
+    sed -i 's|<Value></Value>|<Value>docker</Value>|g' /run/assets/win11x64-enterprise-eval.xml 2>/dev/null || true
+RUN sed -i 's|<Value />|<Value>docker</Value>|g' /run/assets/win11x64.xml 2>/dev/null || true && \
+    sed -i 's|<Value />|<Value>docker</Value>|g' /run/assets/win11x64-enterprise-eval.xml 2>/dev/null || true
+
+# -----------------------------------------------------------------------------
+# Install Python and dependencies directly
+# NOTE: Python must be installed BEFORE the XML patching script below
+# dockurr/windows base is Debian trixie which has Python 3.12
+# -----------------------------------------------------------------------------
+
+# Install Python 3 and system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-venv \
+    python3-pip \
+    tesseract-ocr \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3 /usr/bin/python
+
+# Install Python dependencies for WAA client
+# Using --break-system-packages since we're in a container
+# Full dependency list from: github.com/microsoft/WindowsAgentArena/blob/main/src/win-arena-container/client/requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages \
+    torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
+    pip3 install --no-cache-dir --break-system-packages \
+    gymnasium farama-notifications cloudpickle packaging typer rich tqdm colorama \
+    openai anthropic google-generativeai groq tiktoken \
+    pyyaml jsonschema tenacity httpx backoff toml func-timeout wrapt-timeout-decorator \
+    psutil pyperclip screeninfo mss pyautogui fabric \
+    easyocr pillow pytesseract opencv-python-headless scikit-image ImageHash \
+    requests flask beautifulsoup4 lxml cssselect xmltodict playwright requests-toolbelt \
+    pydrive openpyxl python-docx python-pptx odfpy pypdf PyPDF2 pdfplumber pymupdf borb \
+    xlrd xlwt xlsxwriter mammoth pdf2image \
+    google-api-python-client google-auth-httplib2 google-auth-oauthlib gdown \
+    numpy pandas scipy formulas rapidfuzz anytree addict \
+    transformers accelerate "timm>=0.9.0,<1.0.0" ultralytics supervision pycocotools einops \
+    mutagen pyacoustid chardet librosa fastdtw \
+    py7zr LnkParse3 \
+    matplotlib wandb yapf
+
+# Install Playwright browsers
+RUN playwright install chromium
+
+# Patch run.py to support api-claude and api-openai agents
+# This adds elif blocks after the "navi" agent handling
+# Using Python to insert the patch with proper indentation
+RUN python3 -c "import re; \
+f = open('/client/run.py', 'r'); c = f.read(); f.close(); \
+patch = '''    elif cfg_args[\"agent_name\"] in [\"api-claude\", \"api-openai\"]:\n        from mm_agents.api_agent import ApiAgent\n        provider = \"anthropic\" if cfg_args[\"agent_name\"] == \"api-claude\" else \"openai\"\n        agent = ApiAgent(provider=provider, temperature=args.temperature)\n'''; \
+c = c.replace('    else:\\n        raise ValueError', patch + '    else:\\n        raise ValueError'); \
+f = open('/client/run.py', 'w'); f.write(c); f.close(); \
+print('Patched run.py for API agents')"
+
+# -----------------------------------------------------------------------------
+# Add custom FirstLogonCommands to Windows autounattend.xml
+# This runs AFTER Python install because we use Python for XML patching
+# The original shell for-loop with sed was failing silently in the Docker build
+# -----------------------------------------------------------------------------
+
+COPY <<'EOF' /tmp/patch_xml.py
+#!/usr/bin/env python3
+"""Patch Windows autounattend XML files to add WAA automation commands."""
+import re
+import sys
+
+# Commands to add after existing FirstLogonCommands
+# These run AFTER the default dockurr/windows commands (1-25)
+# CRITICAL: UNC paths need DOUBLE escaping for XML CommandLine:
+#   - XML needs \\\\host.lan\\Data\\ (4 backslashes before host, 2 elsewhere)
+#   - Python string needs 8 backslashes to produce 4 in output
+#   - Windows then parses \\\\host.lan\\Data\\ as \\host.lan\Data\ (correct UNC)
+EXTRA_COMMANDS = [
+    ("netsh advfirewall set allprofiles state off", "Disable Windows Firewall"),
+    ("powercfg /change standby-timeout-ac 0", "Disable sleep"),
+    ("powercfg /change monitor-timeout-ac 0", "Disable monitor timeout"),
+    ('reg add "HKLM\\\\SOFTWARE\\\\Policies\\\\Microsoft\\\\Windows\\\\Personalization" /v NoLockScreen /t REG_DWORD /d 1 /f', "Disable lock screen"),
+    ('cmd /c start /wait \\\\\\\\host.lan\\\\Data\\\\install.bat', "Run WAA setup script"),
+    ('schtasks /create /tn "WAAServer" /tr "\\\\\\\\host.lan\\\\Data\\\\start_waa_server.bat" /sc onlogon /rl highest /f', "Create WAA server scheduled task"),
+    ('reg add "HKCU\\\\SOFTWARE\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run" /v WAAServer /t REG_SZ /d "cmd /c \\\\\\\\host.lan\\\\Data\\\\start_waa_server.bat" /f', "Add WAA server to registry Run"),
+    ('\\\\\\\\host.lan\\\\Data\\\\start_waa_server.bat', "Start WAA server immediately"),
+]
+
+def patch_xml(filepath):
+    with open(filepath, 'r') as f:
+        content = f.read()
+
+    # Find highest existing Order number
+    orders = [int(m) for m in re.findall(r'<Order>(\d+)</Order>', content)]
+    if not orders:
+        print(f"No Order tags found in {filepath}, skipping")
+        return
+
+    next_order = max(orders) + 1
+
+    # Build new commands XML
+    new_commands = ""
+    for i, (cmd, desc) in enumerate(EXTRA_COMMANDS):
+        # Escape XML special characters
+        cmd_escaped = cmd.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        new_commands += f'''        <SynchronousCommand wcm:action="add">
+          <Order>{next_order + i}</Order>
+          <CommandLine>{cmd_escaped}</CommandLine>
+          <Description>{desc}</Description>
+        </SynchronousCommand>
+'''
+
+    # Insert before </FirstLogonCommands>
+    if '</FirstLogonCommands>' not in content:
+        print(f"No </FirstLogonCommands> found in {filepath}, skipping")
+        return
+
+    content = content.replace('</FirstLogonCommands>', new_commands + '      </FirstLogonCommands>')
+
+    with open(filepath, 'w') as f:
+        f.write(content)
+
+    print(f"Patched {filepath}: added {len(EXTRA_COMMANDS)} commands starting at Order {next_order}")
+
+if __name__ == '__main__':
+    for path in sys.argv[1:]:
+        patch_xml(path)
+EOF
+
+RUN python3 /tmp/patch_xml.py /run/assets/win11x64.xml /run/assets/win11x64-enterprise-eval.xml && \
+    rm /tmp/patch_xml.py && \
+    echo "Verifying patch:" && \
+    grep -c "host.lan" /run/assets/win11x64.xml && \
+    grep -c "host.lan" /run/assets/win11x64-enterprise-eval.xml
+
+# -----------------------------------------------------------------------------
+# Environment configuration
+# -----------------------------------------------------------------------------
+
+ENV YRES="900"
+ENV XRES="1440"
+ENV RAM_SIZE="6G"
+ENV CPU_CORES="4"
+# DISK_SIZE reduced from 30G to 20G to fit in /mnt (32GB) with Windows ISO (~6GB)
+# Windows 11 needs ~15GB minimum; 20GB provides comfortable headroom
+ENV DISK_SIZE="20G"
+ENV VERSION="11e"
+ENV ARGUMENTS="-qmp tcp:0.0.0.0:7200,server,nowait"
+
+# Expose ports
+EXPOSE 8006 5000 7200 3389
+
+# Default entrypoint - run entry.sh (OEM files are copied via samba.sh patch)
+# Use: /entry.sh --start-client true --model gpt-4o
+# Or:  /entry.sh --start-client false (just start Windows, no benchmark)
+ENTRYPOINT ["/bin/bash", "-c"]
+CMD ["/entry.sh --start-client false"]

@@ -53,8 +53,14 @@ COPY --from=windowsarena/winarena:latest /oem /oem
 RUN sed -i '/^return 0$/i cp -r /oem/* /tmp/smb/ 2>/dev/null || true' /run/samba.sh && \
     echo "Inserted OEM copy before return in samba.sh"
 
-# Copy unattend.xml for automated Windows installation
-COPY --from=windowsarena/winarena:latest /run/assets/win11x64-enterprise-eval.xml /run/assets/win11x64.xml
+# DO NOT replace dockurr/windows's autounattend.xml - it handles OOBE properly
+# Instead, only PATCH it to add InstallFrom element (prevents "Select OS" dialog)
+# This preserves dockurr/windows's native OEM mechanism
+RUN for xml in /run/assets/win11x64.xml /run/assets/win11x64-enterprise-eval.xml; do \
+        if [ -f "$xml" ] && ! grep -q "InstallFrom" "$xml"; then \
+            sed -i 's|<InstallTo>|<InstallFrom>\n            <MetaData wcm:action="add">\n              <Key>/IMAGE/INDEX</Key>\n              <Value>1</Value>\n            </MetaData>\n          </InstallFrom>\n          <InstallTo>|' "$xml"; \
+        fi; \
+    done && echo "Added InstallFrom element for automatic image selection"
 
 # -----------------------------------------------------------------------------
 # Create start_vm.sh that uses our dockurr/windows entrypoint
@@ -84,15 +90,9 @@ RUN find /client -name "*.py" -exec sed -i 's|20.20.20.21|172.30.0.2|g' {} \; &&
 # Copy api_agent.py to the client mm_agents directory
 COPY api_agent.py /client/mm_agents/api_agent.py
 
-# Patch run.py to support api-claude and api-openai agents
-# This adds elif blocks after the "navi" agent handling
-# Using Python to insert the patch with proper indentation
-RUN python3 -c "import re; \
-f = open('/client/run.py', 'r'); c = f.read(); f.close(); \
-patch = '''    elif cfg_args[\"agent_name\"] in [\"api-claude\", \"api-openai\"]:\n        from mm_agents.api_agent import ApiAgent\n        provider = \"anthropic\" if cfg_args[\"agent_name\"] == \"api-claude\" else \"openai\"\n        agent = ApiAgent(provider=provider, temperature=args.temperature)\n'''; \
-c = c.replace('raise ValueError(f\"Unknown agent name: {cfg_args', patch + '    raise ValueError(f\"Unknown agent name: {cfg_args'); \
-f = open('/client/run.py', 'w'); f.write(c); f.close(); \
-print('Patched run.py for API agents')"
+# Note: API agent patching (api-claude, api-openai) skipped for now
+# The navi agent works out of the box - API agents can be added later via Python patch
+# after the apt-get install python3 step runs
 
 # -----------------------------------------------------------------------------
 # Fix Windows setup for automation
@@ -215,8 +215,8 @@ ENV ARGUMENTS="-qmp tcp:0.0.0.0:7200,server,nowait"
 # Expose ports
 EXPOSE 8006 5000 7200 3389
 
-# Default entrypoint - copy OEM files then run entry.sh
-# Use: /entry.sh --start-client true --model gpt-4o
-# Or:  /entry.sh --start-client false (just start Windows, no benchmark)
-ENTRYPOINT ["/bin/bash", "-c"]
-CMD ["/copy-oem.sh /entry.sh --start-client false"]
+# Default entrypoint - use dockurr/windows's native entry point
+# The OEM files are copied by samba.sh (patched above) when Samba starts
+# dockurr/windows handles: QEMU VM startup, Samba, VNC, Windows boot
+# Our patched autounattend.xml handles: FirstLogonCommands that run install.bat
+ENTRYPOINT ["/usr/bin/tini", "-s", "/run/entry.sh"]

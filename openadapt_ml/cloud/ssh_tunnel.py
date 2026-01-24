@@ -96,9 +96,11 @@ class SSHTunnelManager:
     """
 
     # Default tunnel configurations
+    # Note: WAA uses local_port=5001 to avoid conflicts with any local WAA server on 5000
+    # The remote port is still 5000 (where WAA Flask runs inside Windows)
     DEFAULT_TUNNELS = [
         TunnelConfig(name="vnc", local_port=8006, remote_port=8006),
-        TunnelConfig(name="waa", local_port=5000, remote_port=5000),
+        TunnelConfig(name="waa", local_port=5001, remote_port=5000),
     ]
 
     # Auto-reconnect settings
