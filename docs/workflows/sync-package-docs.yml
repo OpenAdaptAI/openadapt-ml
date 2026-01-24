@@ -1,0 +1,113 @@
+# This workflow should be placed in the main OpenAdapt repo at:
+# .github/workflows/sync-package-docs.yml
+#
+# It receives repository_dispatch events from sub-packages and syncs their
+# documentation to the main docs site.
+
+name: Sync Package Docs
+
+on:
+  # Triggered by sub-packages when they push to main
+  repository_dispatch:
+    types: [sync-package-docs]
+
+  # Can also be triggered manually
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package to sync (leave empty for all)'
+        required: false
+        default: ''
+
+  # Also run on a schedule to catch any missed updates
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 6 AM UTC
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Sync package documentation
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Determine which package to sync (if specified)
+          PACKAGE=""
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            PACKAGE="${{ github.event.client_payload.package }}"
+            echo "Triggered by package: $PACKAGE"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            PACKAGE="${{ github.event.inputs.package }}"
+            echo "Manual trigger for package: $PACKAGE"
+          else
+            echo "Scheduled run: syncing all packages"
+          fi
+
+          # Run the sync script
+          if [ -n "$PACKAGE" ]; then
+            python docs/_scripts/sync_package_docs.py --package "$PACKAGE"
+          else
+            python docs/_scripts/sync_package_docs.py
+          fi
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet docs/packages/; then
+            echo "changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "changes=true" >> $GITHUB_OUTPUT
+            echo "Changed files:"
+            git diff --name-only docs/packages/
+          fi
+
+      - name: Create Pull Request
+        if: steps.changes.outputs.changes == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'docs: sync package documentation'
+          title: 'docs: sync package documentation'
+          body: |
+            This PR was automatically created by the docs sync workflow.
+
+            **Trigger**: ${{ github.event_name }}
+            ${{ github.event_name == 'repository_dispatch' && format('**Package**: {0}', github.event.client_payload.package) || '' }}
+
+            **Changes**:
+            - Updated package documentation from sub-repository READMEs
+
+            ---
+            *This is an automated PR. Review the changes and merge if they look correct.*
+          branch: docs/sync-package-docs
+          delete-branch: true
+          labels: |
+            documentation
+            automated
+
+      - name: Auto-merge if no conflicts
+        if: steps.changes.outputs.changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Wait for PR to be created
+          sleep 5
+
+          # Try to enable auto-merge
+          PR_NUMBER=$(gh pr list --head docs/sync-package-docs --json number -q '.[0].number')
+          if [ -n "$PR_NUMBER" ]; then
+            echo "Enabling auto-merge for PR #$PR_NUMBER"
+            gh pr merge "$PR_NUMBER" --auto --squash || echo "Could not enable auto-merge"
+          fi
