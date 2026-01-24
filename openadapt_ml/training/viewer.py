@@ -1,10 +1,26 @@
 """Unified viewer HTML generation.
 
+.. deprecated::
+    This module is deprecated. Use ``openadapt_viewer`` instead::
+
+        from openadapt_viewer import generate_unified_viewer
+
+    The openadapt-viewer package is the canonical location for viewer code.
+
 This module generates the Viewer HTML with step-by-step playback,
 transcript/audio sync, and model prediction comparison.
 """
 
 from __future__ import annotations
+
+import warnings
+
+warnings.warn(
+    "openadapt_ml.training.viewer is deprecated. "
+    "Use openadapt_viewer instead: from openadapt_viewer import generate_unified_viewer",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 import json
 from pathlib import Path

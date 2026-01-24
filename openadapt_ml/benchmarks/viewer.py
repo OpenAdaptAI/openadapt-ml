@@ -1,5 +1,12 @@
 """Benchmark viewer HTML generation.
 
+.. deprecated::
+    This module is deprecated. Use ``openadapt_viewer`` instead::
+
+        from openadapt_viewer import generate_benchmark_viewer
+
+    The openadapt-viewer package is the canonical location for viewer code.
+
 This module generates a standalone HTML viewer for benchmark results,
 showing task list with pass/fail status, step-by-step replay of
 benchmark executions, screenshots, actions, and reasoning at each step.
@@ -30,6 +37,15 @@ Directory structure expected:
 """
 
 from __future__ import annotations
+
+import warnings
+
+warnings.warn(
+    "openadapt_ml.benchmarks.viewer is deprecated. "
+    "Use openadapt_viewer instead: from openadapt_viewer import generate_benchmark_viewer",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 import base64
 import json
