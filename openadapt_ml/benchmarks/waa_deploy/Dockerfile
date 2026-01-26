@@ -1,222 +1,159 @@
 # =============================================================================
-# WAA (Windows Agent Arena) Docker Image
+# WAA (Windows Agent Arena) - Standalone Dockerfile
 # =============================================================================
 #
-# This image combines:
-# 1. dockurr/windows:latest - Modern base that auto-downloads Windows 11
-# 2. windowsarena/winarena:latest - Official WAA benchmark client and scripts
+# DEFINITIVE APPROACH - No circular dependencies, no script patching
 #
-# The official windowsarena/winarena uses an outdated dockurr/windows (v0.00)
-# that doesn't auto-download Windows. This image fixes that while keeping
-# full compatibility with the official WAA benchmark.
+# This uses vanilla WAA's "dev mode" which expects files at \\host.lan\Data
+# (the Samba share at /tmp/smb/). No patching of script paths required.
 #
-# Usage:
-#   # Build the image
-#   docker build -t waa-auto:latest .
+# Key features:
+# - Uses modern dockurr/windows:latest (auto-downloads Windows 11)
+# - VERSION=11e = Enterprise Evaluation (no license key required)
+# - Fully unattended installation
+# - No 15GB image pull required
+# - Uses vanilla WAA scripts without modification (except IP address)
 #
-#   # Run benchmark (after Windows is set up)
+# Build from repo root:
+#   docker build -f openadapt_ml/benchmarks/waa_deploy/Dockerfile -t waa:latest .
+#
+# Run:
 #   docker run --rm --device=/dev/kvm --cap-add NET_ADMIN \
-#     -p 8006:8006 -p 5000:5000 -p 7200:7200 \
+#     -p 8006:8006 -p 5000:5000 \
 #     -v /path/to/storage:/storage \
-#     -e OPENAI_API_KEY="your-key" \
-#     waa-auto:latest \
-#     "/entry.sh --start-client true --model gpt-4o --num-tasks 5"
+#     waa:latest
 #
 # =============================================================================
 
 FROM dockurr/windows:latest
 
 # -----------------------------------------------------------------------------
-# Copy official WAA components from windowsarena/winarena
+# Copy WAA components from LOCAL vendor submodule
+# Build context must be repo root for these paths to work
 # -----------------------------------------------------------------------------
 
-# Copy benchmark client scripts
-COPY --from=windowsarena/winarena:latest /entry.sh /entry.sh
-COPY --from=windowsarena/winarena:latest /entry_setup.sh /entry_setup.sh
-COPY --from=windowsarena/winarena:latest /start_client.sh /start_client.sh
+# Entry scripts (for benchmark client on Linux side)
+COPY vendor/WindowsAgentArena/src/win-arena-container/entry.sh /entry.sh
+COPY vendor/WindowsAgentArena/src/win-arena-container/entry_setup.sh /entry_setup.sh
+COPY vendor/WindowsAgentArena/src/win-arena-container/start_client.sh /start_client.sh
+COPY vendor/WindowsAgentArena/src/win-arena-container/start_vm.sh /start_vm.sh
 
-# Copy the Python benchmark client code
-COPY --from=windowsarena/winarena:latest /client /client
+# Python benchmark client (runs on Linux side)
+COPY vendor/WindowsAgentArena/src/win-arena-container/client /client
 
-# Copy our WAA server startup script
-COPY start_waa_server.bat /oem/start_waa_server.bat
+# Windows setup scripts → /waa-setup/ (staging location)
+# These get copied to /tmp/smb/ (Samba share) at container startup
+# Windows accesses them at \\host.lan\Data
+COPY vendor/WindowsAgentArena/src/win-arena-container/vm/setup /waa-setup
 
-# Copy model weights (GroundingDINO, OmniParser, etc.)
-COPY --from=windowsarena/winarena:latest /models /models
-
-# Copy Windows setup scripts (install.bat, setup.ps1, etc.)
-COPY --from=windowsarena/winarena:latest /oem /oem
-
-# Copy OEM files AFTER dockurr/samba starts (which wipes /tmp/smb)
-# Copy IMMEDIATELY (no delay) and SYNCHRONOUSLY (not backgrounded) to ensure
-# files are available before Windows boots and runs FirstLogonCommands
-RUN sed -i '/^return 0$/i cp -r /oem/* /tmp/smb/ 2>/dev/null || true' /run/samba.sh && \
-    echo "Inserted OEM copy before return in samba.sh"
-
-# Copy unattend.xml for automated Windows installation
-COPY --from=windowsarena/winarena:latest /run/assets/win11x64-enterprise-eval.xml /run/assets/win11x64.xml
+# Our custom startup script (more robust than vanilla)
+COPY openadapt_ml/benchmarks/waa_deploy/start_waa_server.bat /waa-setup/start_waa_server.bat
 
 # -----------------------------------------------------------------------------
-# Create start_vm.sh that uses our dockurr/windows entrypoint
+# Use DEV unattend XML (expects files at \\host.lan\Data, not C:\oem)
+# This is vanilla WAA's approach for local development
 # -----------------------------------------------------------------------------
 
-RUN printf '#!/bin/bash\n/usr/bin/tini -s /run/entry.sh\n' > /start_vm.sh && chmod +x /start_vm.sh
+COPY vendor/WindowsAgentArena/src/win-arena-container/vm/unattend-files/dev_win11x64-enterprise-eval.xml /run/assets/win11x64-enterprise-eval.xml
 
 # -----------------------------------------------------------------------------
-# Patch IP addresses: official uses 20.20.20.21, dockurr/windows uses 172.30.0.2
+# Patch IP addresses: WAA uses 20.20.20.21, dockurr/windows uses 172.30.0.2
+# This is the ONLY patching we need to do
 # -----------------------------------------------------------------------------
 
-# Patch entry scripts (must work - these files were just copied)
-RUN sed -i 's|20.20.20.21|172.30.0.2|g' /entry_setup.sh && \
-    sed -i 's|20.20.20.21|172.30.0.2|g' /entry.sh && \
-    sed -i 's|20.20.20.21|172.30.0.2|g' /start_client.sh && \
-    echo "Patched entry scripts"
-
-# Patch client Python files
-RUN find /client -name "*.py" -exec sed -i 's|20.20.20.21|172.30.0.2|g' {} \; && \
-    echo "Patched client Python files"
+RUN sed -i 's|20\.20\.20\.21|172.30.0.2|g' /entry.sh /entry_setup.sh /start_client.sh && \
+    find /client -name "*.py" -exec sed -i 's|20\.20\.20\.21|172.30.0.2|g' {} \; && \
+    chmod +x /*.sh && \
+    echo "Patched IP addresses to 172.30.0.2"
 
 # -----------------------------------------------------------------------------
-# Add API-backed agent support (Claude Sonnet 4.5 / GPT-5.1)
-# This allows using --agent api-claude or --agent api-openai instead of navi
+# Copy WAA setup files to Samba share when container starts
+# /tmp/smb/ is created by dockurr/windows at runtime
+# Windows sees this as \\host.lan\Data
 # -----------------------------------------------------------------------------
 
-# Copy api_agent.py to the client mm_agents directory
-COPY api_agent.py /client/mm_agents/api_agent.py
-
-# Patch run.py to support api-claude and api-openai agents
-# This adds elif blocks after the "navi" agent handling
-# Using Python to insert the patch with proper indentation
-RUN python3 -c "import re; \
-f = open('/client/run.py', 'r'); c = f.read(); f.close(); \
-patch = '''    elif cfg_args[\"agent_name\"] in [\"api-claude\", \"api-openai\"]:\n        from mm_agents.api_agent import ApiAgent\n        provider = \"anthropic\" if cfg_args[\"agent_name\"] == \"api-claude\" else \"openai\"\n        agent = ApiAgent(provider=provider, temperature=args.temperature)\n'''; \
-c = c.replace('raise ValueError(f\"Unknown agent name: {cfg_args', patch + '    raise ValueError(f\"Unknown agent name: {cfg_args'); \
-f = open('/client/run.py', 'w'); f.write(c); f.close(); \
-print('Patched run.py for API agents')"
+RUN sed -i '/^return 0$/i \
+# Copy WAA setup files to Samba share\n\
+cp -r /waa-setup/* /tmp/smb/ 2>/dev/null || true\n\
+chmod -R 777 /tmp/smb/ 2>/dev/null || true\n\
+echo "WAA setup files copied to Samba share"' /run/samba.sh && \
+    echo "Added WAA file copy to samba.sh"
 
 # -----------------------------------------------------------------------------
-# Fix Windows setup for automation
+# Port forwarding: Forward port 5000 from container to Windows VM
+# dockurr/windows doesn't auto-forward ports to the QEMU VM
 # -----------------------------------------------------------------------------
 
-# Set password for AutoLogon (Windows 11 requires password for login)
-RUN sed -i 's|<Value></Value>|<Value>docker</Value>|g' /run/assets/win11x64.xml 2>/dev/null || true
-RUN sed -i 's|<Value />|<Value>docker</Value>|g' /run/assets/win11x64.xml 2>/dev/null || true
+RUN printf '#!/bin/bash\n\
+# Wait for Windows VM to get IP\n\
+while ! grep -q "172.30.0.2" /var/lib/misc/dnsmasq.leases 2>/dev/null; do\n\
+    sleep 5\n\
+done\n\
+echo "Windows VM is up, starting port forwarder"\n\
+# Forward port 5000 to Windows VM\n\
+while true; do\n\
+    nc -lp 5000 -c "nc 172.30.0.2 5000" 2>/dev/null || sleep 1\n\
+done\n\
+' > /port_forward.sh && chmod +x /port_forward.sh
 
-# Add firewall disable and other automation commands to FirstLogonCommands
-# CRITICAL: Also create a scheduled task so WAA server starts on EVERY boot, not just first logon
-RUN if grep -q "</FirstLogonCommands>" /run/assets/win11x64.xml; then \
-    LAST_ORDER=$(grep -oP "Order>\K[0-9]+" /run/assets/win11x64.xml | sort -n | tail -1) && \
-    N1=$((LAST_ORDER + 1)) && \
-    N2=$((LAST_ORDER + 2)) && \
-    N3=$((LAST_ORDER + 3)) && \
-    N4=$((LAST_ORDER + 4)) && \
-    N5=$((LAST_ORDER + 5)) && \
-    N6=$((LAST_ORDER + 6)) && \
-    sed -i "s|</FirstLogonCommands>|\
-        <SynchronousCommand wcm:action=\"add\">\n\
-          <Order>$N1</Order>\n\
-          <CommandLine>netsh advfirewall set allprofiles state off</CommandLine>\n\
-          <Description>Disable Windows Firewall</Description>\n\
-        </SynchronousCommand>\n\
-        <SynchronousCommand wcm:action=\"add\">\n\
-          <Order>$N2</Order>\n\
-          <CommandLine>powercfg /change standby-timeout-ac 0</CommandLine>\n\
-          <Description>Disable sleep</Description>\n\
-        </SynchronousCommand>\n\
-        <SynchronousCommand wcm:action=\"add\">\n\
-          <Order>$N3</Order>\n\
-          <CommandLine>powercfg /change monitor-timeout-ac 0</CommandLine>\n\
-          <Description>Disable monitor timeout</Description>\n\
-        </SynchronousCommand>\n\
-        <SynchronousCommand wcm:action=\"add\">\n\
-          <Order>$N4</Order>\n\
-          <CommandLine>reg add \"HKLM\\\\SOFTWARE\\\\Policies\\\\Microsoft\\\\Windows\\\\Personalization\" /v NoLockScreen /t REG_DWORD /d 1 /f</CommandLine>\n\
-          <Description>Disable lock screen</Description>\n\
-        </SynchronousCommand>\n\
-        <SynchronousCommand wcm:action=\"add\">\n\
-          <Order>$N5</Order>\n\
-          <CommandLine>cmd /c start /wait \\\\\\\\host.lan\\\\Data\\\\install.bat</CommandLine>\n\
-          <Description>Run WAA setup script to install Python, Chrome, etc.</Description>\n\
-        </SynchronousCommand>\n\
-        <SynchronousCommand wcm:action=\"add\">\n\
-          <Order>$N6</Order>\n\
-          <CommandLine>schtasks /create /tn \"WAAServer\" /tr \"\\\\\\\\host.lan\\\\Data\\\\start_waa_server.bat\" /sc onlogon /rl highest /f</CommandLine>\n\
-          <Description>Create scheduled task for WAA server auto-start on every boot</Description>\n\
-        </SynchronousCommand>\n\
-        <SynchronousCommand wcm:action=\"add\">\n\
-          <Order>$((N6 + 1))</Order>\n\
-          <CommandLine>reg add \"HKCU\\\\SOFTWARE\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\" /v WAAServer /t REG_SZ /d \"cmd /c \\\\\\\\host.lan\\\\Data\\\\start_waa_server.bat\" /f</CommandLine>\n\
-          <Description>Add registry entry for WAA server auto-start (backup)</Description>\n\
-        </SynchronousCommand>\n\
-        <SynchronousCommand wcm:action=\"add\">\n\
-          <Order>$((N6 + 2))</Order>\n\
-          <CommandLine>\\\\\\\\host.lan\\\\Data\\\\start_waa_server.bat</CommandLine>\n\
-          <Description>Start WAA server immediately</Description>\n\
-        </SynchronousCommand>\n\
-      </FirstLogonCommands>|" /run/assets/win11x64.xml; \
-    fi
+# Inject port forwarder into samba.sh (runs after network is up)
+RUN sed -i '/^return 0$/i nohup /port_forward.sh >/dev/null 2>\&1 \&' /run/samba.sh && \
+    echo "Added port forwarder to samba.sh"
 
 # -----------------------------------------------------------------------------
-# Install Python and dependencies directly
-# dockurr/windows base is Debian trixie which has Python 3.12
+# Install Python and dependencies for benchmark client (runs on Linux host)
 # -----------------------------------------------------------------------------
 
-# Install Python 3 and system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 \
-    python3-venv \
-    python3-pip \
-    tesseract-ocr \
-    libgl1 \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    ffmpeg \
+    python3 python3-pip python3-venv \
+    tesseract-ocr libgl1 libglib2.0-0 ffmpeg netcat-openbsd \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3 /usr/bin/python
 
-# Install Python dependencies for WAA client
-# Using --break-system-packages since we're in a container
-# Full dependency list from: github.com/microsoft/WindowsAgentArena/blob/main/src/win-arena-container/client/requirements.txt
+# Install minimal Python deps for client (full deps installed in Windows)
 RUN pip3 install --no-cache-dir --break-system-packages \
-    torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
-    pip3 install --no-cache-dir --break-system-packages \
-    gymnasium farama-notifications cloudpickle packaging typer rich tqdm colorama \
-    openai anthropic google-generativeai groq tiktoken \
-    pyyaml jsonschema tenacity httpx backoff toml func-timeout wrapt-timeout-decorator \
-    psutil pyperclip screeninfo mss pyautogui fabric \
-    easyocr pillow pytesseract opencv-python-headless scikit-image ImageHash \
-    requests flask beautifulsoup4 lxml cssselect xmltodict playwright requests-toolbelt \
-    pydrive openpyxl python-docx python-pptx odfpy pypdf PyPDF2 pdfplumber pymupdf borb \
-    xlrd xlwt xlsxwriter mammoth pdf2image \
-    google-api-python-client google-auth-httplib2 google-auth-oauthlib gdown \
-    numpy pandas scipy formulas rapidfuzz anytree addict \
-    transformers accelerate "timm>=0.9.0,<1.0.0" ultralytics supervision pycocotools einops \
-    mutagen pyacoustid chardet librosa fastdtw \
-    py7zr LnkParse3 \
-    matplotlib wandb yapf
+    requests flask pyyaml pillow
 
-# Install Playwright browsers
-RUN playwright install chromium
+# -----------------------------------------------------------------------------
+# Add API agent support (Claude / GPT)
+# -----------------------------------------------------------------------------
+
+COPY openadapt_ml/benchmarks/waa_deploy/api_agent.py /client/mm_agents/api_agent.py
 
 # -----------------------------------------------------------------------------
 # Environment configuration
 # -----------------------------------------------------------------------------
 
-ENV YRES="900"
-ENV XRES="1440"
+# VERSION=11e downloads Windows 11 Enterprise Evaluation
+# This has a built-in GVLK key - NO LICENSE KEY REQUIRED
+ENV VERSION="11e"
+
+# VM resources
 ENV RAM_SIZE="8G"
 ENV CPU_CORES="4"
 ENV DISK_SIZE="30G"
-ENV VERSION="11e"
+
+# Display resolution
+ENV XRES="1440"
+ENV YRES="900"
+
+# QEMU arguments (expose QMP for monitoring)
 ENV ARGUMENTS="-qmp tcp:0.0.0.0:7200,server,nowait"
 
 # Expose ports
+# 8006: noVNC web interface
+# 5000: WAA Flask server (forwarded to Windows VM)
+# 7200: QEMU QMP (monitoring)
+# 3389: RDP (if needed)
 EXPOSE 8006 5000 7200 3389
 
-# Default entrypoint - copy OEM files then run entry.sh
-# Use: /entry.sh --start-client true --model gpt-4o
-# Or:  /entry.sh --start-client false (just start Windows, no benchmark)
-ENTRYPOINT ["/bin/bash", "-c"]
-CMD ["/copy-oem.sh /entry.sh --start-client false"]
+# -----------------------------------------------------------------------------
+# Entrypoint
+# -----------------------------------------------------------------------------
+
+# Use dockurr/windows default entry which handles:
+# - Windows ISO download (automatic with VERSION=11e)
+# - QEMU/KVM setup
+# - VNC server on 8006
+# - Samba share at /tmp/smb/ (\\host.lan\Data)
+ENTRYPOINT ["/usr/bin/tini", "-s", "/run/entry.sh"]
