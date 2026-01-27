@@ -59,6 +59,16 @@ demos/
 # Pytest cache
 .pytest_cache/
 
+# Coverage files
+.coverage
+.coverage.*
+htmlcov/
+
+# Analysis/debug artifacts
+cli_analysis.json
+dead_code_candidates.json
+segmentation_output/
+
 # Internal documentation (not for public repo)
 docs/internal/
 docs/private/

@@ -91,8 +91,7 @@ RUN find /client -name "*.py" -exec sed -i 's|20.20.20.21|172.30.0.2|g' {} \; &&
 COPY api_agent.py /client/mm_agents/api_agent.py
 
 # Note: API agent patching (api-claude, api-openai) skipped for now
-# The navi agent works out of the box - API agents can be added later via Python patch
-# after the apt-get install python3 step runs
+# The navi agent works out of the box - API agents can be added later
 
 # -----------------------------------------------------------------------------
 # Fix Windows setup for automation
@@ -157,15 +156,33 @@ RUN if grep -q "</FirstLogonCommands>" /run/assets/win11x64.xml; then \
     fi
 
 # -----------------------------------------------------------------------------
-# Install Python and dependencies directly
-# dockurr/windows base is Debian trixie which has Python 3.12
+# Copy Python 3.9 and all packages from vanilla image
 # -----------------------------------------------------------------------------
+# IMPORTANT: Do NOT install Python from apt or pip install packages ourselves.
+# The vanilla image has Python 3.9.20 with transformers 4.46.2 which is compatible
+# with GroundingDINO. Installing our own Python (3.13) with latest transformers (5.0)
+# breaks the navi agent with: AttributeError: 'BertModel' has no attribute 'get_head_mask'
 
-# Install Python 3 and system dependencies
+# Copy Python 3.9 installation from vanilla (binaries, libraries, packages)
+COPY --from=windowsarena/winarena:latest /usr/local/bin/python* /usr/local/bin/
+COPY --from=windowsarena/winarena:latest /usr/local/bin/pip* /usr/local/bin/
+COPY --from=windowsarena/winarena:latest /usr/local/lib/python3.9 /usr/local/lib/python3.9
+COPY --from=windowsarena/winarena:latest /usr/local/lib/libpython3.9.so* /usr/local/lib/
+COPY --from=windowsarena/winarena:latest /usr/local/include/python3.9 /usr/local/include/python3.9
+
+# Ensure the shared library is found
+RUN ldconfig
+
+# Create symlinks for python/pip commands
+RUN ln -sf /usr/local/bin/python3.9 /usr/local/bin/python && \
+    ln -sf /usr/local/bin/python3.9 /usr/bin/python && \
+    ln -sf /usr/local/bin/python3.9 /usr/bin/python3 && \
+    ln -sf /usr/local/bin/pip3.9 /usr/local/bin/pip && \
+    ln -sf /usr/local/bin/pip3.9 /usr/bin/pip && \
+    ln -sf /usr/local/bin/pip3.9 /usr/bin/pip3
+
+# Install only system dependencies that Python packages need (not Python itself)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 \
-    python3-venv \
-    python3-pip \
     tesseract-ocr \
     libgl1 \
     libglib2.0-0 \
@@ -173,32 +190,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     libxrender-dev \
     ffmpeg \
-    && rm -rf /var/lib/apt/lists/* \
-    && ln -sf /usr/bin/python3 /usr/bin/python
+    && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies for WAA client
-# Using --break-system-packages since we're in a container
-# Full dependency list from: github.com/microsoft/WindowsAgentArena/blob/main/src/win-arena-container/client/requirements.txt
-RUN pip3 install --no-cache-dir --break-system-packages \
-    torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
-    pip3 install --no-cache-dir --break-system-packages \
-    gymnasium farama-notifications cloudpickle packaging typer rich tqdm colorama \
-    openai anthropic google-generativeai groq tiktoken \
-    pyyaml jsonschema tenacity httpx backoff toml func-timeout wrapt-timeout-decorator \
-    psutil pyperclip screeninfo mss pyautogui fabric \
-    easyocr pillow pytesseract opencv-python-headless scikit-image ImageHash \
-    requests flask beautifulsoup4 lxml cssselect xmltodict playwright requests-toolbelt \
-    pydrive openpyxl python-docx python-pptx odfpy pypdf PyPDF2 pdfplumber pymupdf borb \
-    xlrd xlwt xlsxwriter mammoth pdf2image \
-    google-api-python-client google-auth-httplib2 google-auth-oauthlib gdown \
-    numpy pandas scipy formulas rapidfuzz anytree addict \
-    transformers accelerate "timm>=0.9.0,<1.0.0" ultralytics supervision pycocotools einops \
-    mutagen pyacoustid chardet librosa fastdtw \
-    py7zr LnkParse3 \
-    matplotlib wandb yapf
-
-# Install Playwright browsers
-RUN playwright install chromium
+# Note: Playwright browsers not copied - not needed for navi agent (uses GroundingDINO)
+# If needed later, install via: python -m playwright install chromium
 
 # -----------------------------------------------------------------------------
 # Environment configuration
