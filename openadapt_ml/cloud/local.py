@@ -1078,11 +1078,17 @@ def cmd_serve(args: argparse.Namespace) -> int:
                         status["session_id"] = session.get("session_id")
                         status["session_is_active"] = session.get("is_active", False)
                         # Include accumulated time from previous sessions for hybrid display
-                        status["accumulated_seconds"] = session.get("accumulated_seconds", 0.0)
+                        status["accumulated_seconds"] = session.get(
+                            "accumulated_seconds", 0.0
+                        )
                         # Calculate current session time (total - accumulated)
-                        current_session_seconds = max(0, status["elapsed_seconds"] - status["accumulated_seconds"])
+                        current_session_seconds = max(
+                            0, status["elapsed_seconds"] - status["accumulated_seconds"]
+                        )
                         status["current_session_seconds"] = current_session_seconds
-                        status["current_session_cost_usd"] = (current_session_seconds / 3600) * session.get("hourly_rate_usd", 0.422)
+                        status["current_session_cost_usd"] = (
+                            current_session_seconds / 3600
+                        ) * session.get("hourly_rate_usd", 0.422)
 
                     try:
                         tunnel_mgr = get_tunnel_manager()
@@ -3212,12 +3218,18 @@ def cmd_serve(args: argparse.Namespace) -> int:
                     status["session_id"] = session.get("session_id")
                     status["session_is_active"] = session.get("is_active", False)
                     # Include accumulated time from previous sessions for hybrid display
-                    status["accumulated_seconds"] = session.get("accumulated_seconds", 0.0)
+                    status["accumulated_seconds"] = session.get(
+                        "accumulated_seconds", 0.0
+                    )
                     # Calculate current session time (total - accumulated)
-                    current_session_seconds = max(0, status["elapsed_seconds"] - status["accumulated_seconds"])
+                    current_session_seconds = max(
+                        0, status["elapsed_seconds"] - status["accumulated_seconds"]
+                    )
                     status["current_session_seconds"] = current_session_seconds
                     hourly_rate = session.get("hourly_rate_usd", 0.422)
-                    status["current_session_cost_usd"] = (current_session_seconds / 3600) * hourly_rate
+                    status["current_session_cost_usd"] = (
+                        current_session_seconds / 3600
+                    ) * hourly_rate
 
                 try:
                     tunnel_mgr = get_tunnel_manager()

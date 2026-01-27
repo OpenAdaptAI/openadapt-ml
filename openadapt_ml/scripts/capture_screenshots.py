@@ -35,9 +35,7 @@ Output:
 from __future__ import annotations
 
 import argparse
-import base64
 import datetime
-import os
 import re
 import subprocess
 import sys
@@ -108,7 +106,6 @@ def capture_web_page_selenium(url: str, output_path: Path) -> bool:
     try:
         from selenium import webdriver
         from selenium.webdriver.chrome.options import Options
-        from selenium.webdriver.chrome.service import Service
 
         options = Options()
         options.add_argument("--headless")
@@ -358,7 +355,9 @@ def capture_vm_screenshot_from_vm(output_path: Path) -> bool:
     )
 
     if result.returncode != 0:
-        print(f"  VM screenshot failed: {result.stderr[:200] if result.stderr else 'Unknown error'}")
+        print(
+            f"  VM screenshot failed: {result.stderr[:200] if result.stderr else 'Unknown error'}"
+        )
         return False
 
     # The CLI saves to training_output/current/vm_screenshot.png
@@ -499,7 +498,7 @@ Examples:
                 print(f"  OK: {output_path.name} ({size_kb:.1f} KB)")
                 results[target] = str(output_path)
             else:
-                print(f"  SKIP: Not available or capture failed")
+                print("  SKIP: Not available or capture failed")
                 results[target] = None
         except Exception as e:
             print(f"  ERROR: {e}")

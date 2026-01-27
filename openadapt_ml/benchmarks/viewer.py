@@ -38,24 +38,23 @@ Directory structure expected:
 
 from __future__ import annotations
 
-import warnings
-
-warnings.warn(
-    "openadapt_ml.benchmarks.viewer is deprecated. "
-    "Use openadapt_viewer instead: from openadapt_viewer import generate_benchmark_viewer",
-    DeprecationWarning,
-    stacklevel=2,
-)
-
 import base64
 import json
 import logging
+import warnings
 from pathlib import Path
 from typing import Any
 
 from openadapt_ml.training.shared_ui import (
     get_shared_header_css as _get_shared_header_css,
     generate_shared_header_html as _generate_shared_header_html,
+)
+
+warnings.warn(
+    "openadapt_ml.benchmarks.viewer is deprecated. "
+    "Use openadapt_viewer instead: from openadapt_viewer import generate_benchmark_viewer",
+    DeprecationWarning,
+    stacklevel=2,
 )
 
 logger = logging.getLogger(__name__)
