@@ -160,7 +160,9 @@ class AzureOpsTracker:
             log_tail=[],  # Clear stale logs
             started_at=self._start_time.isoformat(),
             elapsed_seconds=0.0,
-            eta_seconds=TYPICAL_DURATIONS.get(operation),  # Use typical duration as initial ETA
+            eta_seconds=TYPICAL_DURATIONS.get(
+                operation
+            ),  # Use typical duration as initial ETA
             cost_usd=0.0,
             hourly_rate_usd=self.hourly_rate,
             vm_ip=vm_ip,
@@ -284,7 +286,9 @@ class AzureOpsTracker:
             downloaded_unit = download_match.group(2)
             total = float(download_match.group(3))
             total_unit = download_match.group(4)
-            result["download_bytes"] = int(downloaded * size_multipliers[downloaded_unit])
+            result["download_bytes"] = int(
+                downloaded * size_multipliers[downloaded_unit]
+            )
             result["download_total_bytes"] = int(total * size_multipliers[total_unit])
 
         # Extract phase from buildx output
@@ -384,7 +388,9 @@ class AzureOpsTracker:
 
             # ETA from download speed
             if self._status.download_bytes > 0 and self._status.elapsed_seconds > 1:
-                bytes_per_sec = self._status.download_bytes / self._status.elapsed_seconds
+                bytes_per_sec = (
+                    self._status.download_bytes / self._status.elapsed_seconds
+                )
                 remaining_bytes = (
                     self._status.download_total_bytes - self._status.download_bytes
                 )
@@ -402,9 +408,15 @@ class AzureOpsTracker:
                 remaining_steps = self._status.total_steps - self._status.step
                 step_eta = time_per_step * remaining_steps
                 # Use step ETA if we don't have download ETA or if step progress > download
-                if eta_seconds is None or step_pct > (
-                    self._status.download_bytes / max(self._status.download_total_bytes, 1)
-                ) * 100:
+                if (
+                    eta_seconds is None
+                    or step_pct
+                    > (
+                        self._status.download_bytes
+                        / max(self._status.download_total_bytes, 1)
+                    )
+                    * 100
+                ):
                     eta_seconds = step_eta
 
         # 3. Fallback: Use typical duration if no progress info
