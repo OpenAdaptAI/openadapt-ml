@@ -1014,7 +1014,9 @@ def detect_vm_activity(
                 return VMActivity(
                     is_active=is_running,
                     activity_type="benchmark_running" if is_running else "idle",
-                    description="WAA benchmark running" if is_running else "WAA ready - idle",
+                    description="WAA benchmark running"
+                    if is_running
+                    else "WAA ready - idle",
                     benchmark_progress=probe_data,
                 )
             except json.JSONDecodeError:
