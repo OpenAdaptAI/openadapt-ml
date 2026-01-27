@@ -1042,21 +1042,8 @@ Failed to pull Docker image openadaptacr.azurecr.io/winarena:latest
    - Step 11: Grant AcrPull role to workspace managed identity
    - Step 12: Sync workspace keys
 
-**For existing installations** (if you already ran setup_azure.py):
-```bash
-# Run the fix script to update your existing workspace
-python scripts/fix_acr_auth.py
-
-# Or manually:
-PRINCIPAL_ID=$(az ml workspace show -n openadapt-ml -g openadapt-agents --query identity.principal_id -o tsv)
-ACR_ID="/subscriptions/78add6c6-c92a-4a53-b751-eb644ac77e59/resourceGroups/openadapt-agents/providers/Microsoft.ContainerRegistry/registries/openadaptacr"
-az role assignment create --assignee $PRINCIPAL_ID --role AcrPull --scope $ACR_ID
-az ml workspace sync-keys -n openadapt-ml -g openadapt-agents
-```
-
 **Related files**:
-- `scripts/setup_azure.py` - Azure setup automation (updated with fix)
-- `scripts/fix_acr_auth.py` - Manual fix for existing installations
+- `scripts/setup_azure.py` - Azure setup automation (includes ACR auth)
 - `openadapt_ml/benchmarks/azure.py` - Azure orchestration
 - `.env` - AZURE_DOCKER_IMAGE setting
 
