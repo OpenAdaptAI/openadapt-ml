@@ -13,21 +13,20 @@ transcript/audio sync, and model prediction comparison.
 
 from __future__ import annotations
 
+import json
 import warnings
+from pathlib import Path
+
+from openadapt_ml.training.shared_ui import (
+    get_shared_header_css as _get_shared_header_css,
+    generate_shared_header_html as _generate_shared_header_html,
+)
 
 warnings.warn(
     "openadapt_ml.training.viewer is deprecated. "
     "Use openadapt_viewer instead: from openadapt_viewer import generate_unified_viewer",
     DeprecationWarning,
     stacklevel=2,
-)
-
-import json
-from pathlib import Path
-
-from openadapt_ml.training.shared_ui import (
-    get_shared_header_css as _get_shared_header_css,
-    generate_shared_header_html as _generate_shared_header_html,
 )
 
 
