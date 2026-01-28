@@ -477,7 +477,82 @@ The OpenAdapt ecosystem can achieve similar capabilities through incremental imp
 
 ---
 
-## 10. Appendix: Agent Loop Types in Cua
+## 10. Market Positioning and Strategic Differentiation
+
+### 10.1 The Success Rate Gap
+
+| Agent | Benchmark | Success Rate | Gap to Human |
+|-------|-----------|--------------|--------------|
+| OpenAI CUA | OSWorld | 38.1% | ~36 pts below human (74.5%) |
+| Microsoft Navi | WAA | 19.5% | ~55 pts below human (74.5%) |
+
+**Key insight**: The problem is far from solved. Both approaches have runway—the technology isn't mature enough for either to dominate yet.
+
+The 38.1% vs 19.5% gap is significant:
+- OSWorld is macOS/Linux focused
+- WAA is Windows focused
+- **Windows automation appears harder** (more legacy complexity, more app diversity)
+
+This validates OpenAdapt's focus: Windows enterprise workflows are the harder problem.
+
+### 10.2 Market Positioning
+
+| Aspect | Cua | OpenAdapt |
+|--------|-----|-----------|
+| **Primary TAM** | AI Agents / Developer Tools (~$500M-1B, 40%+ CAGR) | Enterprise RPA + Legacy Automation (~$8-10B, 20% CAGR) |
+| **Buyer** | ML engineers, AI researchers | Ops, IT, compliance, support |
+| **Value Prop** | "Build computer-use agents faster" | "Learn automation from how you already work" |
+
+### 10.3 Why These Markets Don't Fully Overlap
+
+- Cua assumes synthetic, controlled environments
+- OpenAdapt captures real workflows from production systems
+- Enterprise compliance requirements (HIPAA, SOX) favor retrospective capture
+
+### 10.4 Where Cua's Sandbox Approach Breaks Down
+
+Cua's sandbox-first design assumes you can:
+- Spin up a clean VM with the target app
+- Control the environment end-to-end
+- Reproduce the workflow deterministically
+
+**This fails for:**
+
+| Scenario | Why Sandboxes Fail | OpenAdapt Alternative |
+|----------|-------------------|----------------------|
+| **Citrix/RDP apps** | No local install possible | Capture remote session natively |
+| **Licensed enterprise software** | SAP, Epic, Oracle—can't sandbox without licensing | Record from licensed desktop |
+| **Policy-controlled desktops** | Enterprise IT won't allow arbitrary VMs | Capture from existing desktop |
+| **Compliance-restricted environments** | Healthcare, finance—can't replicate production | Retrospective recording allowed |
+| **Multi-app workflows** | Spanning 5+ apps that can't all be sandboxed together | Single recording captures all |
+
+**OpenAdapt's retrospective recording doesn't have these constraints.**
+
+### 10.5 Shell Applications: Where Cua and OpenAdapt Could Converge
+
+Shell apps (simulated Spotify, Slack clones) serve different purposes:
+
+| Use Case | Cua's Approach | OpenAdapt's Approach |
+|----------|---------------|---------------------|
+| Unit tests | Primary use case | Could adopt for CI |
+| Training data | Synthetic generation | Not applicable (need real data) |
+| Fast iteration | Core workflow | Could speed up agent logic dev |
+| Production eval | Not representative | Azure VMs remain primary |
+
+**Recommendation**: Adopt shell apps for regression testing agent logic, but never train on them. Real behavioral data from enterprise workflows remains the moat.
+
+### 10.6 Bottom Line
+
+The 19.5% WAA success rate validates OpenAdapt's approach:
+- Windows enterprise automation is hard
+- Current agents fail often
+- Learning from real human demonstrations is one path to improvement
+
+Cua's strength (macOS VMs at 97% native speed) doesn't help with SAP, Citrix, or legacy Win32 apps—exactly where OpenAdapt focuses.
+
+---
+
+## 12. Appendix: Agent Loop Types in Cua
 
 Cua provides multiple agent loop implementations optimized for different use cases:
 
@@ -499,7 +574,7 @@ model = "huggingface-local/GTA1-7B+openai/gpt-4o"
 
 ---
 
-## 11. Appendix: OpenAdapt-ML Docker Setup Details
+## 13. Appendix: OpenAdapt-ML Docker Setup Details
 
 Our current implementation uses a custom Dockerfile that:
 
