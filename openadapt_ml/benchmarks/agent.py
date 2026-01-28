@@ -1,8 +1,15 @@
-"""Agent interface for benchmark evaluation.
+"""ML-specific agents for benchmark evaluation.
 
-This module provides the BenchmarkAgent interface that agents must implement
-to be evaluated on benchmarks, plus adapters to wrap existing openadapt-ml
-components.
+This module provides agents that wrap openadapt-ml components (VLM adapters,
+policies, baselines) for benchmark evaluation.
+
+For standalone agents without ML dependencies, use openadapt_evals:
+    from openadapt_evals import ApiAgent, ScriptedAgent, RandomAgent
+
+ML-specific agents in this module:
+    - PolicyAgent: Wraps openadapt_ml.runtime.policy.AgentPolicy
+    - APIBenchmarkAgent: Uses openadapt_ml.models.api_adapter.ApiVLMAdapter
+    - UnifiedBaselineAgent: Uses openadapt_ml.baselines adapters
 
 Example:
     from openadapt_ml.benchmarks import PolicyAgent
@@ -12,7 +19,7 @@ Example:
     agent = PolicyAgent(policy)
     results = evaluate_agent_on_benchmark(agent, benchmark_adapter)
 
-    # API-backed agents (GPT-5.1, Claude)
+    # API-backed agents (GPT-5.1, Claude) using openadapt-ml adapters
     from openadapt_ml.benchmarks import APIBenchmarkAgent
 
     agent = APIBenchmarkAgent(provider="anthropic")  # Uses Claude
@@ -23,11 +30,12 @@ Example:
 from __future__ import annotations
 
 import re
-from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
-from openadapt_ml.benchmarks.base import (
+# Import base classes from openadapt-evals (canonical location)
+from openadapt_evals import (
     BenchmarkAction,
+    BenchmarkAgent,
     BenchmarkObservation,
     BenchmarkTask,
 )
@@ -36,42 +44,6 @@ if TYPE_CHECKING:
     from openadapt_ml.models.api_adapter import ApiVLMAdapter
     from openadapt_ml.runtime.policy import AgentPolicy
     from openadapt_ml.schema import Action
-
-
-class BenchmarkAgent(ABC):
-    """Abstract interface for agents evaluated on benchmarks.
-
-    Agents must implement the `act` method to receive observations
-    and return actions. The agent can maintain internal state across
-    steps within an episode.
-    """
-
-    @abstractmethod
-    def act(
-        self,
-        observation: BenchmarkObservation,
-        task: BenchmarkTask,
-        history: list[tuple[BenchmarkObservation, BenchmarkAction]] | None = None,
-    ) -> BenchmarkAction:
-        """Given observation and task, return next action.
-
-        Args:
-            observation: Current observation from the environment.
-            task: Task being performed.
-            history: Optional list of previous (observation, action) pairs.
-
-        Returns:
-            Action to execute.
-        """
-        pass
-
-    def reset(self) -> None:
-        """Reset agent state between episodes.
-
-        Called before starting a new task. Override to clear any
-        internal state.
-        """
-        pass
 
 
 class PolicyAgent(BenchmarkAgent):
@@ -127,61 +99,37 @@ class PolicyAgent(BenchmarkAgent):
         task: BenchmarkTask,
         history: list[tuple[BenchmarkObservation, BenchmarkAction]] | None,
     ) -> dict:
-        """Build SFT-style sample from benchmark observation.
-
-        Args:
-            observation: Current observation.
-            task: Current task.
-            history: Action history.
-
-        Returns:
-            Sample dict with 'images' and 'messages'.
-        """
-        # Build user message content
+        """Build SFT-style sample from benchmark observation."""
         content_parts = [f"Goal: {task.instruction}"]
 
-        # Add accessibility tree if available and enabled
         if self.use_accessibility_tree and observation.accessibility_tree:
             tree_str = self._format_accessibility_tree(observation.accessibility_tree)
             content_parts.append(f"UI Elements:\n{tree_str}")
 
-        # Add context
         if observation.url:
             content_parts.append(f"URL: {observation.url}")
         if observation.window_title:
             content_parts.append(f"Window: {observation.window_title}")
 
-        # Add history if enabled
         if self.use_history and history:
             history_str = self._format_history(history)
             content_parts.append(f"Previous actions:\n{history_str}")
 
         content_parts.append("What action should be taken next?")
 
-        # Build sample
         sample = {
             "messages": [
                 {"role": "user", "content": "\n\n".join(content_parts)},
             ],
         }
 
-        # Add image if available
         if observation.screenshot_path:
             sample["images"] = [observation.screenshot_path]
 
         return sample
 
     def _format_accessibility_tree(self, tree: dict, indent: int = 0) -> str:
-        """Format accessibility tree for prompt.
-
-        Args:
-            tree: Accessibility tree dict.
-            indent: Current indentation level.
-
-        Returns:
-            Formatted string representation.
-        """
-        # Simple formatting - can be overridden for platform-specific formatting
+        """Format accessibility tree for prompt."""
         lines = []
         prefix = "  " * indent
 
@@ -202,29 +150,15 @@ class PolicyAgent(BenchmarkAgent):
     def _format_history(
         self, history: list[tuple[BenchmarkObservation, BenchmarkAction]]
     ) -> str:
-        """Format action history for prompt.
-
-        Args:
-            history: List of (observation, action) pairs.
-
-        Returns:
-            Formatted string.
-        """
+        """Format action history for prompt."""
         lines = []
-        for i, (obs, action) in enumerate(history[-5:], 1):  # Last 5 actions
+        for i, (obs, action) in enumerate(history[-5:], 1):
             action_str = self._action_to_string(action)
             lines.append(f"{i}. {action_str}")
         return "\n".join(lines)
 
     def _action_to_string(self, action: BenchmarkAction) -> str:
-        """Convert BenchmarkAction to string representation.
-
-        Args:
-            action: Action to convert.
-
-        Returns:
-            String representation.
-        """
+        """Convert BenchmarkAction to string representation."""
         if action.type == "click":
             if action.target_name:
                 return f"CLICK({action.target_name})"
@@ -249,31 +183,19 @@ class PolicyAgent(BenchmarkAgent):
     def _to_benchmark_action(
         self, action: Action, thought: str | None
     ) -> BenchmarkAction:
-        """Convert openadapt-ml Action to BenchmarkAction.
-
-        Args:
-            action: Action from policy.
-            thought: Optional thought/reasoning.
-
-        Returns:
-            BenchmarkAction.
-        """
-        # Extract normalized coordinates
+        """Convert openadapt-ml Action to BenchmarkAction."""
         x, y = None, None
         if action.normalized_coordinates is not None:
             x, y = action.normalized_coordinates
 
-        # Extract end coordinates for drag
         end_x, end_y = None, None
         if action.normalized_end is not None:
             end_x, end_y = action.normalized_end
 
-        # Extract action type value (enum -> string)
         action_type = (
             action.type.value if hasattr(action.type, "value") else action.type
         )
 
-        # Extract element info if available
         target_node_id = None
         target_role = None
         target_name = None
@@ -311,192 +233,28 @@ class PolicyAgent(BenchmarkAgent):
 
     def reset(self) -> None:
         """Reset agent state."""
-        # PolicyAgent is stateless, nothing to reset
         pass
-
-
-class ScriptedAgent(BenchmarkAgent):
-    """Agent that follows a predefined script of actions.
-
-    Useful for testing benchmark adapters or replaying trajectories.
-
-    Args:
-        actions: List of actions to execute in order.
-    """
-
-    def __init__(self, actions: list[BenchmarkAction]):
-        self.actions = actions
-        self._step = 0
-
-    def act(
-        self,
-        observation: BenchmarkObservation,
-        task: BenchmarkTask,
-        history: list[tuple[BenchmarkObservation, BenchmarkAction]] | None = None,
-    ) -> BenchmarkAction:
-        """Return the next scripted action.
-
-        Args:
-            observation: Ignored.
-            task: Ignored.
-            history: Ignored.
-
-        Returns:
-            Next action from script, or DONE if script exhausted.
-        """
-        if self._step < len(self.actions):
-            action = self.actions[self._step]
-            self._step += 1
-            return action
-        return BenchmarkAction(type="done")
-
-    def reset(self) -> None:
-        """Reset step counter."""
-        self._step = 0
-
-
-class RandomAgent(BenchmarkAgent):
-    """Agent that takes random actions.
-
-    Useful for baseline comparisons.
-
-    Args:
-        action_types: List of action types to randomly select from.
-        seed: Random seed for reproducibility.
-    """
-
-    def __init__(
-        self,
-        action_types: list[str] | None = None,
-        seed: int | None = None,
-    ):
-        import random
-
-        self.action_types = action_types or ["click", "type", "scroll", "done"]
-        self.rng = random.Random(seed)
-
-    def act(
-        self,
-        observation: BenchmarkObservation,
-        task: BenchmarkTask,
-        history: list[tuple[BenchmarkObservation, BenchmarkAction]] | None = None,
-    ) -> BenchmarkAction:
-        """Return a random action.
-
-        Args:
-            observation: Used to get viewport bounds.
-            task: Ignored.
-            history: Used to decide when to stop.
-
-        Returns:
-            Random action.
-        """
-        # Stop after many actions
-        if history and len(history) > 20:
-            return BenchmarkAction(type="done")
-
-        action_type = self.rng.choice(self.action_types)
-
-        if action_type == "click":
-            return BenchmarkAction(
-                type="click",
-                x=self.rng.random(),
-                y=self.rng.random(),
-            )
-        elif action_type == "type":
-            return BenchmarkAction(
-                type="type",
-                text="test",
-            )
-        elif action_type == "scroll":
-            return BenchmarkAction(
-                type="scroll",
-                scroll_direction=self.rng.choice(["up", "down"]),
-            )
-        else:
-            return BenchmarkAction(type="done")
-
-    def reset(self) -> None:
-        """Nothing to reset."""
-        pass
-
-
-class SmartMockAgent(BenchmarkAgent):
-    """Agent designed to pass WAAMockAdapter evaluation.
-
-    Performs a fixed sequence of actions that satisfy the mock adapter's
-    success criteria. Use for validating the benchmark pipeline locally.
-
-    The mock adapter evaluates success based on:
-    - Clicking Submit (ID 4) - primary success path
-    - Typing something AND clicking OK (ID 1) - form submission path
-    - Calling DONE after at least 2 actions - reasonable completion
-
-    This agent clicks Submit (ID 4) which is the simplest success path.
-    """
-
-    def __init__(self):
-        """Initialize the agent."""
-        self._step = 0
-        # Simple action sequence: click Submit button (ID 4), then done
-        self._actions = [
-            BenchmarkAction(type="click", target_node_id="4"),  # Click Submit
-            BenchmarkAction(type="done"),
-        ]
-
-    def act(
-        self,
-        observation: BenchmarkObservation,
-        task: BenchmarkTask,
-        history: list[tuple[BenchmarkObservation, BenchmarkAction]] | None = None,
-    ) -> BenchmarkAction:
-        """Return the next scripted action.
-
-        Args:
-            observation: Ignored.
-            task: Ignored.
-            history: Ignored.
-
-        Returns:
-            Next action from script, or DONE if script exhausted.
-        """
-        if self._step < len(self._actions):
-            action = self._actions[self._step]
-            self._step += 1
-            return action
-        return BenchmarkAction(type="done")
-
-    def reset(self) -> None:
-        """Reset step counter."""
-        self._step = 0
 
 
 class APIBenchmarkAgent(BenchmarkAgent):
-    """Agent that uses hosted VLM APIs (Claude, GPT-5.1) for benchmark evaluation.
+    """Agent that uses hosted VLM APIs via openadapt-ml ApiVLMAdapter.
 
     This agent wraps ApiVLMAdapter to provide Claude or GPT-5.1 baselines
     for benchmark evaluation. It converts BenchmarkObservation to the
     API format and parses VLM responses into BenchmarkActions.
 
+    Note: For standalone API evaluation without openadapt-ml, use
+    openadapt_evals.ApiAgent instead (has P0 demo persistence fix).
+
     Args:
         provider: API provider - "anthropic" (Claude) or "openai" (GPT-5.1).
         api_key: Optional API key override. If not provided, uses env vars.
-        model: Optional model name override. Defaults to provider's best VLM.
+        model: Optional model name override.
         max_tokens: Maximum tokens for VLM response.
         use_accessibility_tree: Whether to include accessibility tree in prompt.
         use_history: Whether to include action history in prompt.
-
-    Example:
-        # Claude baseline
-        agent = APIBenchmarkAgent(provider="anthropic")
-        results = evaluate_agent_on_benchmark(agent, waa_adapter)
-
-        # GPT-5.1 baseline
-        agent = APIBenchmarkAgent(provider="openai")
-        results = evaluate_agent_on_benchmark(agent, waa_adapter)
     """
 
-    # System prompt for GUI automation
     SYSTEM_PROMPT = """You are a GUI automation agent. Given a screenshot and task instruction, determine the next action to take.
 
 Available actions:
@@ -506,7 +264,7 @@ Available actions:
 - KEY(key) - Press a key (e.g., Enter, Tab, Escape)
 - KEY(modifier+key) - Press key combination (e.g., Ctrl+c, Alt+Tab)
 - SCROLL(direction) - Scroll up or down
-- DRAG(x1, y1, x2, y2) - Drag from (x1,y1) to (x2,y2) (pixel or normalized)
+- DRAG(x1, y1, x2, y2) - Drag from (x1,y1) to (x2,y2)
 - DONE() - Task is complete
 - ANSWER("response") - For QA tasks, provide the answer
 
@@ -555,32 +313,15 @@ Then output the action on a new line starting with "ACTION:"
         task: BenchmarkTask,
         history: list[tuple[BenchmarkObservation, BenchmarkAction]] | None = None,
     ) -> BenchmarkAction:
-        """Use VLM API to determine next action.
-
-        Args:
-            observation: Current observation with screenshot.
-            task: Task being performed.
-            history: Previous observations and actions.
-
-        Returns:
-            BenchmarkAction parsed from VLM response.
-        """
+        """Use VLM API to determine next action."""
         adapter = self._get_adapter()
-
-        # Build the sample for the API
         sample = self._build_sample(observation, task, history)
 
-        # Call the VLM API
         try:
             response = adapter.generate(sample, max_new_tokens=self.max_tokens)
         except Exception as e:
-            # On API error, return done to avoid infinite loops
-            return BenchmarkAction(
-                type="done",
-                raw_action={"error": str(e)},
-            )
+            return BenchmarkAction(type="done", raw_action={"error": str(e)})
 
-        # Parse the response into a BenchmarkAction
         return self._parse_response(response, observation)
 
     def _build_sample(
@@ -589,41 +330,26 @@ Then output the action on a new line starting with "ACTION:"
         task: BenchmarkTask,
         history: list[tuple[BenchmarkObservation, BenchmarkAction]] | None,
     ) -> dict[str, Any]:
-        """Build API sample from benchmark observation.
-
-        Args:
-            observation: Current observation.
-            task: Current task.
-            history: Action history.
-
-        Returns:
-            Sample dict with 'images' and 'messages'.
-        """
-        # Build user message content
+        """Build API sample from benchmark observation."""
         content_parts = [f"GOAL: {task.instruction}"]
 
-        # Add context
         if observation.url:
             content_parts.append(f"URL: {observation.url}")
         if observation.window_title:
             content_parts.append(f"Window: {observation.window_title}")
 
-        # Add accessibility tree if available and enabled
         if self.use_accessibility_tree and observation.accessibility_tree:
             tree_str = self._format_accessibility_tree(observation.accessibility_tree)
-            # Truncate if too long
             if len(tree_str) > 4000:
                 tree_str = tree_str[:4000] + "\n... (truncated)"
             content_parts.append(f"UI Elements:\n{tree_str}")
 
-        # Add history if enabled
         if self.use_history and history:
             history_str = self._format_history(history)
             content_parts.append(f"Previous actions:\n{history_str}")
 
         content_parts.append("\nWhat is the next action?")
 
-        # Build sample
         sample: dict[str, Any] = {
             "messages": [
                 {"role": "system", "content": self.SYSTEM_PROMPT},
@@ -631,22 +357,13 @@ Then output the action on a new line starting with "ACTION:"
             ],
         }
 
-        # Add image if available
         if observation.screenshot_path:
             sample["images"] = [observation.screenshot_path]
 
         return sample
 
     def _format_accessibility_tree(self, tree: dict, indent: int = 0) -> str:
-        """Format accessibility tree for prompt.
-
-        Args:
-            tree: Accessibility tree dict.
-            indent: Current indentation level.
-
-        Returns:
-            Formatted string representation.
-        """
+        """Format accessibility tree for prompt."""
         lines = []
         prefix = "  " * indent
 
@@ -667,29 +384,15 @@ Then output the action on a new line starting with "ACTION:"
     def _format_history(
         self, history: list[tuple[BenchmarkObservation, BenchmarkAction]]
     ) -> str:
-        """Format action history for prompt.
-
-        Args:
-            history: List of (observation, action) pairs.
-
-        Returns:
-            Formatted string.
-        """
+        """Format action history for prompt."""
         lines = []
-        for i, (obs, action) in enumerate(history[-5:], 1):  # Last 5 actions
+        for i, (obs, action) in enumerate(history[-5:], 1):
             action_str = self._action_to_string(action)
             lines.append(f"{i}. {action_str}")
         return "\n".join(lines)
 
     def _action_to_string(self, action: BenchmarkAction) -> str:
-        """Convert BenchmarkAction to string representation.
-
-        Args:
-            action: Action to convert.
-
-        Returns:
-            String representation.
-        """
+        """Convert BenchmarkAction to string representation."""
         if action.type == "click":
             if action.target_node_id:
                 return f"CLICK([{action.target_node_id}])"
@@ -718,32 +421,14 @@ Then output the action on a new line starting with "ACTION:"
     def _parse_response(
         self, response: str, observation: BenchmarkObservation | None = None
     ) -> BenchmarkAction:
-        """Parse VLM response into BenchmarkAction.
-
-        Handles various response formats:
-        - ACTION: CLICK(0.5, 0.3)
-        - CLICK(0.5, 0.3)
-        - I'll click at coordinates (0.5, 0.3) -> CLICK(0.5, 0.3)
-
-        Args:
-            response: Raw VLM response text.
-            observation: Current observation (used for coordinate normalization).
-
-        Returns:
-            Parsed BenchmarkAction.
-        """
-        # Store raw response for debugging
+        """Parse VLM response into BenchmarkAction."""
         raw_action = {"response": response}
 
-        # Extract action line (look for ACTION: prefix or action pattern)
         action_line = None
-
-        # Try to find ACTION: prefix
         action_match = re.search(r"ACTION:\s*(.+)", response, re.IGNORECASE)
         if action_match:
             action_line = action_match.group(1).strip()
         else:
-            # Look for action pattern anywhere in response
             patterns = [
                 r"(CLICK\s*\([^)]+\))",
                 r"(TYPE\s*\([^)]+\))",
@@ -760,202 +445,102 @@ Then output the action on a new line starting with "ACTION:"
                     break
 
         if not action_line:
-            # Could not parse action, return done
             raw_action["parse_error"] = "No action pattern found"
             return BenchmarkAction(type="done", raw_action=raw_action)
 
-        # Parse CLICK action
+        # Parse CLICK([id])
         click_match = re.match(
             r"CLICK\s*\(\s*\[?(\d+)\]?\s*\)", action_line, re.IGNORECASE
         )
         if click_match:
-            # CLICK([id]) - element ID
             node_id = click_match.group(1)
-            return BenchmarkAction(
-                type="click",
-                target_node_id=node_id,
-                raw_action=raw_action,
-            )
+            return BenchmarkAction(type="click", target_node_id=node_id, raw_action=raw_action)
 
+        # Parse CLICK(x, y)
         click_coords = re.match(
             r"CLICK\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*\)", action_line, re.IGNORECASE
         )
         if click_coords:
-            # CLICK(x, y) - coordinates
             x = float(click_coords.group(1))
             y = float(click_coords.group(2))
-
-            # Normalize coordinates if they appear to be pixel values
-            # If x or y > 1.0, assume pixel coordinates and normalize using viewport
             if observation and observation.viewport and (x > 1.0 or y > 1.0):
                 width, height = observation.viewport
-                x_norm = x / width
-                y_norm = y / height
                 raw_action["original_coords"] = {"x": x, "y": y}
                 raw_action["normalized"] = True
-                x = x_norm
-                y = y_norm
+                x, y = x / width, y / height
+            return BenchmarkAction(type="click", x=x, y=y, raw_action=raw_action)
 
-            return BenchmarkAction(
-                type="click",
-                x=x,
-                y=y,
-                raw_action=raw_action,
-            )
-
-        # Parse TYPE action
+        # Parse TYPE
         type_match = re.match(
             r"TYPE\s*\(\s*[\"'](.+?)[\"']\s*\)", action_line, re.IGNORECASE
         )
         if type_match:
-            text = type_match.group(1)
-            return BenchmarkAction(
-                type="type",
-                text=text,
-                raw_action=raw_action,
-            )
+            return BenchmarkAction(type="type", text=type_match.group(1), raw_action=raw_action)
 
-        # Parse KEY action
+        # Parse KEY
         key_match = re.match(r"KEY\s*\(\s*(.+?)\s*\)", action_line, re.IGNORECASE)
         if key_match:
             key_str = key_match.group(1)
-            # Handle modifier+key format
             if "+" in key_str:
                 parts = key_str.split("+")
-                key = parts[-1]
-                modifiers = parts[:-1]
-                return BenchmarkAction(
-                    type="key",
-                    key=key,
-                    modifiers=modifiers,
-                    raw_action=raw_action,
-                )
-            return BenchmarkAction(
-                type="key",
-                key=key_str,
-                raw_action=raw_action,
-            )
+                return BenchmarkAction(type="key", key=parts[-1], modifiers=parts[:-1], raw_action=raw_action)
+            return BenchmarkAction(type="key", key=key_str, raw_action=raw_action)
 
-        # Parse SCROLL action
+        # Parse SCROLL
         scroll_match = re.match(
             r"SCROLL\s*\(\s*(up|down)\s*\)", action_line, re.IGNORECASE
         )
         if scroll_match:
-            direction = scroll_match.group(1).lower()
-            return BenchmarkAction(
-                type="scroll",
-                scroll_direction=direction,
-                raw_action=raw_action,
-            )
+            return BenchmarkAction(type="scroll", scroll_direction=scroll_match.group(1).lower(), raw_action=raw_action)
 
-        # Parse DRAG action
+        # Parse DRAG
         drag_match = re.match(
             r"DRAG\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)",
-            action_line,
-            re.IGNORECASE,
+            action_line, re.IGNORECASE,
         )
         if drag_match:
-            x = float(drag_match.group(1))
-            y = float(drag_match.group(2))
-            end_x = float(drag_match.group(3))
-            end_y = float(drag_match.group(4))
-
-            # Normalize coordinates if they appear to be pixel values
-            if (
-                observation
-                and observation.viewport
-                and (x > 1.0 or y > 1.0 or end_x > 1.0 or end_y > 1.0)
-            ):
+            x, y = float(drag_match.group(1)), float(drag_match.group(2))
+            end_x, end_y = float(drag_match.group(3)), float(drag_match.group(4))
+            if observation and observation.viewport and (x > 1.0 or y > 1.0 or end_x > 1.0 or end_y > 1.0):
                 width, height = observation.viewport
-                raw_action["original_coords"] = {
-                    "x": x,
-                    "y": y,
-                    "end_x": end_x,
-                    "end_y": end_y,
-                }
+                raw_action["original_coords"] = {"x": x, "y": y, "end_x": end_x, "end_y": end_y}
                 raw_action["normalized"] = True
-                x = x / width
-                y = y / height
-                end_x = end_x / width
-                end_y = end_y / height
+                x, y, end_x, end_y = x/width, y/height, end_x/width, end_y/height
+            return BenchmarkAction(type="drag", x=x, y=y, end_x=end_x, end_y=end_y, raw_action=raw_action)
 
-            return BenchmarkAction(
-                type="drag",
-                x=x,
-                y=y,
-                end_x=end_x,
-                end_y=end_y,
-                raw_action=raw_action,
-            )
-
-        # Parse DONE action
+        # Parse DONE
         if re.match(r"DONE\s*\(\s*\)", action_line, re.IGNORECASE):
             return BenchmarkAction(type="done", raw_action=raw_action)
 
-        # Parse ANSWER action
+        # Parse ANSWER
         answer_match = re.match(
             r"ANSWER\s*\(\s*[\"'](.+?)[\"']\s*\)", action_line, re.IGNORECASE
         )
         if answer_match:
-            answer = answer_match.group(1)
-            return BenchmarkAction(
-                type="answer",
-                answer=answer,
-                raw_action=raw_action,
-            )
+            return BenchmarkAction(type="answer", answer=answer_match.group(1), raw_action=raw_action)
 
-        # Unknown action format
         raw_action["parse_error"] = f"Unknown action format: {action_line}"
         return BenchmarkAction(type="done", raw_action=raw_action)
 
     def reset(self) -> None:
         """Reset agent state."""
-        # APIBenchmarkAgent is stateless, nothing to reset
         pass
 
 
 class UnifiedBaselineAgent(BenchmarkAgent):
-    """Agent that uses the UnifiedBaselineAdapter for benchmark evaluation.
+    """Agent that uses UnifiedBaselineAdapter for benchmark evaluation.
 
-    This agent provides a unified interface for comparing Claude, GPT, and Gemini
-    models across multiple evaluation tracks (coordinates, ReAct, SoM).
-
-    Compared to APIBenchmarkAgent, this agent:
-    - Uses the new provider abstraction (models/providers/)
-    - Supports multiple tracks (A, B, C) with track-specific prompts
-    - Uses the unified response parser
-    - Supports model aliases for easy switching
+    Provides unified interface for Claude, GPT, and Gemini baselines
+    across multiple tracks (A: coordinates, B: ReAct, C: SoM).
 
     Args:
-        model_alias: Model alias (e.g., 'claude-opus-4.5', 'gpt-5.2', 'gemini-3-pro').
+        model_alias: Model alias (e.g., 'claude-opus-4.5', 'gpt-5.2').
         track: Track type ('A', 'B', or 'C'). Defaults to 'A'.
-        api_key: Optional API key override. If not provided, uses env vars.
-        temperature: Sampling temperature. Defaults to 0.1.
-        max_tokens: Maximum tokens for response. Defaults to 1024.
-        demo: Optional demo text to include in prompts.
-        verbose: Whether to print verbose debug output.
-
-    Example:
-        # Claude baseline with Track C (Set-of-Mark)
-        agent = UnifiedBaselineAgent(
-            model_alias="claude-opus-4.5",
-            track="C",
-        )
-        results = evaluate_agent_on_benchmark(agent, waa_adapter)
-
-        # GPT baseline with Track A (direct coordinates)
-        agent = UnifiedBaselineAgent(
-            model_alias="gpt-5.2",
-            track="A",
-        )
-        results = evaluate_agent_on_benchmark(agent, waa_adapter)
-
-        # Gemini baseline with Track B (ReAct reasoning)
-        agent = UnifiedBaselineAgent(
-            model_alias="gemini-3-pro",
-            track="B",
-        )
-        results = evaluate_agent_on_benchmark(agent, waa_adapter)
+        api_key: Optional API key override.
+        temperature: Sampling temperature.
+        max_tokens: Maximum tokens for response.
+        demo: Optional demo text for prompts.
+        verbose: Whether to print debug output.
     """
 
     def __init__(
@@ -980,12 +565,8 @@ class UnifiedBaselineAgent(BenchmarkAgent):
     def _get_adapter(self):
         """Lazily initialize the UnifiedBaselineAdapter."""
         if self._adapter is None:
-            from openadapt_ml.baselines import (
-                TrackConfig,
-                UnifiedBaselineAdapter,
-            )
+            from openadapt_ml.baselines import TrackConfig, UnifiedBaselineAdapter
 
-            # Select track config
             track_configs = {
                 "A": TrackConfig.track_a(),
                 "B": TrackConfig.track_b(),
@@ -993,7 +574,6 @@ class UnifiedBaselineAgent(BenchmarkAgent):
             }
             track_config = track_configs.get(self.track, TrackConfig.track_a())
 
-            # Create adapter from alias
             self._adapter = UnifiedBaselineAdapter.from_alias(
                 self.model_alias,
                 track=track_config,
@@ -1011,21 +591,11 @@ class UnifiedBaselineAgent(BenchmarkAgent):
         task: BenchmarkTask,
         history: list[tuple[BenchmarkObservation, BenchmarkAction]] | None = None,
     ) -> BenchmarkAction:
-        """Use UnifiedBaselineAdapter to determine next action.
-
-        Args:
-            observation: Current observation with screenshot.
-            task: Task being performed.
-            history: Previous observations and actions.
-
-        Returns:
-            BenchmarkAction parsed from adapter response.
-        """
+        """Use UnifiedBaselineAdapter to determine next action."""
         from PIL import Image
 
         adapter = self._get_adapter()
 
-        # Load screenshot if available
         screenshot = None
         if observation.screenshot_path:
             try:
@@ -1034,19 +604,12 @@ class UnifiedBaselineAgent(BenchmarkAgent):
                 if self.verbose:
                     print(f"[UnifiedBaselineAgent] Failed to load screenshot: {e}")
 
-        # Build accessibility tree string
-        a11y_tree = None
-        if observation.accessibility_tree:
-            a11y_tree = observation.accessibility_tree
+        a11y_tree = observation.accessibility_tree if observation.accessibility_tree else None
 
-        # Build history for adapter
         adapter_history = None
         if history:
-            adapter_history = []
-            for obs, action in history[-5:]:  # Last 5 actions
-                adapter_history.append(self._benchmark_action_to_dict(action))
+            adapter_history = [self._benchmark_action_to_dict(a) for _, a in history[-5:]]
 
-        # Call adapter
         try:
             parsed_action = adapter.predict(
                 screenshot=screenshot,
@@ -1057,18 +620,13 @@ class UnifiedBaselineAgent(BenchmarkAgent):
         except Exception as e:
             if self.verbose:
                 print(f"[UnifiedBaselineAgent] Adapter error: {e}")
-            return BenchmarkAction(
-                type="done",
-                raw_action={"error": str(e)},
-            )
+            return BenchmarkAction(type="done", raw_action={"error": str(e)})
 
-        # Convert ParsedAction to BenchmarkAction
         return self._parsed_to_benchmark_action(parsed_action, observation)
 
     def _benchmark_action_to_dict(self, action: BenchmarkAction) -> dict[str, Any]:
         """Convert BenchmarkAction to dict for history."""
         result = {"type": action.type}
-
         if action.x is not None:
             result["x"] = action.x
         if action.y is not None:
@@ -1081,23 +639,12 @@ class UnifiedBaselineAgent(BenchmarkAgent):
             result["element_id"] = action.target_node_id
         if action.scroll_direction:
             result["direction"] = action.scroll_direction
-
         return result
 
     def _parsed_to_benchmark_action(
-        self,
-        parsed_action,
-        observation: BenchmarkObservation | None = None,
+        self, parsed_action, observation: BenchmarkObservation | None = None
     ) -> BenchmarkAction:
-        """Convert ParsedAction to BenchmarkAction.
-
-        Args:
-            parsed_action: ParsedAction from adapter.
-            observation: Current observation (for coordinate normalization).
-
-        Returns:
-            BenchmarkAction.
-        """
+        """Convert ParsedAction to BenchmarkAction."""
         raw_action = {
             "raw_response": parsed_action.raw_response,
             "thought": parsed_action.thought,
@@ -1112,75 +659,42 @@ class UnifiedBaselineAgent(BenchmarkAgent):
         if action_type == "click":
             if parsed_action.element_id is not None:
                 return BenchmarkAction(
-                    type="click",
-                    target_node_id=str(parsed_action.element_id),
-                    raw_action=raw_action,
+                    type="click", target_node_id=str(parsed_action.element_id), raw_action=raw_action
                 )
             elif parsed_action.x is not None and parsed_action.y is not None:
-                x = parsed_action.x
-                y = parsed_action.y
-
-                # Normalize coordinates if they appear to be pixel values
+                x, y = parsed_action.x, parsed_action.y
                 if observation and observation.viewport and (x > 1.0 or y > 1.0):
                     width, height = observation.viewport
                     raw_action["original_coords"] = {"x": x, "y": y}
-                    raw_action["normalized"] = True
-                    x = x / width
-                    y = y / height
-
-                return BenchmarkAction(
-                    type="click",
-                    x=x,
-                    y=y,
-                    raw_action=raw_action,
-                )
+                    x, y = x / width, y / height
+                return BenchmarkAction(type="click", x=x, y=y, raw_action=raw_action)
 
         elif action_type == "type":
-            return BenchmarkAction(
-                type="type",
-                text=parsed_action.text,
-                raw_action=raw_action,
-            )
+            return BenchmarkAction(type="type", text=parsed_action.text, raw_action=raw_action)
 
         elif action_type == "key":
-            return BenchmarkAction(
-                type="key",
-                key=parsed_action.key,
-                raw_action=raw_action,
-            )
+            return BenchmarkAction(type="key", key=parsed_action.key, raw_action=raw_action)
 
         elif action_type == "scroll":
-            return BenchmarkAction(
-                type="scroll",
-                scroll_direction=parsed_action.direction,
-                raw_action=raw_action,
-            )
+            return BenchmarkAction(type="scroll", scroll_direction=parsed_action.direction, raw_action=raw_action)
 
         elif action_type == "done":
             return BenchmarkAction(type="done", raw_action=raw_action)
 
         elif action_type == "drag":
-            x = parsed_action.x
-            y = parsed_action.y
-            end_x = getattr(parsed_action, "end_x", None)
-            end_y = getattr(parsed_action, "end_y", None)
-
             return BenchmarkAction(
                 type="drag",
-                x=x,
-                y=y,
-                end_x=end_x,
-                end_y=end_y,
+                x=parsed_action.x, y=parsed_action.y,
+                end_x=getattr(parsed_action, "end_x", None),
+                end_y=getattr(parsed_action, "end_y", None),
                 raw_action=raw_action,
             )
 
-        # Unknown action type, return done
         raw_action["unknown_action"] = action_type
         return BenchmarkAction(type="done", raw_action=raw_action)
 
     def reset(self) -> None:
         """Reset agent state."""
-        # UnifiedBaselineAgent is stateless, nothing to reset
         pass
 
     def __repr__(self) -> str:
