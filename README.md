@@ -825,9 +825,42 @@ uv run python -m openadapt_ml.benchmarks.cli vm monitor --mock
 uv run python -m openadapt_ml.benchmarks.cli vm monitor --auto-shutdown-hours 2
 ```
 
+### 13.5 Benchmark Execution Logs
+
+View benchmark execution progress and logs:
+
+```bash
+# View WAA status and container logs
+uv run python -m openadapt_ml.benchmarks.cli logs
+
+# Check WAA server status (probe endpoint)
+uv run python -m openadapt_ml.benchmarks.cli probe
+
+# Check VM/Azure status
+uv run python -m openadapt_ml.benchmarks.cli status
+
+# Download benchmark results from VM
+uv run python -m openadapt_ml.benchmarks.cli download
+
+# Analyze downloaded results
+uv run python -m openadapt_ml.benchmarks.cli analyze
+```
+
+**Running benchmarks:**
+```bash
+# Run full benchmark (154 tasks)
+uv run python -m openadapt_ml.benchmarks.cli run --num-tasks 154
+
+# Run specific domain
+uv run python -m openadapt_ml.benchmarks.cli run --domain notepad --num-tasks 5
+
+# Run single task
+uv run python -m openadapt_ml.benchmarks.cli run --task notepad_1
+```
+
 For complete VM management commands and Azure setup instructions, see [`CLAUDE.md`](CLAUDE.md) and [`docs/azure_waa_setup.md`](docs/azure_waa_setup.md).
 
-### 13.5 Screenshot Capture Tool
+### 13.6 Screenshot Capture Tool
 
 Capture screenshots of dashboards and VMs for documentation and PR purposes:
 
