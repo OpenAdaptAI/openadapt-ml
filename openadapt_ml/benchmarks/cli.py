@@ -1462,6 +1462,76 @@ def cmd_vnc(args):
     return 0
 
 
+def _show_benchmark_progress(ip: str) -> int:
+    """Show benchmark progress with estimated completion time.
+
+    Parses the run log to count completed tasks and estimate remaining time.
+    """
+    # Find the most recent run log
+    result = ssh_run(ip, "ls -t /home/azureuser/cli_logs/run_*.log 2>/dev/null | head -1")
+    log_file = result.stdout.strip()
+
+    if not log_file:
+        print("No benchmark running. Start one with: run --num-tasks N")
+        return 1
+
+    # Get task count and timestamps
+    result = ssh_run(
+        ip,
+        f"""
+        echo "=== WAA Benchmark Progress ==="
+        echo ""
+
+        # Count completed tasks (each "Result:" line = 1 task done)
+        COMPLETED=$(grep -c "Result:" {log_file} 2>/dev/null || echo 0)
+        # Count total tasks from task list (sum of all domain counts)
+        TOTAL=$(grep -A20 "Left tasks:" {log_file} | grep -E "^[a-z_]+: [0-9]+" | awk -F': ' '{{sum+=$2}} END {{print sum}}')
+        [ -z "$TOTAL" ] || [ "$TOTAL" -eq 0 ] && TOTAL=154
+
+        # Get timestamps
+        FIRST_TS=$(grep -oE '\\[2026-[0-9-]+ [0-9:]+' {log_file} | head -1 | tr -d '[')
+        LAST_TS=$(grep -oE '\\[2026-[0-9-]+ [0-9:]+' {log_file} | tail -1 | tr -d '[')
+
+        echo "Log: {log_file}"
+        echo "Started: $FIRST_TS"
+        echo "Latest:  $LAST_TS"
+        echo ""
+        echo "Tasks completed: $COMPLETED / $TOTAL"
+
+        # Calculate elapsed minutes
+        if [ -n "$FIRST_TS" ] && [ -n "$LAST_TS" ]; then
+            START_H=$(echo "$FIRST_TS" | awk '{{print $2}}' | cut -d: -f1)
+            START_M=$(echo "$FIRST_TS" | awk '{{print $2}}' | cut -d: -f2)
+            NOW_H=$(echo "$LAST_TS" | awk '{{print $2}}' | cut -d: -f1)
+            NOW_M=$(echo "$LAST_TS" | awk '{{print $2}}' | cut -d: -f2)
+
+            ELAPSED_MIN=$(( (NOW_H - START_H) * 60 + (NOW_M - START_M) ))
+            echo "Elapsed: $ELAPSED_MIN minutes"
+
+            if [ "$COMPLETED" -gt 0 ] && [ "$ELAPSED_MIN" -gt 0 ]; then
+                MIN_PER_TASK=$((ELAPSED_MIN / COMPLETED))
+                REMAINING=$((TOTAL - COMPLETED))
+                EST_MIN=$((REMAINING * MIN_PER_TASK))
+                EST_H=$((EST_MIN / 60))
+                EST_M=$((EST_MIN % 60))
+
+                echo ""
+                echo "Avg time per task: ~$MIN_PER_TASK min"
+                echo "Remaining tasks: $REMAINING"
+                echo "Estimated remaining: ~${{EST_H}}h ${{EST_M}}m"
+
+                # Progress bar
+                PCT=$((COMPLETED * 100 / TOTAL))
+                echo ""
+                echo "Progress: $PCT% [$COMPLETED/$TOTAL]"
+            fi
+        fi
+        """,
+    )
+    print(result.stdout)
+    return 0
+
+
 def _show_run_logs(ip: str, follow: bool = False, tail: Optional[int] = None) -> int:
     """Show the most recent run command log file.
 
@@ -1523,11 +1593,16 @@ def cmd_logs(args):
     Default behavior shows all relevant logs (docker, storage, probe status).
     Use --follow to stream docker logs continuously.
     Use --run to show run command output instead of container logs.
+    Use --progress to show benchmark progress and ETA.
     """
     ip = get_vm_ip()
     if not ip:
         print("ERROR: VM not found")
         return 1
+
+    # Handle --progress flag: show benchmark progress
+    if getattr(args, "progress", False):
+        return _show_benchmark_progress(ip)
 
     # Handle --run flag: show run command output
     if args.run:
@@ -1863,6 +1938,12 @@ Examples:
         "--run",
         action="store_true",
         help="Show run command output instead of container logs",
+    )
+    p_logs.add_argument(
+        "--progress",
+        "-p",
+        action="store_true",
+        help="Show benchmark progress and estimated completion time",
     )
     p_logs.set_defaults(func=cmd_logs)
 

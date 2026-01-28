@@ -841,6 +841,9 @@ uv run python -m openadapt_ml.benchmarks.cli logs --run -f
 
 # Show last N lines of execution logs
 uv run python -m openadapt_ml.benchmarks.cli logs --run --tail 100
+
+# Show benchmark progress and ETA
+uv run python -m openadapt_ml.benchmarks.cli logs --progress
 ```
 
 **Example: Container status (`logs`)**
@@ -878,6 +881,24 @@ Streaming log (Ctrl+C to stop)...
 [2026-01-28 23:05:10,303 INFO agent/401-MainProcess] Thinking...
 [2026-01-28 23:05:17,318 INFO python/62-MainProcess] Updated computer successfully
 [2026-01-28 23:05:17,318 INFO lib_run_single/56-MainProcess] Step 9: computer.window_manager.switch_to_application("Summer Trip - File Explorer")
+```
+
+**Example: Benchmark progress (`logs --progress`)**
+```
+=== WAA Benchmark Progress ===
+
+Log: /home/azureuser/cli_logs/run_20260128_175507.log
+Started: 2026-01-28 22:55:14
+Latest:  2026-01-28 23:28:37
+
+Tasks completed: 1 / 154
+Elapsed: 33 minutes
+
+Avg time per task: ~33 min
+Remaining tasks: 153
+Estimated remaining: ~84h 9m
+
+Progress: 0% [1/154]
 ```
 
 **Other useful commands:**
