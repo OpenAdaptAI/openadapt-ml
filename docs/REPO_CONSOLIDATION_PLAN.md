@@ -426,7 +426,8 @@ oa evals vm stop
 pip install openadapt-ml  # Also installs openadapt-evals
 oa ml train --capture /path/to/recording --goal "Open Notepad"
 oa evals run --agent policy --checkpoint ./model
-oa ml serve  # Dashboard
+oa ml serve --checkpoint ./model  # Serve model for inference
+oa ml dashboard  # Training dashboard
 ```
 - Full ML training capabilities
 - Uses `oa evals` for evaluation
@@ -605,7 +606,8 @@ openadapt-ml/
 │   │   ├── __init__.py
 │   │   ├── main.py                 # Entry point: oa ml <cmd>
 │   │   ├── train.py                # oa ml train
-│   │   └── serve.py                # oa ml serve (training dashboard)
+│   │   ├── serve.py                # oa ml serve (model inference server)
+│   │   └── dashboard.py            # oa ml dashboard (training dashboard)
 │   │
 │   ├── ══════════════════════════════════════════
 │   ├── # DATA & UTILITIES
@@ -708,9 +710,14 @@ oa ml train --config config.yaml
 oa ml train status         # Training status
 oa ml train stop           # Stop training
 
-# ML Dashboard
-oa ml serve                # Serve training dashboard
-oa ml serve --port 8080
+# Model Serving (Inference)
+oa ml serve                       # Serve trained model for inference
+oa ml serve --checkpoint ./model  # Serve specific checkpoint
+oa ml serve --port 8080           # Custom port
+
+# Training Dashboard
+oa ml dashboard            # Start training dashboard
+oa ml dashboard --port 8080
 
 # Cloud Training
 oa ml cloud launch         # Launch cloud GPU instance
@@ -912,7 +919,8 @@ These files stay in openadapt-evals but may be reorganized:
 | `agents/baseline_agent.py` | Move from openadapt-evals (ML dep) |
 | `cli/main.py` | `oa` CLI entry point (extends `evals`) |
 | `cli/train.py` | Training commands |
-| `cli/serve.py` | Training dashboard server |
+| `cli/serve.py` | Model inference server |
+| `cli/dashboard.py` | Training dashboard |
 
 ### Delete from openadapt-ml (After Migration)
 
