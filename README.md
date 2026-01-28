@@ -892,7 +892,55 @@ For deeper architectural details, see [`docs/design.md`](docs/design.md).
 
 ---
 
-## 15. Roadmap
+## 15. Windows Agent Arena (WAA) Benchmark Results
+
+> **⚠️ PLACEHOLDER**: The results below are placeholders. Actual benchmark results will be added once the full evaluation completes. Do not merge this PR until placeholders are replaced with real values.
+
+### 15.1 Benchmark Overview
+
+[Windows Agent Arena (WAA)](https://github.com/microsoft/WindowsAgentArena) is a benchmark of **154 tasks across 11 Windows application domains** (Notepad, Chrome, File Explorer, etc.). It evaluates GUI agents on realistic Windows automation tasks.
+
+### 15.2 Baseline Reproduction
+
+We run the full WAA benchmark using the same methodology as the original paper to establish baseline performance.
+
+**WAA Baseline Results (GPT-4o):**
+
+| Metric | Paper Reported | Our Reproduction | Status |
+|--------|----------------|------------------|--------|
+| Success Rate | ~19.5% | `[PLACEHOLDER]` | `[PENDING]` |
+| Tasks Evaluated | 154 | `[PLACEHOLDER]` | `[PENDING]` |
+| Avg Steps/Task | N/A | `[PLACEHOLDER]` | `[PENDING]` |
+| Avg Time/Task | N/A | `[PLACEHOLDER]` | `[PENDING]` |
+
+### 15.3 Model Comparison
+
+Performance of different agents on WAA:
+
+| Agent | Success Rate | Avg Steps | Notes |
+|-------|--------------|-----------|-------|
+| GPT-4o (baseline) | `[PLACEHOLDER]` | `[PLACEHOLDER]` | Zero-shot |
+| Claude Sonnet 4.5 | `[PLACEHOLDER]` | `[PLACEHOLDER]` | Zero-shot |
+| Qwen3-VL-2B (base) | `[PLACEHOLDER]` | `[PLACEHOLDER]` | Zero-shot |
+| Qwen3-VL-2B (FT) | `[PLACEHOLDER]` | `[PLACEHOLDER]` | Fine-tuned on demos |
+
+### 15.4 Domain Breakdown
+
+Success rates by Windows application domain:
+
+| Domain | Tasks | Success Rate |
+|--------|-------|--------------|
+| Notepad | `[PLACEHOLDER]` | `[PLACEHOLDER]` |
+| Chrome | `[PLACEHOLDER]` | `[PLACEHOLDER]` |
+| File Explorer | `[PLACEHOLDER]` | `[PLACEHOLDER]` |
+| Settings | `[PLACEHOLDER]` | `[PLACEHOLDER]` |
+| ... | ... | ... |
+
+> **Note**: Full domain breakdown will be added when benchmark completes.
+
+---
+
+## 16. Roadmap
 
 For the up-to-date, prioritized roadmap (including concrete implementation
 targets and agent-executable acceptance criteria), see
