@@ -920,6 +920,14 @@ def cmd_run(args):
         f"--domain {domain}",
     ]
 
+    # Add parallelization flags if specified (argparse converts hyphens to underscores)
+    worker_id = getattr(args, "worker_id", 0)
+    num_workers = getattr(args, "num_workers", 1)
+    if num_workers > 1:
+        run_args.append(f"--worker_id {worker_id}")
+        run_args.append(f"--num_workers {num_workers}")
+        log("RUN", f"Parallel mode: worker {worker_id}/{num_workers}")
+
     # If specific task requested, create custom test config
     if task:
         create_custom_test_cmd = f'''
@@ -1894,6 +1902,18 @@ Examples:
     )
     p_run.add_argument(
         "--no-download", action="store_true", help="Skip downloading results"
+    )
+    p_run.add_argument(
+        "--worker-id",
+        type=int,
+        default=0,
+        help="Worker ID for parallel execution (0-indexed)",
+    )
+    p_run.add_argument(
+        "--num-workers",
+        type=int,
+        default=1,
+        help="Total number of parallel workers",
     )
     p_run.set_defaults(func=cmd_run)
 
