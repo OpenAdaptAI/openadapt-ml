@@ -830,8 +830,17 @@ uv run python -m openadapt_ml.benchmarks.cli vm monitor --auto-shutdown-hours 2
 View benchmark execution progress and logs:
 
 ```bash
-# View WAA status and container logs
+# View WAA container status and Docker logs
 uv run python -m openadapt_ml.benchmarks.cli logs
+
+# View WAA benchmark execution logs (task progress, agent actions)
+uv run python -m openadapt_ml.benchmarks.cli logs --run
+
+# Stream execution logs live
+uv run python -m openadapt_ml.benchmarks.cli logs --run -f
+
+# Show last N lines of execution logs
+uv run python -m openadapt_ml.benchmarks.cli logs --run --tail 100
 
 # Check WAA server status (probe endpoint)
 uv run python -m openadapt_ml.benchmarks.cli probe
