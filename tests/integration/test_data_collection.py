@@ -30,8 +30,8 @@ What's tested:
 import logging
 from pathlib import Path
 
-# Import from the main benchmarks module (re-exports from openadapt-evals)
-from openadapt_ml.benchmarks import (
+# Import from openadapt-evals (canonical benchmark package)
+from openadapt_evals import (
     EvaluationConfig,
     RandomAgent,
     WAAMockAdapter,
