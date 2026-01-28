@@ -30,9 +30,13 @@ What's tested:
 import logging
 from pathlib import Path
 
-from openadapt_ml.benchmarks.agent import RandomAgent
-from openadapt_ml.benchmarks.runner import EvaluationConfig, evaluate_agent_on_benchmark
-from openadapt_ml.benchmarks.waa import WAAMockAdapter
+# Import from the main benchmarks module (re-exports from openadapt-evals)
+from openadapt_ml.benchmarks import (
+    EvaluationConfig,
+    RandomAgent,
+    WAAMockAdapter,
+    evaluate_agent_on_benchmark,
+)
 
 # Set up logging
 logging.basicConfig(

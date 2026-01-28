@@ -35,8 +35,9 @@ class TestWAAMockAdapter:
     def test_load_task(self):
         """Test loading a specific task."""
         adapter = WAAMockAdapter(num_tasks=5, domains=["browser"])
-        task = adapter.load_task("browser_1")
-        assert task.task_id == "browser_1"
+        # Mock adapter uses "mock_{domain}_{number:03d}" format
+        task = adapter.load_task("mock_browser_001")
+        assert task.task_id == "mock_browser_001"
         assert task.domain == "browser"
 
     def test_load_task_not_found(self):
@@ -124,16 +125,17 @@ class TestEvaluationRunner:
 
     def test_evaluate_specific_tasks(self):
         """Test evaluating specific tasks."""
-        adapter = WAAMockAdapter(num_tasks=10)
+        adapter = WAAMockAdapter(num_tasks=10, domains=["browser", "notepad"])
         agent = RandomAgent(seed=42)
 
+        # Mock adapter uses "mock_{domain}_{number:03d}" format
         results = evaluate_agent_on_benchmark(
-            agent, adapter, task_ids=["browser_1", "browser_2"], max_steps=10
+            agent, adapter, task_ids=["mock_browser_001", "mock_browser_002"], max_steps=10
         )
 
         assert len(results) == 2
-        assert results[0].task_id == "browser_1"
-        assert results[1].task_id == "browser_2"
+        assert results[0].task_id == "mock_browser_001"
+        assert results[1].task_id == "mock_browser_002"
 
     def test_evaluate_with_scripted_agent(self):
         """Test running evaluation with ScriptedAgent."""

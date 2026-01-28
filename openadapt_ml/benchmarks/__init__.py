@@ -1,98 +1,41 @@
 """Benchmark integration for openadapt-ml.
 
-DEPRECATION NOTICE:
-    The canonical benchmark code is now in the `openadapt-evals` package.
-    For new projects, prefer importing from `openadapt_evals`:
+This module provides benchmark evaluation capabilities by re-exporting from
+`openadapt-evals` (the canonical benchmark package) plus ML-specific agents
+that wrap openadapt-ml internals.
 
+For standalone benchmark evaluation (no ML training), use openadapt-evals:
     ```python
-    # Preferred (standalone, no openadapt-ml dependency)
     from openadapt_evals import ApiAgent, WAAMockAdapter, evaluate_agent_on_benchmark
+    ```
 
-    # Still supported (uses openadapt-ml internals)
+For ML-specific agents that use trained models:
+    ```python
     from openadapt_ml.benchmarks import PolicyAgent, APIBenchmarkAgent
     ```
 
-    The following are ONLY available in openadapt-ml (they wrap openadapt-ml internals):
-    - PolicyAgent (wraps openadapt_ml.runtime.policy.AgentPolicy)
-    - APIBenchmarkAgent (wraps openadapt_ml.models.api_adapter.ApiVLMAdapter)
-
-    The following should be imported from openadapt-evals:
-    - ApiAgent (standalone, P0 demo persistence fix)
-    - All adapter classes (WAAAdapter, WAALiveAdapter, etc.)
-    - Base classes (BenchmarkAdapter, BenchmarkTask, etc.)
-    - Evaluation utilities (evaluate_agent_on_benchmark, compute_metrics)
-
-This module provides interfaces and utilities for evaluating GUI agents
-on standardized benchmarks like Windows Agent Arena (WAA), OSWorld,
-WebArena, and others.
-
-Core classes:
-    - BenchmarkAdapter: Abstract interface for benchmark integration
-    - BenchmarkAgent: Abstract interface for agents to be evaluated
-    - BenchmarkTask, BenchmarkObservation, BenchmarkAction: Data classes
-
-Agent implementations:
-    - PolicyAgent: Wraps openadapt-ml AgentPolicy
-    - APIBenchmarkAgent: Uses hosted VLM APIs (Claude, GPT-5.1) via openadapt-ml adapters
-    - ScriptedAgent: Follows predefined action sequence
-    - RandomAgent: Takes random actions (baseline)
-
-Evaluation:
-    - evaluate_agent_on_benchmark: Run agent on benchmark tasks
-    - compute_metrics: Compute aggregate metrics from results
-
-Example:
-    ```python
-    from openadapt_ml.benchmarks import (
-        BenchmarkAdapter,
-        PolicyAgent,
-        APIBenchmarkAgent,
-        evaluate_agent_on_benchmark,
-        compute_metrics,
-    )
-
-    # Create adapter for specific benchmark
-    adapter = WAAAdapter(waa_repo_path="/path/to/WAA")
-
-    # Wrap policy as benchmark agent
-    agent = PolicyAgent(policy)
-
-    # Or use API-backed agent for baselines
-    agent = APIBenchmarkAgent(provider="anthropic")  # Claude
-    agent = APIBenchmarkAgent(provider="openai")     # GPT-5.1
-
-    # Run evaluation
-    results = evaluate_agent_on_benchmark(agent, adapter, max_steps=50)
-
-    # Compute metrics
-    metrics = compute_metrics(results)
-    print(f"Success rate: {metrics['success_rate']:.1%}")
-    ```
+ML-specific agents (only available in openadapt-ml):
+    - PolicyAgent: Wraps openadapt_ml.runtime.policy.AgentPolicy
+    - APIBenchmarkAgent: Uses openadapt_ml.models.api_adapter.ApiVLMAdapter
+    - UnifiedBaselineAgent: Uses openadapt_ml.baselines adapters
 """
 
 import warnings
 
-# Emit deprecation warning on import
+# Emit deprecation warning for users still importing base classes from here
 warnings.warn(
-    "openadapt_ml.benchmarks is deprecated. "
-    "Please use openadapt_evals for standalone benchmark evaluation. "
-    "See CLAUDE.md for migration guide.",
+    "For standalone benchmark evaluation, prefer importing from openadapt_evals directly. "
+    "openadapt_ml.benchmarks re-exports from openadapt_evals for backward compatibility.",
     DeprecationWarning,
     stacklevel=2,
 )
 
 # ruff: noqa: E402
 # Imports after warning call are intentional
-from openadapt_ml.benchmarks.agent import (
-    APIBenchmarkAgent,
-    BenchmarkAgent,
-    PolicyAgent,
-    RandomAgent,
-    ScriptedAgent,
-    SmartMockAgent,
-    UnifiedBaselineAgent,
-)
-from openadapt_ml.benchmarks.base import (
+
+# Re-export base classes from openadapt-evals (canonical location)
+from openadapt_evals import (
+    # Base classes
     BenchmarkAction,
     BenchmarkAdapter,
     BenchmarkObservation,
@@ -100,31 +43,51 @@ from openadapt_ml.benchmarks.base import (
     BenchmarkTask,
     StaticDatasetAdapter,
     UIElement,
-)
-from openadapt_ml.benchmarks.runner import (
+    # Base agent interface
+    BenchmarkAgent,
+    # Test/mock agents (no ML deps)
+    RandomAgent,
+    ScriptedAgent,
+    SmartMockAgent,
+    # Standalone API agent (P0 demo persistence fix)
+    ApiAgent,
+    # Evaluation utilities
     EvaluationConfig,
     compute_domain_metrics,
     compute_metrics,
     evaluate_agent_on_benchmark,
+    # WAA adapters
+    WAAAdapter,
+    WAAConfig,
+    WAAMockAdapter,
+    WAALiveAdapter,
+    WAALiveConfig,
+    # Viewer
+    generate_benchmark_viewer,
+    # Data collection
+    ExecutionTraceCollector,
+    LiveEvaluationTracker,
+    save_execution_trace,
 )
-from openadapt_ml.benchmarks.waa import WAAAdapter, WAAConfig, WAAMockAdapter
-from openadapt_ml.benchmarks.waa_live import WAALiveAdapter, WAALiveConfig
-from openadapt_ml.benchmarks.viewer import generate_benchmark_viewer
+
+# ML-specific agents (only available in openadapt-ml)
+from openadapt_ml.benchmarks.agent import (
+    APIBenchmarkAgent,
+    PolicyAgent,
+    UnifiedBaselineAgent,
+)
 
 
-# Azure orchestration (lazy import to avoid requiring azure-ai-ml)
-def _get_azure_classes():
-    from openadapt_ml.benchmarks.azure import (
-        AzureConfig,
-        AzureWAAOrchestrator,
-        estimate_cost,
-    )
-
-    return AzureConfig, AzureWAAOrchestrator, estimate_cost
+# Lazy import for Azure classes (avoids requiring azure-ai-ml for basic usage)
+def __getattr__(name: str):
+    if name in ("AzureConfig", "AzureWAAOrchestrator", "estimate_cost"):
+        from openadapt_evals.benchmarks import azure
+        return getattr(azure, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
-    # Base classes
+    # Base classes (from openadapt-evals)
     "BenchmarkAdapter",
     "BenchmarkTask",
     "BenchmarkObservation",
@@ -132,46 +95,35 @@ __all__ = [
     "BenchmarkResult",
     "StaticDatasetAdapter",
     "UIElement",
-    # Agents
+    # Agents (from openadapt-evals)
     "BenchmarkAgent",
-    "PolicyAgent",
-    "APIBenchmarkAgent",
-    "UnifiedBaselineAgent",
     "ScriptedAgent",
     "RandomAgent",
     "SmartMockAgent",
-    # Evaluation
+    "ApiAgent",
+    # ML-specific agents (openadapt-ml only)
+    "PolicyAgent",
+    "APIBenchmarkAgent",
+    "UnifiedBaselineAgent",
+    # Evaluation (from openadapt-evals)
     "EvaluationConfig",
     "evaluate_agent_on_benchmark",
     "compute_metrics",
     "compute_domain_metrics",
-    # WAA
+    # WAA (from openadapt-evals)
     "WAAAdapter",
     "WAAConfig",
     "WAAMockAdapter",
     "WAALiveAdapter",
     "WAALiveConfig",
-    # Viewer
+    # Viewer (from openadapt-evals)
     "generate_benchmark_viewer",
-    # Azure (lazy-loaded)
+    # Data collection (from openadapt-evals)
+    "ExecutionTraceCollector",
+    "LiveEvaluationTracker",
+    "save_execution_trace",
+    # Azure (lazy-loaded from openadapt-evals)
     "AzureConfig",
     "AzureWAAOrchestrator",
     "estimate_cost",
 ]
-
-
-# Lazy loading for Azure classes (avoids requiring azure-ai-ml for basic usage)
-def __getattr__(name: str):
-    if name in ("AzureConfig", "AzureWAAOrchestrator", "estimate_cost"):
-        from openadapt_ml.benchmarks.azure import (
-            AzureConfig,
-            AzureWAAOrchestrator,
-            estimate_cost,
-        )
-
-        return {
-            "AzureConfig": AzureConfig,
-            "AzureWAAOrchestrator": AzureWAAOrchestrator,
-            "estimate_cost": estimate_cost,
-        }[name]
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
