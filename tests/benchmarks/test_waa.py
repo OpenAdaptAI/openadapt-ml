@@ -2,7 +2,7 @@
 
 import pytest
 
-from openadapt_ml.benchmarks import (
+from openadapt_evals import (
     BenchmarkAction,
     BenchmarkObservation,
     BenchmarkResult,
