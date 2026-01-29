@@ -454,7 +454,9 @@ Then output the action on a new line starting with "ACTION:"
         )
         if click_match:
             node_id = click_match.group(1)
-            return BenchmarkAction(type="click", target_node_id=node_id, raw_action=raw_action)
+            return BenchmarkAction(
+                type="click", target_node_id=node_id, raw_action=raw_action
+            )
 
         # Parse CLICK(x, y)
         click_coords = re.match(
@@ -475,7 +477,9 @@ Then output the action on a new line starting with "ACTION:"
             r"TYPE\s*\(\s*[\"'](.+?)[\"']\s*\)", action_line, re.IGNORECASE
         )
         if type_match:
-            return BenchmarkAction(type="type", text=type_match.group(1), raw_action=raw_action)
+            return BenchmarkAction(
+                type="type", text=type_match.group(1), raw_action=raw_action
+            )
 
         # Parse KEY
         key_match = re.match(r"KEY\s*\(\s*(.+?)\s*\)", action_line, re.IGNORECASE)
@@ -483,7 +487,12 @@ Then output the action on a new line starting with "ACTION:"
             key_str = key_match.group(1)
             if "+" in key_str:
                 parts = key_str.split("+")
-                return BenchmarkAction(type="key", key=parts[-1], modifiers=parts[:-1], raw_action=raw_action)
+                return BenchmarkAction(
+                    type="key",
+                    key=parts[-1],
+                    modifiers=parts[:-1],
+                    raw_action=raw_action,
+                )
             return BenchmarkAction(type="key", key=key_str, raw_action=raw_action)
 
         # Parse SCROLL
@@ -491,22 +500,43 @@ Then output the action on a new line starting with "ACTION:"
             r"SCROLL\s*\(\s*(up|down)\s*\)", action_line, re.IGNORECASE
         )
         if scroll_match:
-            return BenchmarkAction(type="scroll", scroll_direction=scroll_match.group(1).lower(), raw_action=raw_action)
+            return BenchmarkAction(
+                type="scroll",
+                scroll_direction=scroll_match.group(1).lower(),
+                raw_action=raw_action,
+            )
 
         # Parse DRAG
         drag_match = re.match(
             r"DRAG\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)",
-            action_line, re.IGNORECASE,
+            action_line,
+            re.IGNORECASE,
         )
         if drag_match:
             x, y = float(drag_match.group(1)), float(drag_match.group(2))
             end_x, end_y = float(drag_match.group(3)), float(drag_match.group(4))
-            if observation and observation.viewport and (x > 1.0 or y > 1.0 or end_x > 1.0 or end_y > 1.0):
+            if (
+                observation
+                and observation.viewport
+                and (x > 1.0 or y > 1.0 or end_x > 1.0 or end_y > 1.0)
+            ):
                 width, height = observation.viewport
-                raw_action["original_coords"] = {"x": x, "y": y, "end_x": end_x, "end_y": end_y}
+                raw_action["original_coords"] = {
+                    "x": x,
+                    "y": y,
+                    "end_x": end_x,
+                    "end_y": end_y,
+                }
                 raw_action["normalized"] = True
-                x, y, end_x, end_y = x/width, y/height, end_x/width, end_y/height
-            return BenchmarkAction(type="drag", x=x, y=y, end_x=end_x, end_y=end_y, raw_action=raw_action)
+                x, y, end_x, end_y = (
+                    x / width,
+                    y / height,
+                    end_x / width,
+                    end_y / height,
+                )
+            return BenchmarkAction(
+                type="drag", x=x, y=y, end_x=end_x, end_y=end_y, raw_action=raw_action
+            )
 
         # Parse DONE
         if re.match(r"DONE\s*\(\s*\)", action_line, re.IGNORECASE):
@@ -517,7 +547,9 @@ Then output the action on a new line starting with "ACTION:"
             r"ANSWER\s*\(\s*[\"'](.+?)[\"']\s*\)", action_line, re.IGNORECASE
         )
         if answer_match:
-            return BenchmarkAction(type="answer", answer=answer_match.group(1), raw_action=raw_action)
+            return BenchmarkAction(
+                type="answer", answer=answer_match.group(1), raw_action=raw_action
+            )
 
         raw_action["parse_error"] = f"Unknown action format: {action_line}"
         return BenchmarkAction(type="done", raw_action=raw_action)
@@ -604,11 +636,15 @@ class UnifiedBaselineAgent(BenchmarkAgent):
                 if self.verbose:
                     print(f"[UnifiedBaselineAgent] Failed to load screenshot: {e}")
 
-        a11y_tree = observation.accessibility_tree if observation.accessibility_tree else None
+        a11y_tree = (
+            observation.accessibility_tree if observation.accessibility_tree else None
+        )
 
         adapter_history = None
         if history:
-            adapter_history = [self._benchmark_action_to_dict(a) for _, a in history[-5:]]
+            adapter_history = [
+                self._benchmark_action_to_dict(a) for _, a in history[-5:]
+            ]
 
         try:
             parsed_action = adapter.predict(
@@ -659,7 +695,9 @@ class UnifiedBaselineAgent(BenchmarkAgent):
         if action_type == "click":
             if parsed_action.element_id is not None:
                 return BenchmarkAction(
-                    type="click", target_node_id=str(parsed_action.element_id), raw_action=raw_action
+                    type="click",
+                    target_node_id=str(parsed_action.element_id),
+                    raw_action=raw_action,
                 )
             elif parsed_action.x is not None and parsed_action.y is not None:
                 x, y = parsed_action.x, parsed_action.y
@@ -670,13 +708,21 @@ class UnifiedBaselineAgent(BenchmarkAgent):
                 return BenchmarkAction(type="click", x=x, y=y, raw_action=raw_action)
 
         elif action_type == "type":
-            return BenchmarkAction(type="type", text=parsed_action.text, raw_action=raw_action)
+            return BenchmarkAction(
+                type="type", text=parsed_action.text, raw_action=raw_action
+            )
 
         elif action_type == "key":
-            return BenchmarkAction(type="key", key=parsed_action.key, raw_action=raw_action)
+            return BenchmarkAction(
+                type="key", key=parsed_action.key, raw_action=raw_action
+            )
 
         elif action_type == "scroll":
-            return BenchmarkAction(type="scroll", scroll_direction=parsed_action.direction, raw_action=raw_action)
+            return BenchmarkAction(
+                type="scroll",
+                scroll_direction=parsed_action.direction,
+                raw_action=raw_action,
+            )
 
         elif action_type == "done":
             return BenchmarkAction(type="done", raw_action=raw_action)
@@ -684,7 +730,8 @@ class UnifiedBaselineAgent(BenchmarkAgent):
         elif action_type == "drag":
             return BenchmarkAction(
                 type="drag",
-                x=parsed_action.x, y=parsed_action.y,
+                x=parsed_action.x,
+                y=parsed_action.y,
                 end_x=getattr(parsed_action, "end_x", None),
                 end_y=getattr(parsed_action, "end_y", None),
                 raw_action=raw_action,

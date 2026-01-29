@@ -348,7 +348,10 @@ def cmd_create(args):
     if use_fast:
         # Try multiple fast sizes with fallbacks
         sizes_to_try = VM_SIZE_FAST_FALLBACKS
-        log("CREATE", f"Creating VM '{VM_NAME}' with --fast (trying multiple D8 sizes)...")
+        log(
+            "CREATE",
+            f"Creating VM '{VM_NAME}' with --fast (trying multiple D8 sizes)...",
+        )
     else:
         # Standard mode: single size
         sizes_to_try = [(VM_SIZE_STANDARD, 0.19)]
@@ -410,7 +413,10 @@ def cmd_create(args):
             log("CREATE", "Tried sizes: " + ", ".join(s[0] for s in sizes_to_try))
         return 1
 
-    log("CREATE", f"Successfully created {successful_size} (${successful_cost:.2f}/hr) in {region}")
+    log(
+        "CREATE",
+        f"Successfully created {successful_size} (${successful_cost:.2f}/hr) in {region}",
+    )
 
     # Wait for SSH
     log("CREATE", "Waiting for SSH...")
@@ -705,7 +711,10 @@ def cmd_start(args):
     if getattr(args, "fast", False):
         ram_size = "16G"
         cpu_cores = 6
-        log("START", "Starting container with VERSION=11e (FAST mode: 6 cores, 16GB RAM)...")
+        log(
+            "START",
+            "Starting container with VERSION=11e (FAST mode: 6 cores, 16GB RAM)...",
+        )
     else:
         ram_size = "8G"
         cpu_cores = 4
@@ -738,7 +747,10 @@ def cmd_start(args):
         log("START", "Auto-launching VNC viewer...")
         tunnel_proc = setup_vnc_tunnel_and_browser(ip)
         if tunnel_proc:
-            log("START", f"VNC auto-launched at http://localhost:8006 (tunnel PID: {tunnel_proc.pid})")
+            log(
+                "START",
+                f"VNC auto-launched at http://localhost:8006 (tunnel PID: {tunnel_proc.pid})",
+            )
         else:
             log("START", "WARNING: VNC tunnel failed to start")
             log("START", f"Manual VNC: ssh -L 8006:localhost:8006 azureuser@{ip}")
@@ -1476,7 +1488,9 @@ def _show_benchmark_progress(ip: str) -> int:
     Parses the run log to count completed tasks and estimate remaining time.
     """
     # Find the most recent run log
-    result = ssh_run(ip, "ls -t /home/azureuser/cli_logs/run_*.log 2>/dev/null | head -1")
+    result = ssh_run(
+        ip, "ls -t /home/azureuser/cli_logs/run_*.log 2>/dev/null | head -1"
+    )
     log_file = result.stdout.strip()
 
     if not log_file:
