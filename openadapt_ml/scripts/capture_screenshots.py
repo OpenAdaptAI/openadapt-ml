@@ -35,9 +35,7 @@ Output:
 from __future__ import annotations
 
 import argparse
-import base64
 import datetime
-import os
 import re
 import subprocess
 import sys
@@ -499,7 +497,7 @@ Examples:
                 print(f"  OK: {output_path.name} ({size_kb:.1f} KB)")
                 results[target] = str(output_path)
             else:
-                print(f"  SKIP: Not available or capture failed")
+                print("  SKIP: Not available or capture failed")
                 results[target] = None
         except Exception as e:
             print(f"  ERROR: {e}")
