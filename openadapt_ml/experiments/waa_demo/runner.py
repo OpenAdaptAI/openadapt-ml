@@ -513,6 +513,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     zero-shot or demo-conditioned evaluation on WAA tasks.
     """
     from openadapt_evals import (
+        EvaluationConfig,
         WAAMockAdapter,
         compute_metrics,
         evaluate_agent_on_benchmark,
