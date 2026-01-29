@@ -38,7 +38,7 @@ from openadapt_ml.experiments.waa_demo.tasks import (
 )
 
 if TYPE_CHECKING:
-    from openadapt_ml.benchmarks.base import (
+    from openadapt_evals import (
         BenchmarkAction,
         BenchmarkObservation,
         BenchmarkTask,
@@ -267,7 +267,7 @@ Think step by step, then output the action on a new line starting with "ACTION:"
         Returns:
             BenchmarkAction parsed from VLM response
         """
-        from openadapt_ml.benchmarks.base import BenchmarkAction
+        from openadapt_evals import BenchmarkAction
 
         adapter = self._get_adapter()
 
@@ -409,7 +409,7 @@ Think step by step, then output the action on a new line starting with "ACTION:"
         Uses the same parsing logic as APIBenchmarkAgent.
         """
         import re
-        from openadapt_ml.benchmarks.base import BenchmarkAction
+        from openadapt_evals import BenchmarkAction
 
         raw_action = {"response": response}
 
@@ -512,12 +512,10 @@ def cmd_run(args: argparse.Namespace) -> int:
     This integrates with the benchmarks infrastructure to run either
     zero-shot or demo-conditioned evaluation on WAA tasks.
     """
-    from openadapt_ml.benchmarks import (
+    from openadapt_evals import (
+        EvaluationConfig,
         WAAMockAdapter,
         compute_metrics,
-    )
-    from openadapt_ml.benchmarks.runner import (
-        EvaluationConfig,
         evaluate_agent_on_benchmark,
     )
 

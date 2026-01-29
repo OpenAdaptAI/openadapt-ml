@@ -83,15 +83,14 @@ RUN find /client -name "*.py" -exec sed -i 's|20.20.20.21|172.30.0.2|g' {} \; &&
     echo "Patched client Python files"
 
 # -----------------------------------------------------------------------------
-# Add API-backed agent support (Claude Sonnet 4.5 / GPT-5.1)
-# This allows using --agent api-claude or --agent api-openai instead of navi
+# Add API-backed agent support (Claude / OpenAI)
+# NOTE: API agents (api-claude, api-openai) are run EXTERNALLY via openadapt-evals CLI
+# which connects to the WAA server over SSH tunnel. No internal patching needed.
+# The api_agent.py is included for reference/future use.
 # -----------------------------------------------------------------------------
 
-# Copy api_agent.py to the client mm_agents directory
+# Copy api_agent.py for reference (used externally by openadapt-evals)
 COPY api_agent.py /client/mm_agents/api_agent.py
-
-# Note: API agent patching (api-claude, api-openai) skipped for now
-# The navi agent works out of the box - API agents can be added later
 
 # -----------------------------------------------------------------------------
 # Fix Windows setup for automation

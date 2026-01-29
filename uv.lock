@@ -996,7 +996,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371 }
 wheels = [
@@ -2646,6 +2646,18 @@ wheels = [
 ]
 
 [[package]]
+name = "openadapt-evals"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pillow" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/22/56/2e952caefce3755d82a0633b42ed9fbf4fbb8bfe45da5c693f1e2de50e7d/openadapt_evals-0.1.0.tar.gz", hash = "sha256:1015bc0fffba318e89f963bcf189979e6f8a4edf7a7b9f602339886be731ca6b", size = 256352 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/18/93/d76148490517ae02d417608f7906e2c34a63f68dcc1506c9387484112580/openadapt_evals-0.1.0-py3-none-any.whl", hash = "sha256:05a79c8598b41d90a5c5e33a114dc0aa9f0c81956b5d71f3ebd130d025d79dd0", size = 72408 },
+]
+
+[[package]]
 name = "openadapt-ml"
 version = "0.2.0"
 source = { editable = "." }
@@ -2678,6 +2690,9 @@ azure = [
     { name = "azure-ai-ml" },
     { name = "azure-identity" },
 ]
+benchmarks = [
+    { name = "openadapt-evals" },
+]
 dev = [
     { name = "pytest" },
     { name = "ruff" },
@@ -2706,6 +2721,7 @@ requires-dist = [
     { name = "google-generativeai", specifier = ">=0.8.5" },
     { name = "matplotlib", specifier = ">=3.10.7" },
     { name = "openadapt-capture", specifier = ">=0.1.0" },
+    { name = "openadapt-evals", marker = "extra == 'benchmarks'", specifier = ">=0.1.0" },
     { name = "openai", marker = "extra == 'api'", specifier = ">=1.0.0" },
     { name = "peft", specifier = ">=0.18.0" },
     { name = "pillow", specifier = ">=12.0.0" },

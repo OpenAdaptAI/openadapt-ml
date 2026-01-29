@@ -2,8 +2,8 @@
 
 import pytest
 
-from openadapt_ml.benchmarks import APIBenchmarkAgent, BenchmarkAction
-from openadapt_ml.benchmarks.base import BenchmarkObservation, BenchmarkTask
+from openadapt_evals import BenchmarkAction, BenchmarkObservation, BenchmarkTask
+from openadapt_ml.benchmarks import APIBenchmarkAgent
 
 
 class TestAPIBenchmarkAgentParsing:

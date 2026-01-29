@@ -35,6 +35,7 @@ import json
 import subprocess
 import sys
 import time
+import webbrowser
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -43,7 +44,24 @@ from typing import Optional
 # Constants (single source of truth)
 # =============================================================================
 
-VM_SIZE = "Standard_D4ds_v4"
+# VM sizes with nested virtualization support
+# Standard: $0.19/hr, 4 vCPU, 16GB RAM - baseline
+# Fast: $0.38/hr, 8 vCPU, 32GB RAM - ~30% faster install, ~40% faster eval
+VM_SIZE_STANDARD = "Standard_D4ds_v4"
+VM_SIZE_FAST = "Standard_D8ds_v5"
+VM_SIZE = VM_SIZE_STANDARD  # Default, can be overridden by --fast flag
+
+# Fallback sizes for --fast mode (in order of preference)
+# D8ds_v5: First choice (v5 with local SSD)
+# D8s_v5: v5 without local SSD
+# D8ds_v4: v4 with local SSD
+# D8as_v5: AMD version
+VM_SIZE_FAST_FALLBACKS = [
+    ("Standard_D8ds_v5", 0.38),
+    ("Standard_D8s_v5", 0.36),
+    ("Standard_D8ds_v4", 0.38),
+    ("Standard_D8as_v5", 0.34),
+]
 VM_REGIONS = ["centralus", "eastus", "westus2", "eastus2"]
 VM_NAME = "waa-eval-vm"
 RESOURCE_GROUP = "openadapt-agents"
@@ -61,6 +79,36 @@ SSH_OPTS = [
     "-o",
     "ConnectTimeout=10",
 ]
+
+
+def setup_vnc_tunnel_and_browser(ip: str) -> Optional[subprocess.Popen]:
+    """Set up SSH tunnel for VNC and open browser.
+
+    Returns the tunnel process on success, None on failure.
+    """
+    # Kill any existing tunnel on port 8006
+    subprocess.run(["pkill", "-f", "ssh.*8006:localhost:8006"], capture_output=True)
+
+    # Start SSH tunnel in background
+    tunnel_proc = subprocess.Popen(
+        ["ssh", *SSH_OPTS, "-N", "-L", "8006:localhost:8006", f"azureuser@{ip}"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    # Wait for tunnel to establish
+    time.sleep(2)
+
+    # Check if tunnel is running
+    if tunnel_proc.poll() is not None:
+        return None
+
+    # Open browser
+    vnc_url = "http://localhost:8006"
+    webbrowser.open(vnc_url)
+
+    return tunnel_proc
+
 
 # Dockerfile location (relative to this file)
 DOCKERFILE_PATH = Path(__file__).parent / "waa_deploy" / "Dockerfile"
@@ -287,7 +335,6 @@ def wait_for_ssh(ip: str, timeout: int = 120) -> bool:
 def cmd_create(args):
     """Create Azure VM with nested virtualization."""
     init_logging()
-    log("CREATE", f"Creating VM '{VM_NAME}' ({VM_SIZE})...")
 
     # Check if VM already exists
     ip = get_vm_ip()
@@ -296,48 +343,80 @@ def cmd_create(args):
         log("CREATE", "Use 'delete' first if you want to recreate")
         return 0
 
-    # Try regions until one works
-    vm_created = False
-    for region in VM_REGIONS:
-        log("CREATE", f"Trying {region}...", end=" ")
-
-        result = subprocess.run(
-            [
-                "az",
-                "vm",
-                "create",
-                "--resource-group",
-                RESOURCE_GROUP,
-                "--name",
-                VM_NAME,
-                "--location",
-                region,
-                "--image",
-                "Ubuntu2204",
-                "--size",
-                VM_SIZE,
-                "--admin-username",
-                "azureuser",
-                "--generate-ssh-keys",
-                "--public-ip-sku",
-                "Standard",
-            ],
-            capture_output=True,
-            text=True,
+    # Determine which sizes to try
+    use_fast = getattr(args, "fast", False)
+    if use_fast:
+        # Try multiple fast sizes with fallbacks
+        sizes_to_try = VM_SIZE_FAST_FALLBACKS
+        log(
+            "CREATE",
+            f"Creating VM '{VM_NAME}' with --fast (trying multiple D8 sizes)...",
         )
+    else:
+        # Standard mode: single size
+        sizes_to_try = [(VM_SIZE_STANDARD, 0.19)]
+        log("CREATE", f"Creating VM '{VM_NAME}' ({VM_SIZE_STANDARD}, $0.19/hr)...")
 
-        if result.returncode == 0:
-            vm_info = json.loads(result.stdout)
-            ip = vm_info.get("publicIpAddress", "")
-            log("CREATE", f"created ({ip})")
-            vm_created = True
+    # Try size+region combinations until one works
+    vm_created = False
+    successful_size = None
+    successful_cost = None
+
+    for vm_size, cost_per_hour in sizes_to_try:
+        log("CREATE", f"Trying size {vm_size} (${cost_per_hour:.2f}/hr)...")
+
+        for region in VM_REGIONS:
+            log("CREATE", f"  {region}...", end=" ")
+
+            result = subprocess.run(
+                [
+                    "az",
+                    "vm",
+                    "create",
+                    "--resource-group",
+                    RESOURCE_GROUP,
+                    "--name",
+                    VM_NAME,
+                    "--location",
+                    region,
+                    "--image",
+                    "Ubuntu2204",
+                    "--size",
+                    vm_size,
+                    "--admin-username",
+                    "azureuser",
+                    "--generate-ssh-keys",
+                    "--public-ip-sku",
+                    "Standard",
+                ],
+                capture_output=True,
+                text=True,
+            )
+
+            if result.returncode == 0:
+                vm_info = json.loads(result.stdout)
+                ip = vm_info.get("publicIpAddress", "")
+                log("CREATE", f"created ({ip})")
+                vm_created = True
+                successful_size = vm_size
+                successful_cost = cost_per_hour
+                break
+            else:
+                log("CREATE", "unavailable")
+
+        if vm_created:
             break
-        else:
-            log("CREATE", "unavailable")
 
     if not vm_created:
-        log("CREATE", "ERROR: Could not create VM in any region")
+        log("CREATE", "ERROR: Could not create VM in any region with any size")
+        if use_fast:
+            log("CREATE", "Tried sizes: " + ", ".join(s[0] for s in sizes_to_try))
         return 1
+
+    log(
+        "CREATE",
+        f"Successfully created {successful_size} (${successful_cost:.2f}/hr) in {region}",
+    )
 
     # Wait for SSH
     log("CREATE", "Waiting for SSH...")
@@ -628,7 +707,19 @@ def cmd_start(args):
     # - Downloads Windows 11 Enterprise if not present
     # - Boots QEMU VM
     # - Runs WAA server automatically via FirstLogonCommands
-    log("START", "Starting container with VERSION=11e...")
+    # QEMU resource allocation (--fast uses more resources on D8ds_v5)
+    if getattr(args, "fast", False):
+        ram_size = "16G"
+        cpu_cores = 6
+        log(
+            "START",
+            "Starting container with VERSION=11e (FAST mode: 6 cores, 16GB RAM)...",
+        )
+    else:
+        ram_size = "8G"
+        cpu_cores = 4
+        log("START", "Starting container with VERSION=11e...")
+
     docker_cmd = f"""docker run -d \\
   --name winarena \\
   --device=/dev/kvm \\
@@ -638,8 +729,8 @@ def cmd_start(args):
   -p 7200:7200 \\
   -v /mnt/waa-storage:/storage \\
   -e VERSION=11e \\
-  -e RAM_SIZE=8G \\
-  -e CPU_CORES=4 \\
+  -e RAM_SIZE={ram_size} \\
+  -e CPU_CORES={cpu_cores} \\
   -e DISK_SIZE=64G \\
   {DOCKER_IMAGE}"""
 
@@ -650,8 +741,22 @@ def cmd_start(args):
 
     log("START", "Container started")
     log("START", "Windows will boot and install (15-20 min on first run)")
-    log("START", "Monitor via: uv run python -m openadapt_ml.benchmarks.cli_v2 logs")
-    log("START", f"VNC (via SSH tunnel): ssh -L 8006:localhost:8006 azureuser@{ip}")
+
+    # Auto-launch VNC unless --no-vnc specified
+    if not getattr(args, "no_vnc", False):
+        log("START", "Auto-launching VNC viewer...")
+        tunnel_proc = setup_vnc_tunnel_and_browser(ip)
+        if tunnel_proc:
+            log(
+                "START",
+                f"VNC auto-launched at http://localhost:8006 (tunnel PID: {tunnel_proc.pid})",
+            )
+        else:
+            log("START", "WARNING: VNC tunnel failed to start")
+            log("START", f"Manual VNC: ssh -L 8006:localhost:8006 azureuser@{ip}")
+    else:
+        log("START", f"VNC (via SSH tunnel): ssh -L 8006:localhost:8006 azureuser@{ip}")
+
     return 0
 
 
@@ -826,6 +931,14 @@ def cmd_run(args):
         f"--model {model}",
         f"--domain {domain}",
     ]
+
+    # Add parallelization flags if specified (argparse converts hyphens to underscores)
+    worker_id = getattr(args, "worker_id", 0)
+    num_workers = getattr(args, "num_workers", 1)
+    if num_workers > 1:
+        run_args.append(f"--worker_id {worker_id}")
+        run_args.append(f"--num_workers {num_workers}")
+        log("RUN", f"Parallel mode: worker {worker_id}/{num_workers}")
 
     # If specific task requested, create custom test config
     if task:
@@ -1255,10 +1368,31 @@ def cmd_deallocate(args):
 
     if result.returncode == 0:
         log("DEALLOCATE", "VM deallocated (billing stopped)")
-        log("DEALLOCATE", "Use 'az vm start' to resume")
+        log("DEALLOCATE", "Use 'vm-start' to resume")
         return 0
     else:
         log("DEALLOCATE", f"ERROR: {result.stderr}")
+        return 1
+
+
+def cmd_vm_start(args):
+    """Start a deallocated VM."""
+    init_logging()
+    log("VM-START", f"Starting VM '{VM_NAME}'...")
+
+    result = subprocess.run(
+        ["az", "vm", "start", "-g", RESOURCE_GROUP, "-n", VM_NAME],
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode == 0:
+        ip = get_vm_ip()
+        log("VM-START", f"VM started: {ip}")
+        log("VM-START", "Run 'build' then 'start' to launch WAA container")
+        return 0
+    else:
+        log("VM-START", f"ERROR: {result.stderr}")
         return 1
 
 
@@ -1348,6 +1482,78 @@ def cmd_vnc(args):
     return 0
 
 
+def _show_benchmark_progress(ip: str) -> int:
+    """Show benchmark progress with estimated completion time.
+
+    Parses the run log to count completed tasks and estimate remaining time.
+    """
+    # Find the most recent run log
+    result = ssh_run(
+        ip, "ls -t /home/azureuser/cli_logs/run_*.log 2>/dev/null | head -1"
+    )
+    log_file = result.stdout.strip()
+
+    if not log_file:
+        print("No benchmark running. Start one with: run --num-tasks N")
+        return 1
+
+    # Get task count and timestamps
+    result = ssh_run(
+        ip,
+        f"""
+        echo "=== WAA Benchmark Progress ==="
+        echo ""
+
+        # Count completed tasks (each "Result:" line = 1 task done)
+        COMPLETED=$(grep -c "Result:" {log_file} 2>/dev/null || echo 0)
+        # Count total tasks from task list (sum of all domain counts)
+        TOTAL=$(grep -A20 "Left tasks:" {log_file} | grep -E "^[a-z_]+: [0-9]+" | awk -F': ' '{{sum+=$2}} END {{print sum}}')
+        [ -z "$TOTAL" ] || [ "$TOTAL" -eq 0 ] && TOTAL=154
+
+        # Get timestamps
+        FIRST_TS=$(grep -oE '\\[2026-[0-9-]+ [0-9:]+' {log_file} | head -1 | tr -d '[')
+        LAST_TS=$(grep -oE '\\[2026-[0-9-]+ [0-9:]+' {log_file} | tail -1 | tr -d '[')
+
+        echo "Log: {log_file}"
+        echo "Started: $FIRST_TS"
+        echo "Latest:  $LAST_TS"
+        echo ""
+        echo "Tasks completed: $COMPLETED / $TOTAL"
+
+        # Calculate elapsed minutes
+        if [ -n "$FIRST_TS" ] && [ -n "$LAST_TS" ]; then
+            START_H=$(echo "$FIRST_TS" | awk '{{print $2}}' | cut -d: -f1)
+            START_M=$(echo "$FIRST_TS" | awk '{{print $2}}' | cut -d: -f2)
+            NOW_H=$(echo "$LAST_TS" | awk '{{print $2}}' | cut -d: -f1)
+            NOW_M=$(echo "$LAST_TS" | awk '{{print $2}}' | cut -d: -f2)
+
+            ELAPSED_MIN=$(( (NOW_H - START_H) * 60 + (NOW_M - START_M) ))
+            echo "Elapsed: $ELAPSED_MIN minutes"
+
+            if [ "$COMPLETED" -gt 0 ] && [ "$ELAPSED_MIN" -gt 0 ]; then
+                MIN_PER_TASK=$((ELAPSED_MIN / COMPLETED))
+                REMAINING=$((TOTAL - COMPLETED))
+                EST_MIN=$((REMAINING * MIN_PER_TASK))
+                EST_H=$((EST_MIN / 60))
+                EST_M=$((EST_MIN % 60))
+
+                echo ""
+                echo "Avg time per task: ~$MIN_PER_TASK min"
+                echo "Remaining tasks: $REMAINING"
+                echo "Estimated remaining: ~${{EST_H}}h ${{EST_M}}m"
+
+                # Progress bar
+                PCT=$((COMPLETED * 100 / TOTAL))
+                echo ""
+                echo "Progress: $PCT% [$COMPLETED/$TOTAL]"
+            fi
+        fi
+        """,
+    )
+    print(result.stdout)
+    return 0
+
+
 def _show_run_logs(ip: str, follow: bool = False, tail: Optional[int] = None) -> int:
     """Show the most recent run command log file.
 
@@ -1409,11 +1615,16 @@ def cmd_logs(args):
     Default behavior shows all relevant logs (docker, storage, probe status).
     Use --follow to stream docker logs continuously.
     Use --run to show run command output instead of container logs.
+    Use --progress to show benchmark progress and ETA.
     """
     ip = get_vm_ip()
     if not ip:
         print("ERROR: VM not found")
         return 1
+
+    # Handle --progress flag: show benchmark progress
+    if getattr(args, "progress", False):
+        return _show_benchmark_progress(ip)
 
     # Handle --run flag: show run command output
     if args.run:
@@ -1630,6 +1841,11 @@ Examples:
 
     # create
     p_create = subparsers.add_parser("create", help="Create Azure VM")
+    p_create.add_argument(
+        "--fast",
+        action="store_true",
+        help="Use larger VM (D8ds_v5, $0.38/hr) for ~30%% faster install, ~40%% faster eval",
+    )
     p_create.set_defaults(func=cmd_create)
 
     # delete
@@ -1650,6 +1866,14 @@ Examples:
     p_start = subparsers.add_parser("start", help="Start WAA container")
     p_start.add_argument(
         "--fresh", action="store_true", help="Clean storage for fresh Windows install"
+    )
+    p_start.add_argument(
+        "--no-vnc", action="store_true", help="Don't auto-launch VNC viewer"
+    )
+    p_start.add_argument(
+        "--fast",
+        action="store_true",
+        help="Allocate more CPU/RAM to QEMU (use with D8ds_v5 VM)",
     )
     p_start.set_defaults(func=cmd_start)
 
@@ -1693,6 +1917,18 @@ Examples:
     p_run.add_argument(
         "--no-download", action="store_true", help="Skip downloading results"
     )
+    p_run.add_argument(
+        "--worker-id",
+        type=int,
+        default=0,
+        help="Worker ID for parallel execution (0-indexed)",
+    )
+    p_run.add_argument(
+        "--num-workers",
+        type=int,
+        default=1,
+        help="Total number of parallel workers",
+    )
     p_run.set_defaults(func=cmd_run)
 
     # download
@@ -1720,6 +1956,10 @@ Examples:
     p_dealloc = subparsers.add_parser("deallocate", help="Stop VM (preserves disk)")
     p_dealloc.set_defaults(func=cmd_deallocate)
 
+    # vm-start
+    p_vmstart = subparsers.add_parser("vm-start", help="Start a deallocated VM")
+    p_vmstart.set_defaults(func=cmd_vm_start)
+
     # logs
     p_logs = subparsers.add_parser("logs", help="Show WAA status and logs")
     p_logs.add_argument(
@@ -1732,6 +1972,12 @@ Examples:
         "--run",
         action="store_true",
         help="Show run command output instead of container logs",
+    )
+    p_logs.add_argument(
+        "--progress",
+        "-p",
+        action="store_true",
+        help="Show benchmark progress and estimated completion time",
     )
     p_logs.set_defaults(func=cmd_logs)
 
