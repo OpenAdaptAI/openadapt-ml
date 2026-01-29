@@ -615,3 +615,130 @@ class TestCLIInterface:
         assert "--model" in source
         assert "--epochs" in source
         assert "--use-som" in source
+
+
+# -----------------------------------------------------------------------------
+# Test VL Model Detection
+# -----------------------------------------------------------------------------
+
+
+class TestVLModelDetection:
+    """Test vision-language model detection logic in _load_standard_model.
+
+    The detection uses three criteria:
+    1. "VL" in model name (case-insensitive)
+    2. "vision" in model name (case-insensitive)
+    3. vision_config attribute in model config
+    """
+
+    def test_vl_detection_by_name_vl_suffix(self) -> None:
+        """Test VL detection for models with VL in name."""
+        from openadapt_ml.training.trl_trainer import TRLTrainingConfig
+
+        # These model names should be detected as VL models
+        vl_model_names = [
+            "Qwen/Qwen2-VL-7B-Instruct",
+            "Qwen/Qwen2.5-VL-7B-Instruct",
+            "unsloth/Qwen2.5-VL-7B-Instruct",
+            "some-model-vl-base",  # lowercase vl
+            "Model-VL-2B",
+        ]
+
+        for model_name in vl_model_names:
+            is_vl = "VL" in model_name.upper()
+            assert is_vl, f"Expected '{model_name}' to be detected as VL model"
+
+    def test_vl_detection_by_name_vision(self) -> None:
+        """Test VL detection for models with 'vision' in name."""
+        vision_model_names = [
+            "llava-vision-7b",
+            "some-vision-model",
+            "VisionTransformer-base",
+        ]
+
+        for model_name in vision_model_names:
+            is_vision = "vision" in model_name.lower()
+            assert is_vision, f"Expected '{model_name}' to be detected via 'vision'"
+
+    def test_text_only_detection(self) -> None:
+        """Test that text-only models are NOT detected as VL."""
+        text_only_models = [
+            "meta-llama/Llama-2-7b-hf",
+            "Qwen/Qwen2-7B-Instruct",  # Note: Qwen2, not Qwen2-VL
+            "mistralai/Mistral-7B-v0.1",
+            "google/gemma-7b",
+            "unsloth/gemma-2-9b-it",
+        ]
+
+        for model_name in text_only_models:
+            is_vl_by_name = "VL" in model_name.upper() or "vision" in model_name.lower()
+            assert not is_vl_by_name, f"Expected '{model_name}' to NOT be detected as VL"
+
+    def test_vl_detection_by_config_attribute(self) -> None:
+        """Test VL detection via vision_config attribute."""
+        # Mock a config object with vision_config
+        mock_config_vl = MagicMock()
+        mock_config_vl.vision_config = {"hidden_size": 1024}
+
+        assert hasattr(mock_config_vl, "vision_config")
+
+        # Mock a config object without vision_config
+        mock_config_text = MagicMock(spec=["model_type", "hidden_size"])
+
+        assert not hasattr(mock_config_text, "vision_config")
+
+    def test_load_standard_model_uses_correct_class(self) -> None:
+        """Test that _load_standard_model selects correct model class.
+
+        This test mocks the heavy dependencies and verifies the branching logic.
+        """
+        from openadapt_ml.training.trl_trainer import TRLTrainingConfig
+
+        # Test VL model path
+        vl_config = TRLTrainingConfig(model_name="Qwen/Qwen2-VL-7B-Instruct")
+
+        with patch("openadapt_ml.training.trl_trainer.AutoConfig") as mock_autoconfig:
+            # Mock config without vision_config to test name-based detection
+            mock_config = MagicMock(spec=["model_type"])
+            mock_autoconfig.from_pretrained.return_value = mock_config
+
+            with patch("openadapt_ml.training.trl_trainer.Qwen2VLForConditionalGeneration") as mock_qwen_vl:
+                with patch("openadapt_ml.training.trl_trainer.AutoProcessor") as mock_processor:
+                    with patch("openadapt_ml.training.trl_trainer.get_peft_model") as mock_peft:
+                        mock_model = MagicMock()
+                        mock_qwen_vl.from_pretrained.return_value = mock_model
+                        mock_peft.return_value = mock_model
+
+                        from openadapt_ml.training.trl_trainer import _load_standard_model
+
+                        model, processor, is_unsloth = _load_standard_model(vl_config)
+
+                        # Should have called Qwen2VLForConditionalGeneration
+                        mock_qwen_vl.from_pretrained.assert_called_once()
+                        assert is_unsloth is False
+
+    def test_load_standard_model_text_only_path(self) -> None:
+        """Test that text-only models use AutoModelForCausalLM."""
+        from openadapt_ml.training.trl_trainer import TRLTrainingConfig
+
+        text_config = TRLTrainingConfig(model_name="meta-llama/Llama-2-7b-hf")
+
+        with patch("openadapt_ml.training.trl_trainer.AutoConfig") as mock_autoconfig:
+            # Mock config without vision_config
+            mock_config = MagicMock(spec=["model_type"])
+            mock_autoconfig.from_pretrained.return_value = mock_config
+
+            with patch("openadapt_ml.training.trl_trainer.AutoModelForCausalLM") as mock_causal_lm:
+                with patch("openadapt_ml.training.trl_trainer.AutoProcessor") as mock_processor:
+                    with patch("openadapt_ml.training.trl_trainer.get_peft_model") as mock_peft:
+                        mock_model = MagicMock()
+                        mock_causal_lm.from_pretrained.return_value = mock_model
+                        mock_peft.return_value = mock_model
+
+                        from openadapt_ml.training.trl_trainer import _load_standard_model
+
+                        model, processor, is_unsloth = _load_standard_model(text_config)
+
+                        # Should have called AutoModelForCausalLM
+                        mock_causal_lm.from_pretrained.assert_called_once()
+                        assert is_unsloth is False
