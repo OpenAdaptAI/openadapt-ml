@@ -134,7 +134,7 @@ def _load_standard_model(config: TRLTrainingConfig):
                 trust_remote_code=True,
             )
             print("  Using Qwen2VLForConditionalGeneration for VL model")
-        except (ImportError, ValueError):
+        except (ImportError, ValueError, RuntimeError, TypeError):
             # Fallback to AutoModelForVision2Seq for other VL models
             from transformers import AutoModelForVision2Seq
 
@@ -309,7 +309,7 @@ def train_with_trl(
                 logging_steps=config.logging_steps,
                 save_strategy=config.save_strategy,
                 max_length=None,  # Critical for VLMs
-                assistant_only_loss=True,
+                assistant_only_loss=False,  # Not supported for VL models yet
             )
 
             trainer = SFTTrainer(
