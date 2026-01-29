@@ -102,26 +102,70 @@ def _load_unsloth_model(config: TRLTrainingConfig):
 
 
 def _load_standard_model(config: TRLTrainingConfig):
-    """Fallback: Load model with standard transformers + peft."""
-    from transformers import AutoModelForCausalLM, AutoProcessor
+    """Fallback: Load model with standard transformers + peft.
+
+    Automatically detects vision-language models and uses the appropriate
+    model class (Qwen2VLForConditionalGeneration for VL models,
+    AutoModelForCausalLM for text-only models).
+    """
+    from transformers import AutoConfig, AutoProcessor
     from peft import LoraConfig, get_peft_model
     import torch
 
-    model = AutoModelForCausalLM.from_pretrained(
-        config.model_name,
-        torch_dtype=torch.bfloat16,
-        device_map="auto",
-        trust_remote_code=True,
+    # Check if this is a vision-language model
+    model_config = AutoConfig.from_pretrained(
+        config.model_name, trust_remote_code=True
     )
+    is_vl_model = (
+        "VL" in config.model_name.upper()
+        or "vision" in config.model_name.lower()
+        or hasattr(model_config, "vision_config")
+    )
+
+    if is_vl_model:
+        # Vision-language model - use Qwen2VLForConditionalGeneration or AutoModelForVision2Seq
+        try:
+            from transformers import Qwen2VLForConditionalGeneration
+
+            model = Qwen2VLForConditionalGeneration.from_pretrained(
+                config.model_name,
+                torch_dtype=torch.bfloat16,
+                device_map="auto",
+                trust_remote_code=True,
+            )
+            print("  Using Qwen2VLForConditionalGeneration for VL model")
+        except (ImportError, ValueError, RuntimeError, TypeError):
+            # Fallback to AutoModelForVision2Seq for other VL models
+            from transformers import AutoModelForVision2Seq
+
+            model = AutoModelForVision2Seq.from_pretrained(
+                config.model_name,
+                torch_dtype=torch.bfloat16,
+                device_map="auto",
+                trust_remote_code=True,
+            )
+            print("  Using AutoModelForVision2Seq for VL model")
+    else:
+        # Text-only model
+        from transformers import AutoModelForCausalLM
+
+        model = AutoModelForCausalLM.from_pretrained(
+            config.model_name,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+            trust_remote_code=True,
+        )
+        print("  Using AutoModelForCausalLM for text-only model")
+
     processor = AutoProcessor.from_pretrained(config.model_name, trust_remote_code=True)
 
-    # Apply LoRA
+    # Apply LoRA - use SEQ_2_SEQ_LM for VL models, CAUSAL_LM for text-only
     peft_config = LoraConfig(
         r=config.lora_r,
         lora_alpha=config.lora_alpha,
         lora_dropout=config.lora_dropout,
         target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],
-        task_type="CAUSAL_LM",
+        task_type="SEQ_2_SEQ_LM" if is_vl_model else "CAUSAL_LM",
     )
     model = get_peft_model(model, peft_config)
 
@@ -265,7 +309,7 @@ def train_with_trl(
                 logging_steps=config.logging_steps,
                 save_strategy=config.save_strategy,
                 max_length=None,  # Critical for VLMs
-                assistant_only_loss=True,
+                assistant_only_loss=False,  # Not supported for VL models yet
             )
 
             trainer = SFTTrainer(
