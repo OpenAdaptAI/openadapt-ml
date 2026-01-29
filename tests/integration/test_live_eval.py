@@ -17,8 +17,12 @@ Usage:
 import time
 from pathlib import Path
 
-from openadapt_ml.benchmarks import RandomAgent, WAAMockAdapter, evaluate_agent_on_benchmark
-from openadapt_ml.benchmarks.runner import EvaluationConfig
+from openadapt_evals import (
+    EvaluationConfig,
+    RandomAgent,
+    WAAMockAdapter,
+    evaluate_agent_on_benchmark,
+)
 
 
 def main():

@@ -36,8 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from openadapt_ml.benchmarks.agent import BenchmarkAgent
-from openadapt_ml.benchmarks.base import BenchmarkResult, BenchmarkTask
+from openadapt_evals import BenchmarkAgent, BenchmarkResult, BenchmarkTask
 
 logger = logging.getLogger(__name__)
 
@@ -496,7 +495,7 @@ class AzureWAAOrchestrator:
             List of BenchmarkResult for all tasks.
         """
         # Load tasks
-        from openadapt_ml.benchmarks.waa import WAAAdapter
+        from openadapt_evals import WAAMockAdapter as WAAAdapter
 
         adapter = WAAAdapter(waa_repo_path=self.waa_repo_path)
         if task_ids:

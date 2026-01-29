@@ -825,9 +825,112 @@ uv run python -m openadapt_ml.benchmarks.cli vm monitor --mock
 uv run python -m openadapt_ml.benchmarks.cli vm monitor --auto-shutdown-hours 2
 ```
 
+### 13.5 Benchmark Execution Logs
+
+View benchmark execution progress and logs:
+
+```bash
+# View WAA container status and Docker logs
+uv run python -m openadapt_ml.benchmarks.cli logs
+
+# View WAA benchmark execution logs (task progress, agent actions)
+uv run python -m openadapt_ml.benchmarks.cli logs --run
+
+# Stream execution logs live
+uv run python -m openadapt_ml.benchmarks.cli logs --run -f
+
+# Show last N lines of execution logs
+uv run python -m openadapt_ml.benchmarks.cli logs --run --tail 100
+
+# Show benchmark progress and ETA
+uv run python -m openadapt_ml.benchmarks.cli logs --progress
+```
+
+**Example: Container status (`logs`)**
+```
+WAA Status (20.12.180.208)
+============================================================
+
+[Docker Images]
+REPOSITORY              TAG       SIZE
+waa-auto                latest    25.4GB
+windowsarena/winarena   latest    25.8GB
+
+[Container]
+  Status: Up 49 minutes
+
+[Storage]
+  Total: 21G
+  Disk image: 64G
+
+[QEMU VM]
+  Status: Running (PID 1471)
+  CPU: 176%, MEM: 51.6%, Uptime: 47:28
+
+[WAA Server]
+  "status": "Probe successful"
+ (READY)
+```
+
+**Example: Benchmark execution logs (`logs --run -f`)**
+```
+Run log: /home/azureuser/cli_logs/run_20260128_175507.log
+------------------------------------------------------------
+Streaming log (Ctrl+C to stop)...
+
+[2026-01-28 23:05:10,303 INFO agent/401-MainProcess] Thinking...
+[2026-01-28 23:05:17,318 INFO python/62-MainProcess] Updated computer successfully
+[2026-01-28 23:05:17,318 INFO lib_run_single/56-MainProcess] Step 9: computer.window_manager.switch_to_application("Summer Trip - File Explorer")
+```
+
+**Example: Benchmark progress (`logs --progress`)**
+```
+=== WAA Benchmark Progress ===
+
+Log: /home/azureuser/cli_logs/run_20260128_175507.log
+Started: 2026-01-28 22:55:14
+Latest:  2026-01-28 23:28:37
+
+Tasks completed: 1 / 154
+Elapsed: 33 minutes
+
+Avg time per task: ~33 min
+Remaining tasks: 153
+Estimated remaining: ~84h 9m
+
+Progress: 0% [1/154]
+```
+
+**Other useful commands:**
+```bash
+# Check WAA server status (probe endpoint)
+uv run python -m openadapt_ml.benchmarks.cli probe
+
+# Check VM/Azure status
+uv run python -m openadapt_ml.benchmarks.cli status
+
+# Download benchmark results from VM
+uv run python -m openadapt_ml.benchmarks.cli download
+
+# Analyze downloaded results
+uv run python -m openadapt_ml.benchmarks.cli analyze
+```
+
+**Running benchmarks:**
+```bash
+# Run full benchmark (154 tasks)
+uv run python -m openadapt_ml.benchmarks.cli run --num-tasks 154
+
+# Run specific domain
+uv run python -m openadapt_ml.benchmarks.cli run --domain notepad --num-tasks 5
+
+# Run single task
+uv run python -m openadapt_ml.benchmarks.cli run --task notepad_1
+```
+
 For complete VM management commands and Azure setup instructions, see [`CLAUDE.md`](CLAUDE.md) and [`docs/azure_waa_setup.md`](docs/azure_waa_setup.md).
 
-### 13.5 Screenshot Capture Tool
+### 13.6 Screenshot Capture Tool
 
 Capture screenshots of dashboards and VMs for documentation and PR purposes:
 
