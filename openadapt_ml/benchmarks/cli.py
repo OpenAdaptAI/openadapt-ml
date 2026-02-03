@@ -4335,6 +4335,111 @@ def cmd_run_azure_ml(args):
     return 0
 
 
+def cmd_azure_ml_quota(args):
+    """Check Azure ML quota and help request increases."""
+    init_logging()
+
+    from openadapt_ml.config import settings
+
+    subscription_id = settings.azure_subscription_id
+    location = "eastus"
+
+    log("QUOTA", "=" * 60)
+    log("QUOTA", "AZURE ML QUOTA CHECK")
+    log("QUOTA", "=" * 60)
+
+    # Check current quota usage
+    log("QUOTA", "")
+    log("QUOTA", "Checking VM family quotas...")
+
+    result = subprocess.run(
+        ["az", "vm", "list-usage", "--location", location, "-o", "json"],
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        log("QUOTA", f"ERROR: Failed to get quota: {result.stderr}")
+        return 1
+
+    import json
+    usages = json.loads(result.stdout)
+
+    # Find relevant VM families for WAA
+    relevant_families = [
+        ("Standard DDSv4 Family", "D8ds_v4", 300, 8),  # 300GB temp, 8 vCPU
+        ("Standard DDSv5 Family", "D8ds_v5", 300, 8),  # 300GB temp, 8 vCPU
+        ("Standard DSv4 Family", "D8s_v4", 0, 8),      # No local SSD
+        ("Standard D Family", "D4_v3", 100, 4),        # 100GB temp, 4 vCPU
+    ]
+
+    log("QUOTA", "")
+    log("QUOTA", "VM Family Quotas (for WAA - need 300GB temp storage):")
+    log("QUOTA", "-" * 60)
+
+    recommended = None
+    for family_name, vm_example, temp_gb, vcpus_needed in relevant_families:
+        for usage in usages:
+            if usage["name"]["localizedValue"] == family_name:
+                current = usage["currentValue"]
+                limit = usage["limit"]
+                status = "✓" if limit >= vcpus_needed else "✗"
+                temp_info = f"{temp_gb}GB temp" if temp_gb > 0 else "no local SSD"
+
+                log("QUOTA", f"  {status} {family_name}")
+                log("QUOTA", f"      Current: {current}/{limit} vCPUs, Need: {vcpus_needed} for {vm_example} ({temp_info})")
+
+                if limit >= vcpus_needed and temp_gb >= 300 and not recommended:
+                    recommended = family_name
+                break
+
+    # WAA requirements
+    log("QUOTA", "")
+    log("QUOTA", "WAA Requirements:")
+    log("QUOTA", "  - Docker image + Windows: ~150GB")
+    log("QUOTA", "  - Safe margin: 300GB temp storage")
+    log("QUOTA", "  - Recommended: D8ds_v4 or D8ds_v5 (8 vCPUs, 300GB)")
+
+    if recommended:
+        log("QUOTA", "")
+        log("QUOTA", f"✓ You have sufficient quota for {recommended}")
+        return 0
+
+    # Need quota increase
+    log("QUOTA", "")
+    log("QUOTA", "=" * 60)
+    log("QUOTA", "QUOTA INCREASE REQUIRED")
+    log("QUOTA", "=" * 60)
+    log("QUOTA", "")
+    log("QUOTA", "To run Azure ML parallelization, you need to request")
+    log("QUOTA", "a quota increase for 'Standard DDSv4 Family' or 'Standard DDSv5 Family'")
+    log("QUOTA", "from 0/4 vCPUs to at least 8 vCPUs (for 1 worker)")
+    log("QUOTA", "or 16 vCPUs (for 2 parallel workers).")
+    log("QUOTA", "")
+
+    # Build the quota request URL
+    quota_url = (
+        f"https://portal.azure.com/#view/Microsoft_Azure_Capacity/QuotaMenuBlade/"
+        f"~/myQuotas/provider/Microsoft.Compute/location/{location}"
+    )
+
+    log("QUOTA", "Steps to request quota increase:")
+    log("QUOTA", "  1. Open the Azure Portal quota page (opening browser...)")
+    log("QUOTA", "  2. Search for 'Standard DDSv4 Family vCPUs'")
+    log("QUOTA", "  3. Click the pencil icon to edit")
+    log("QUOTA", "  4. Request new limit: 16 (for 2 workers) or 8 (for 1 worker)")
+    log("QUOTA", "  5. Submit request - usually approved within hours")
+    log("QUOTA", "")
+    log("QUOTA", f"URL: {quota_url}")
+
+    if getattr(args, "open", True):
+        log("QUOTA", "")
+        log("QUOTA", "Opening browser...")
+        webbrowser.open(quota_url)
+
+    return 0
+
+
 def cmd_azure_ml_status(args):
     """Show status of Azure ML jobs and compute instances."""
     init_logging()
@@ -5109,6 +5214,19 @@ Example:
         help="Agent to use (default: navi)",
     )
     p_azure_ml_auto.set_defaults(func=cmd_run_azure_ml_auto)
+
+    # azure-ml-quota - Check quota and help request increases
+    p_azure_quota = subparsers.add_parser(
+        "azure-ml-quota",
+        help="Check Azure ML quota and help request increases",
+    )
+    p_azure_quota.add_argument(
+        "--no-open",
+        dest="open",
+        action="store_false",
+        help="Don't open browser automatically",
+    )
+    p_azure_quota.set_defaults(func=cmd_azure_ml_quota)
 
     # azure-ml-status - Show Azure ML jobs and compute instances
     p_azure_status = subparsers.add_parser(
