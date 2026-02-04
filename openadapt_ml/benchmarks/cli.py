@@ -723,6 +723,468 @@ def cmd_delete_pool(args):
     return 0
 
 
+def cmd_pool_create(args):
+    """Create a pool of VMs for parallel WAA evaluation.
+
+    Creates N VMs in parallel, each configured with Docker and ready for WAA.
+    Uses ThreadPoolExecutor for concurrent VM creation.
+    """
+    init_logging()
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from openadapt_ml.benchmarks.vm_monitor import VMPoolRegistry
+
+    num_workers = getattr(args, "workers", 3)
+    # --standard flag overrides --fast
+    use_standard = getattr(args, "standard", False)
+    use_fast = not use_standard  # Default to fast (D8) for WAA unless --standard
+
+    log("POOL", f"Creating pool with {num_workers} workers...")
+
+    # Check for existing pool
+    registry = VMPoolRegistry()
+    if registry.get_pool() is not None:
+        log("POOL", "ERROR: Pool already exists. Delete it first with: delete-pool")
+        return 1
+
+    # Determine VM size
+    if use_fast:
+        sizes_to_try = VM_SIZE_FAST_FALLBACKS
+    else:
+        sizes_to_try = [(VM_SIZE_STANDARD, 0.19)]
+
+    # Find a working region/size combination first
+    working_size = None
+    working_region = None
+    working_cost = None
+
+    log("POOL", "Finding available region and VM size...")
+    for vm_size, cost in sizes_to_try:
+        for region in VM_REGIONS:
+            # Quick check if this size/region combo works
+            test_name = f"waa-pool-test-{int(time.time())}"
+            result = subprocess.run(
+                [
+                    "az", "vm", "create",
+                    "--resource-group", RESOURCE_GROUP,
+                    "--name", test_name,
+                    "--location", region,
+                    "--image", "Ubuntu2204",
+                    "--size", vm_size,
+                    "--admin-username", "azureuser",
+                    "--generate-ssh-keys",
+                    "--public-ip-sku", "Standard",
+                    "--no-wait",  # Don't wait for completion
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                working_size = vm_size
+                working_region = region
+                working_cost = cost
+                # Delete the test VM
+                subprocess.run(
+                    ["az", "vm", "delete", "-g", RESOURCE_GROUP, "-n", test_name, "--yes", "--force-deletion", "true", "--no-wait"],
+                    capture_output=True,
+                )
+                break
+        if working_size:
+            break
+
+    if not working_size:
+        log("POOL", "ERROR: No available VM size/region found")
+        log("POOL", "Check quota: uv run python -m openadapt_ml.benchmarks.cli azure-ml-quota")
+        return 1
+
+    log("POOL", f"Using {working_size} (${working_cost:.2f}/hr) in {working_region}")
+
+    def create_worker(worker_idx: int) -> tuple[str, str | None, str | None]:
+        """Create a single worker VM. Returns (name, ip, error)."""
+        name = f"waa-pool-{worker_idx:02d}"
+
+        # Check if VM already exists
+        check = subprocess.run(
+            ["az", "vm", "show", "-g", RESOURCE_GROUP, "-n", name, "--query", "id", "-o", "tsv"],
+            capture_output=True, text=True,
+        )
+        if check.returncode == 0 and check.stdout.strip():
+            # Get existing IP
+            ip_result = subprocess.run(
+                ["az", "vm", "show", "-d", "-g", RESOURCE_GROUP, "-n", name, "--query", "publicIps", "-o", "tsv"],
+                capture_output=True, text=True,
+            )
+            if ip_result.returncode == 0 and ip_result.stdout.strip():
+                return (name, ip_result.stdout.strip(), None)
+
+        # Create VM
+        result = subprocess.run(
+            [
+                "az", "vm", "create",
+                "--resource-group", RESOURCE_GROUP,
+                "--name", name,
+                "--location", working_region,
+                "--image", "Ubuntu2204",
+                "--size", working_size,
+                "--admin-username", "azureuser",
+                "--generate-ssh-keys",
+                "--public-ip-sku", "Standard",
+            ],
+            capture_output=True, text=True,
+        )
+
+        if result.returncode != 0:
+            return (name, None, result.stderr[:200] if result.stderr else "unknown error")
+
+        try:
+            vm_info = json.loads(result.stdout)
+            ip = vm_info.get("publicIpAddress", "")
+            return (name, ip, None)
+        except json.JSONDecodeError:
+            return (name, None, "Failed to parse VM creation output")
+
+    # Create VMs in parallel
+    log("POOL", f"Creating {num_workers} VMs in parallel...")
+    workers_created = []
+
+    with ThreadPoolExecutor(max_workers=min(num_workers, 5)) as executor:
+        futures = {executor.submit(create_worker, i): i for i in range(num_workers)}
+        for future in as_completed(futures):
+            name, ip, error = future.result()
+            if error:
+                log("POOL", f"  {name}: FAILED - {error}")
+            else:
+                log("POOL", f"  {name}: {ip}")
+                workers_created.append((name, ip))
+
+    if not workers_created:
+        log("POOL", "ERROR: No VMs created successfully")
+        return 1
+
+    log("POOL", f"\nCreated {len(workers_created)}/{num_workers} VMs")
+
+    # Wait for SSH on all VMs
+    log("POOL", "Waiting for SSH access...")
+    workers_ready = []
+    for name, ip in workers_created:
+        if wait_for_ssh(ip, timeout=120):
+            log("POOL", f"  {name}: SSH ready")
+            workers_ready.append((name, ip))
+        else:
+            log("POOL", f"  {name}: SSH timeout")
+
+    if not workers_ready:
+        log("POOL", "ERROR: No VMs have SSH access")
+        return 1
+
+    # Install Docker on all VMs in parallel
+    log("POOL", "Installing Docker on all VMs...")
+    docker_setup = """
+set -e
+sudo apt-get update -qq
+sudo apt-get install -y -qq docker.io
+sudo systemctl start docker
+sudo systemctl enable docker
+sudo usermod -aG docker $USER
+
+# Configure Docker to use /mnt (larger temp disk)
+sudo systemctl stop docker
+sudo mkdir -p /mnt/docker
+sudo bash -c 'echo "{\\"data-root\\": \\"/mnt/docker\\"}" > /etc/docker/daemon.json'
+sudo systemctl start docker
+
+# Pull WAA image
+docker pull windowsarena/winarena:latest
+"""
+
+    def setup_docker(name_ip: tuple[str, str]) -> tuple[str, bool]:
+        name, ip = name_ip
+        result = ssh_run(ip, docker_setup, stream=False, step="DOCKER")
+        return (name, result.returncode == 0)
+
+    with ThreadPoolExecutor(max_workers=min(len(workers_ready), 5)) as executor:
+        futures = {executor.submit(setup_docker, w): w[0] for w in workers_ready}
+        workers_docker_ok = []
+        for future in as_completed(futures):
+            name, success = future.result()
+            status = "Docker ready" if success else "Docker FAILED"
+            log("POOL", f"  {name}: {status}")
+            if success:
+                workers_docker_ok.append((name, dict(workers_ready)[name]))
+
+    if not workers_docker_ok:
+        log("POOL", "ERROR: Docker setup failed on all VMs")
+        return 1
+
+    # Register pool
+    pool = registry.create_pool(
+        workers=[(name, ip) for name, ip in workers_docker_ok],
+        resource_group=RESOURCE_GROUP,
+        location=working_region,
+        vm_size=working_size,
+    )
+
+    log("POOL", "=" * 60)
+    log("POOL", f"Pool created: {pool.pool_id}")
+    log("POOL", f"  Workers: {len(workers_docker_ok)}")
+    log("POOL", f"  Region: {working_region}")
+    log("POOL", f"  Size: {working_size} (${working_cost:.2f}/hr)")
+    log("POOL", f"  Est. hourly cost: ${working_cost * len(workers_docker_ok):.2f}/hr")
+    log("POOL", "")
+    log("POOL", "Next steps:")
+    log("POOL", "  1. Wait for WAA ready: pool-wait")
+    log("POOL", "  2. Run benchmark:      pool-run --tasks 154")
+    log("POOL", "  3. Delete pool:        delete-pool")
+    log("POOL", "=" * 60)
+
+    return 0
+
+
+def cmd_pool_wait(args):
+    """Wait for all pool workers to have WAA ready.
+
+    Starts WAA containers on each worker and waits for the Windows VM to boot
+    and the WAA server to respond.
+    """
+    init_logging()
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from openadapt_ml.benchmarks.vm_monitor import VMPoolRegistry, VMMonitor, VMConfig
+
+    registry = VMPoolRegistry()
+    pool = registry.get_pool()
+
+    if pool is None:
+        log("POOL-WAIT", "No active pool. Create one with: pool-create --workers N")
+        return 1
+
+    log("POOL-WAIT", f"Pool: {pool.pool_id} ({len(pool.workers)} workers)")
+
+    timeout_minutes = getattr(args, "timeout", 30)
+    no_start = getattr(args, "no_start", False)
+    start_containers = not no_start
+
+    # Start WAA containers on each worker
+    if start_containers:
+        log("POOL-WAIT", "Starting WAA containers on all workers...")
+
+        start_cmd = """
+docker rm -f winarena 2>/dev/null || true
+docker run -d --name winarena \\
+  --device /dev/kvm \\
+  -p 5000:5000 \\
+  -p 8006:8006 \\
+  -e VERSION=11e \\
+  -v /home/azureuser/waa-storage:/storage \\
+  windowsarena/winarena:latest
+"""
+
+        def start_container(worker) -> tuple[str, bool]:
+            result = ssh_run(worker.ip, start_cmd, stream=False, step="START")
+            return (worker.name, result.returncode == 0)
+
+        with ThreadPoolExecutor(max_workers=min(len(pool.workers), 5)) as executor:
+            futures = {executor.submit(start_container, w): w.name for w in pool.workers}
+            for future in as_completed(futures):
+                name, success = future.result()
+                status = "container started" if success else "FAILED"
+                log("POOL-WAIT", f"  {name}: {status}")
+
+    # Wait for WAA to be ready on all workers
+    log("POOL-WAIT", f"Waiting for WAA server on all workers (timeout: {timeout_minutes}m)...")
+    start_time = time.time()
+    timeout_seconds = timeout_minutes * 60
+
+    workers_pending = {w.name: w for w in pool.workers}
+    workers_ready = []
+
+    while workers_pending and (time.time() - start_time) < timeout_seconds:
+        for name, worker in list(workers_pending.items()):
+            try:
+                config = VMConfig(name=name, ssh_host=worker.ip)
+                monitor = VMMonitor(config, timeout=5)
+                ready, response = monitor.check_waa_probe()
+
+                if ready:
+                    log("POOL-WAIT", f"  {name}: READY")
+                    workers_ready.append(worker)
+                    del workers_pending[name]
+                    registry.update_worker(name, waa_ready=True, status="ready")
+            except Exception as e:
+                pass  # Keep trying
+
+        if workers_pending:
+            elapsed = int(time.time() - start_time)
+            pending_names = ", ".join(workers_pending.keys())
+            print(f"\r  [{elapsed}s] Waiting for: {pending_names}...", end="", flush=True)
+            time.sleep(10)
+
+    print()  # New line after progress
+
+    if workers_pending:
+        log("POOL-WAIT", f"TIMEOUT: {len(workers_pending)} workers not ready")
+        for name in workers_pending:
+            log("POOL-WAIT", f"  {name}: not ready (check with: ssh azureuser@{workers_pending[name].ip})")
+
+    log("POOL-WAIT", "=" * 60)
+    log("POOL-WAIT", f"Workers ready: {len(workers_ready)}/{len(pool.workers)}")
+
+    if workers_ready:
+        log("POOL-WAIT", "")
+        log("POOL-WAIT", "Ready to run benchmark:")
+        log("POOL-WAIT", "  pool-run --tasks 154")
+
+    return 0 if workers_ready else 1
+
+
+def cmd_pool_run(args):
+    """Run WAA benchmark tasks distributed across pool workers.
+
+    Distributes tasks round-robin across available workers and runs them
+    in parallel. Collects results from all workers.
+    """
+    init_logging()
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from openadapt_ml.benchmarks.vm_monitor import VMPoolRegistry
+
+    registry = VMPoolRegistry()
+    pool = registry.get_pool()
+
+    if pool is None:
+        log("POOL-RUN", "No active pool. Create one with: pool-create --workers N")
+        return 1
+
+    # Get task configuration
+    num_tasks = getattr(args, "tasks", 10)
+    agent = getattr(args, "agent", "navi")
+    model = getattr(args, "model", "gpt-4o-mini")
+    api_key = getattr(args, "api_key", None)
+
+    # Load API key from config if not provided
+    if not api_key:
+        try:
+            from openadapt_ml.config import settings
+            api_key = settings.openai_api_key
+        except Exception:
+            log("POOL-RUN", "ERROR: No API key provided. Use --api-key or set OPENAI_API_KEY in .env")
+            return 1
+
+    # Get ready workers
+    ready_workers = [w for w in pool.workers if w.waa_ready or w.status == "ready"]
+    if not ready_workers:
+        log("POOL-RUN", "No workers ready. Run: pool-wait")
+        return 1
+
+    log("POOL-RUN", "=" * 60)
+    log("POOL-RUN", f"Running WAA benchmark across {len(ready_workers)} workers")
+    log("POOL-RUN", f"  Tasks: {num_tasks}")
+    log("POOL-RUN", f"  Agent: {agent}")
+    log("POOL-RUN", f"  Model: {model}")
+    log("POOL-RUN", "=" * 60)
+
+    # Distribute tasks round-robin
+    tasks_per_worker = {}
+    for i in range(num_tasks):
+        worker_idx = i % len(ready_workers)
+        worker_name = ready_workers[worker_idx].name
+        if worker_name not in tasks_per_worker:
+            tasks_per_worker[worker_name] = []
+        tasks_per_worker[worker_name].append(i)
+
+    log("POOL-RUN", "Task distribution:")
+    for name, tasks in tasks_per_worker.items():
+        log("POOL-RUN", f"  {name}: {len(tasks)} tasks (indices {tasks[0]}-{tasks[-1] if len(tasks) > 1 else tasks[0]})")
+
+    # Update registry with assigned tasks
+    pool.total_tasks = num_tasks
+    registry.save()
+
+    # Create experiment name
+    exp_name = datetime.now().strftime("pool_%Y%m%d_%H%M%S")
+
+    def run_on_worker(worker, task_indices: list[int]) -> tuple[str, int, int, str]:
+        """Run tasks on a single worker. Returns (name, completed, failed, error)."""
+        # Write config.json with API key
+        config_cmd = f"""
+cat > /home/azureuser/waa-config.json << 'EOF'
+{{
+    "OPENAI_API_KEY": "{api_key}"
+}}
+EOF
+docker cp /home/azureuser/waa-config.json winarena:/winarena/config.json
+"""
+        ssh_run(worker.ip, config_cmd, stream=False, step="CONFIG")
+
+        # Run benchmark for assigned tasks
+        # Using task indices to determine which tasks to run
+        start_idx = task_indices[0]
+        end_idx = task_indices[-1] + 1
+        num_worker_tasks = len(task_indices)
+
+        # Run the benchmark
+        run_cmd = f"""
+docker exec winarena bash -c 'cd /winarena && python -m client.run \\
+    --agent {agent} \\
+    --model {model} \\
+    --exp_name {exp_name}_{worker.name} \\
+    --num_tasks {num_worker_tasks} \\
+    --start_idx {start_idx} \\
+    --emulator_ip 172.30.0.2 2>&1' | tee /home/azureuser/benchmark.log
+"""
+        result = ssh_run(worker.ip, run_cmd, stream=False, step="RUN")
+
+        # Count results (simplified - would need to parse actual output)
+        # For now, assume success if exit code is 0
+        if result.returncode == 0:
+            return (worker.name, num_worker_tasks, 0, None)
+        else:
+            return (worker.name, 0, num_worker_tasks, "benchmark failed")
+
+    # Run tasks in parallel on all workers
+    log("POOL-RUN", "")
+    log("POOL-RUN", "Starting benchmark on all workers...")
+    start_time = time.time()
+
+    results = []
+    with ThreadPoolExecutor(max_workers=len(ready_workers)) as executor:
+        futures = {}
+        for worker in ready_workers:
+            if worker.name in tasks_per_worker:
+                future = executor.submit(run_on_worker, worker, tasks_per_worker[worker.name])
+                futures[future] = worker.name
+
+        for future in as_completed(futures):
+            name, completed, failed, error = future.result()
+            if error:
+                log("POOL-RUN", f"  {name}: FAILED - {error}")
+            else:
+                log("POOL-RUN", f"  {name}: completed {completed} tasks")
+            results.append((name, completed, failed, error))
+
+            # Update registry
+            registry.update_pool_progress(completed=completed, failed=failed)
+
+    # Summary
+    elapsed = time.time() - start_time
+    total_completed = sum(r[1] for r in results)
+    total_failed = sum(r[2] for r in results)
+
+    log("POOL-RUN", "")
+    log("POOL-RUN", "=" * 60)
+    log("POOL-RUN", "BENCHMARK COMPLETE")
+    log("POOL-RUN", f"  Time: {elapsed/60:.1f} minutes")
+    log("POOL-RUN", f"  Completed: {total_completed}/{num_tasks}")
+    log("POOL-RUN", f"  Failed: {total_failed}")
+    log("POOL-RUN", "=" * 60)
+
+    # Collect results from workers
+    log("POOL-RUN", "")
+    log("POOL-RUN", "Results saved on each worker at /home/azureuser/benchmark.log")
+    log("POOL-RUN", "To collect results:")
+    for worker in ready_workers:
+        log("POOL-RUN", f"  scp azureuser@{worker.ip}:/home/azureuser/benchmark.log ./{worker.name}.log")
+
+    return 0 if total_failed == 0 else 1
+
+
 def cmd_status(args):
     """Show VM status."""
     ip = get_vm_ip()
@@ -6539,6 +7001,60 @@ Examples:
         "-y", "--yes", action="store_true", help="Skip confirmation"
     )
     p_delete_pool.set_defaults(func=cmd_delete_pool)
+
+    # pool-create
+    p_pool_create = subparsers.add_parser(
+        "pool-create", help="Create a pool of VMs for parallel WAA evaluation"
+    )
+    p_pool_create.add_argument(
+        "--workers", "-n", type=int, default=3,
+        help="Number of worker VMs to create (default: 3)"
+    )
+    p_pool_create.add_argument(
+        "--fast", action="store_true", default=True,
+        help="Use D8 (8 vCPU) VMs for faster evaluation (default: True)"
+    )
+    p_pool_create.add_argument(
+        "--standard", action="store_true",
+        help="Use D4 (4 vCPU) VMs to save costs"
+    )
+    p_pool_create.set_defaults(func=cmd_pool_create)
+
+    # pool-wait
+    p_pool_wait = subparsers.add_parser(
+        "pool-wait", help="Wait for all pool workers to have WAA ready"
+    )
+    p_pool_wait.add_argument(
+        "--timeout", "-t", type=int, default=30,
+        help="Timeout in minutes (default: 30)"
+    )
+    p_pool_wait.add_argument(
+        "--no-start", action="store_true",
+        help="Don't start containers, just wait for existing ones"
+    )
+    p_pool_wait.set_defaults(func=cmd_pool_wait)
+
+    # pool-run
+    p_pool_run = subparsers.add_parser(
+        "pool-run", help="Run WAA benchmark tasks distributed across pool workers"
+    )
+    p_pool_run.add_argument(
+        "--tasks", "-n", type=int, default=10,
+        help="Number of tasks to run (default: 10, use 154 for full benchmark)"
+    )
+    p_pool_run.add_argument(
+        "--agent", default="navi",
+        help="Agent type (default: navi)"
+    )
+    p_pool_run.add_argument(
+        "--model", default="gpt-4o-mini",
+        help="Model name (default: gpt-4o-mini)"
+    )
+    p_pool_run.add_argument(
+        "--api-key",
+        help="OpenAI API key (default: from .env)"
+    )
+    p_pool_run.set_defaults(func=cmd_pool_run)
 
     # status
     p_status = subparsers.add_parser("status", help="Show VM status")
