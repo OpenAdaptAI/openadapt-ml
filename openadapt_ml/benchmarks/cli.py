@@ -782,9 +782,19 @@ def cmd_pool_create(args):
                 working_size = vm_size
                 working_region = region
                 working_cost = cost
-                # Delete the test VM
+                # Delete the test VM and wait for completion
+                log("POOL", f"  Found working combo, cleaning up test VM...")
                 subprocess.run(
-                    ["az", "vm", "delete", "-g", RESOURCE_GROUP, "-n", test_name, "--yes", "--force-deletion", "true", "--no-wait"],
+                    ["az", "vm", "delete", "-g", RESOURCE_GROUP, "-n", test_name, "--yes", "--force-deletion", "true"],
+                    capture_output=True,
+                )
+                # Also clean up associated resources
+                subprocess.run(
+                    ["az", "network", "nic", "delete", "-g", RESOURCE_GROUP, "-n", f"{test_name}VMNic"],
+                    capture_output=True,
+                )
+                subprocess.run(
+                    ["az", "network", "public-ip", "delete", "-g", RESOURCE_GROUP, "-n", f"{test_name}PublicIP"],
                     capture_output=True,
                 )
                 break
@@ -833,7 +843,15 @@ def cmd_pool_create(args):
         )
 
         if result.returncode != 0:
-            return (name, None, result.stderr[:200] if result.stderr else "unknown error")
+            # Parse error for better message
+            error_msg = result.stderr or "unknown error"
+            try:
+                error_json = json.loads(error_msg)
+                if "error" in error_json:
+                    error_msg = error_json["error"].get("message", error_msg)[:500]
+            except json.JSONDecodeError:
+                error_msg = error_msg[:500]
+            return (name, None, error_msg)
 
         try:
             vm_info = json.loads(result.stdout)
@@ -892,21 +910,22 @@ sudo mkdir -p /mnt/docker
 sudo bash -c 'echo "{\\"data-root\\": \\"/mnt/docker\\"}" > /etc/docker/daemon.json'
 sudo systemctl start docker
 
-# Pull WAA image
-docker pull windowsarena/winarena:latest
+# Pull WAA image (use sudo since usermod hasn't taken effect yet)
+sudo docker pull windowsarena/winarena:latest
 """
 
-    def setup_docker(name_ip: tuple[str, str]) -> tuple[str, bool]:
+    def setup_docker(name_ip: tuple[str, str]) -> tuple[str, bool, str]:
         name, ip = name_ip
         result = ssh_run(ip, docker_setup, stream=False, step="DOCKER")
-        return (name, result.returncode == 0)
+        error = result.stderr[:200] if result.stderr else ""
+        return (name, result.returncode == 0, error)
 
     with ThreadPoolExecutor(max_workers=min(len(workers_ready), 5)) as executor:
         futures = {executor.submit(setup_docker, w): w[0] for w in workers_ready}
         workers_docker_ok = []
         for future in as_completed(futures):
-            name, success = future.result()
-            status = "Docker ready" if success else "Docker FAILED"
+            name, success, error = future.result()
+            status = "Docker ready" if success else f"Docker FAILED: {error[:100]}"
             log("POOL", f"  {name}: {status}")
             if success:
                 workers_docker_ok.append((name, dict(workers_ready)[name]))
@@ -1183,6 +1202,102 @@ docker exec winarena bash -c 'cd /winarena && python -m client.run \\
         log("POOL-RUN", f"  scp azureuser@{worker.ip}:/home/azureuser/benchmark.log ./{worker.name}.log")
 
     return 0 if total_failed == 0 else 1
+
+
+def cmd_pool_cleanup(args):
+    """Clean up orphaned pool resources (VMs, NICs, IPs, disks).
+
+    Use this after failed pool operations to clean up resources that
+    weren't properly deleted.
+    """
+    init_logging()
+
+    log("POOL-CLEANUP", "Searching for orphaned pool resources...")
+
+    # Find pool VMs
+    result = subprocess.run(
+        ["az", "vm", "list", "-g", RESOURCE_GROUP, "--query", "[?contains(name, 'waa-pool')].name", "-o", "tsv"],
+        capture_output=True, text=True,
+    )
+    vms = [v.strip() for v in result.stdout.strip().split("\n") if v.strip()]
+
+    # Find NICs
+    result = subprocess.run(
+        ["az", "network", "nic", "list", "-g", RESOURCE_GROUP, "--query", "[?contains(name, 'waa-pool')].name", "-o", "tsv"],
+        capture_output=True, text=True,
+    )
+    nics = [n.strip() for n in result.stdout.strip().split("\n") if n.strip()]
+
+    # Find public IPs
+    result = subprocess.run(
+        ["az", "network", "public-ip", "list", "-g", RESOURCE_GROUP, "--query", "[?contains(name, 'waa-pool')].name", "-o", "tsv"],
+        capture_output=True, text=True,
+    )
+    ips = [i.strip() for i in result.stdout.strip().split("\n") if i.strip()]
+
+    # Find disks
+    result = subprocess.run(
+        ["az", "disk", "list", "-g", RESOURCE_GROUP, "--query", "[?contains(name, 'waa-pool')].name", "-o", "tsv"],
+        capture_output=True, text=True,
+    )
+    disks = [d.strip() for d in result.stdout.strip().split("\n") if d.strip()]
+
+    total = len(vms) + len(nics) + len(ips) + len(disks)
+
+    if total == 0:
+        log("POOL-CLEANUP", "No orphaned resources found.")
+        return 0
+
+    log("POOL-CLEANUP", f"Found {total} orphaned resources:")
+    if vms:
+        log("POOL-CLEANUP", f"  VMs: {len(vms)}")
+    if nics:
+        log("POOL-CLEANUP", f"  NICs: {len(nics)}")
+    if ips:
+        log("POOL-CLEANUP", f"  Public IPs: {len(ips)}")
+    if disks:
+        log("POOL-CLEANUP", f"  Disks: {len(disks)}")
+
+    if not getattr(args, "yes", False):
+        confirm = input("\nDelete these resources? [y/N]: ")
+        if confirm.lower() != "y":
+            log("POOL-CLEANUP", "Aborted.")
+            return 0
+
+    # Delete VMs first (releases NICs)
+    for vm in vms:
+        log("POOL-CLEANUP", f"  Deleting VM: {vm}")
+        subprocess.run(
+            ["az", "vm", "delete", "-g", RESOURCE_GROUP, "-n", vm, "--yes", "--force-deletion", "true"],
+            capture_output=True,
+        )
+
+    # Delete NICs
+    for nic in nics:
+        log("POOL-CLEANUP", f"  Deleting NIC: {nic}")
+        subprocess.run(
+            ["az", "network", "nic", "delete", "-g", RESOURCE_GROUP, "-n", nic],
+            capture_output=True,
+        )
+
+    # Delete public IPs
+    for ip in ips:
+        log("POOL-CLEANUP", f"  Deleting IP: {ip}")
+        subprocess.run(
+            ["az", "network", "public-ip", "delete", "-g", RESOURCE_GROUP, "-n", ip],
+            capture_output=True,
+        )
+
+    # Delete disks
+    for disk in disks:
+        log("POOL-CLEANUP", f"  Deleting disk: {disk}")
+        subprocess.run(
+            ["az", "disk", "delete", "-g", RESOURCE_GROUP, "-n", disk, "--yes"],
+            capture_output=True,
+        )
+
+    log("POOL-CLEANUP", "Cleanup complete.")
+    return 0
 
 
 def cmd_status(args):
@@ -7055,6 +7170,16 @@ Examples:
         help="OpenAI API key (default: from .env)"
     )
     p_pool_run.set_defaults(func=cmd_pool_run)
+
+    # pool-cleanup
+    p_pool_cleanup = subparsers.add_parser(
+        "pool-cleanup", help="Clean up orphaned pool resources (VMs, NICs, IPs, disks)"
+    )
+    p_pool_cleanup.add_argument(
+        "-y", "--yes", action="store_true",
+        help="Skip confirmation"
+    )
+    p_pool_cleanup.set_defaults(func=cmd_pool_cleanup)
 
     # status
     p_status = subparsers.add_parser("status", help="Show VM status")
