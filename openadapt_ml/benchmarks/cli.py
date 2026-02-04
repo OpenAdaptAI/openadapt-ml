@@ -32,8 +32,10 @@ Workflow:
 
 import argparse
 import json
+import os
 import subprocess
 import sys
+import tempfile
 import time
 import webbrowser
 from datetime import datetime
@@ -4335,22 +4337,175 @@ def cmd_run_azure_ml(args):
     return 0
 
 
+def get_azure_ml_dedicated_quota(subscription_id: str, location: str) -> dict:
+    """Get Azure ML Dedicated quota using REST API.
+
+    IMPORTANT: Azure ML uses "Dedicated" quota (BatchAI), NOT regular VM quota!
+    - VM quota (az vm list-usage): For regular Azure VMs
+    - ML Dedicated quota: For Azure ML compute instances
+
+    These are DIFFERENT quotas! Having 10 vCPUs VM quota doesn't mean you can
+    create ML compute instances - you need ML Dedicated quota.
+
+    Returns dict with:
+        - quota: Current limit (vCPUs)
+        - usage: Current usage (vCPUs)
+        - available: quota - usage
+        - error: Error message if any
+    """
+    # Get access token
+    token_result = subprocess.run(
+        ["az", "account", "get-access-token", "--query", "accessToken", "-o", "tsv"],
+        capture_output=True,
+        text=True,
+    )
+    if token_result.returncode != 0:
+        return {"error": f"Failed to get access token: {token_result.stderr}", "quota": 0, "usage": 0, "available": 0}
+
+    token = token_result.stdout.strip()
+
+    # Azure ML Dedicated quota API endpoint
+    # Resource name for dedicated quota is "standardDDSv4Family" (no spaces, camelCase)
+    url = f"https://management.azure.com/subscriptions/{subscription_id}/providers/Microsoft.MachineLearningServices/locations/{location}/usages?api-version=2024-04-01"
+
+    import urllib.request
+    import urllib.error
+
+    req = urllib.request.Request(url)
+    req.add_header("Authorization", f"Bearer {token}")
+    req.add_header("Content-Type", "application/json")
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            data = json.loads(response.read().decode())
+    except urllib.error.HTTPError as e:
+        return {"error": f"HTTP {e.code}: {e.reason}", "quota": 0, "usage": 0, "available": 0}
+    except Exception as e:
+        return {"error": str(e), "quota": 0, "usage": 0, "available": 0}
+
+    # Find Dedicated quota in response
+    # Look for entries with "Dedicated" in the name
+    result = {"quota": 0, "usage": 0, "available": 0, "error": None, "details": []}
+
+    for usage in data.get("value", []):
+        name = usage.get("name", {})
+        local_name = name.get("localizedValue", "")
+
+        # Azure ML dedicated quota shows as "Dedicated <family> Family vCPUs"
+        if "Dedicated" in local_name or "dedicated" in local_name.lower():
+            current = usage.get("currentValue", 0)
+            limit = usage.get("limit", 0)
+            result["details"].append({
+                "name": local_name,
+                "usage": current,
+                "quota": limit,
+                "available": limit - current
+            })
+
+            # Sum up total dedicated quota
+            result["quota"] += limit
+            result["usage"] += current
+
+    result["available"] = result["quota"] - result["usage"]
+    return result
+
+
+# ARM-based VM sizes that won't run x86 Docker images
+ARM_VM_SIZES = [
+    "Standard_D8pds_v5",
+    "Standard_D4pds_v5",
+    "Standard_D16pds_v5",
+    "Standard_D32pds_v5",
+    "Standard_D8plds_v5",
+    "Standard_D4plds_v5",
+    # Add more ARM sizes as needed - any size with 'p' before 'ds' or 'ls'
+]
+
+
+def is_arm_vm_size(vm_size: str) -> bool:
+    """Check if a VM size is ARM-based (won't run x86 Docker images)."""
+    # ARM VMs have 'p' after the number in the D series (e.g., D8pds_v5, D8plds_v5)
+    # Pattern: Standard_D{N}p{optional-l}{type}_v{version}
+    # The 'p' indicates ARM processor (Ampere Altra)
+    import re
+    return bool(re.search(r'_D\d+pl?[ld]?s_v\d+', vm_size, re.IGNORECASE))
+
+
 def cmd_azure_ml_quota(args):
-    """Check Azure ML quota and help request increases."""
+    """Check Azure ML quota and help request increases.
+
+    IMPORTANT: This checks BOTH:
+    1. VM quota (az vm list-usage) - for regular Azure VMs
+    2. Azure ML Dedicated quota - for ML compute instances (DIFFERENT!)
+
+    Azure ML compute instances require "Dedicated" quota, not VM quota.
+    """
     init_logging()
 
     from openadapt_ml.config import settings
 
     subscription_id = settings.azure_subscription_id
-    location = "eastus"
+    location = getattr(args, "location", None) or "centralus"  # Default to Central US workspace
+
+    # Try to get workspace location from settings
+    workspace_name = getattr(settings, "azure_ml_workspace_name", "openadapt-ml-central")
+    if "central" in workspace_name.lower():
+        location = "centralus"
 
     log("QUOTA", "=" * 60)
     log("QUOTA", "AZURE ML QUOTA CHECK")
     log("QUOTA", "=" * 60)
-
-    # Check current quota usage
     log("QUOTA", "")
-    log("QUOTA", "Checking VM family quotas...")
+    log("QUOTA", f"Workspace: {workspace_name}")
+    log("QUOTA", f"Region:    {location}")
+    log("QUOTA", "")
+
+    # =========================================================================
+    # SECTION 1: Azure ML Dedicated Quota (what actually matters for ML)
+    # =========================================================================
+    log("QUOTA", "=" * 60)
+    log("QUOTA", "1. AZURE ML DEDICATED QUOTA (for ML compute instances)")
+    log("QUOTA", "=" * 60)
+    log("QUOTA", "")
+    log("QUOTA", "NOTE: Azure ML compute uses 'Dedicated' quota, NOT VM quota!")
+    log("QUOTA", "      Even with 10 vCPU VM quota, you need Dedicated quota.")
+    log("QUOTA", "")
+
+    ml_quota = get_azure_ml_dedicated_quota(subscription_id, location)
+
+    if ml_quota.get("error"):
+        log("QUOTA", f"ERROR: {ml_quota['error']}")
+    else:
+        log("QUOTA", f"Total Dedicated: {ml_quota['usage']}/{ml_quota['quota']} vCPUs used")
+        log("QUOTA", f"Available:       {ml_quota['available']} vCPUs")
+        log("QUOTA", "")
+
+        if ml_quota.get("details"):
+            log("QUOTA", "Breakdown by family:")
+            for d in ml_quota["details"]:
+                status = "OK" if d["available"] >= 8 else "LOW"
+                log("QUOTA", f"  {d['name']}: {d['usage']}/{d['quota']} [{status}]")
+
+        # Check if we have enough for WAA (need 8 vCPUs for D8ds_v4)
+        if ml_quota["available"] >= 8:
+            log("QUOTA", "")
+            log("QUOTA", ">>> You have sufficient ML Dedicated quota for WAA (8+ vCPUs)")
+        else:
+            log("QUOTA", "")
+            log("QUOTA", ">>> INSUFFICIENT ML Dedicated quota! Need 8 vCPUs, have " + str(ml_quota['available']))
+            log("QUOTA", "")
+            log("QUOTA", "Request quota increase at:")
+            ml_quota_url = f"https://ml.azure.com/quota/{subscription_id}/{location}"
+            log("QUOTA", f"  {ml_quota_url}")
+
+    # =========================================================================
+    # SECTION 2: Regular VM Quota (for reference)
+    # =========================================================================
+    log("QUOTA", "")
+    log("QUOTA", "=" * 60)
+    log("QUOTA", "2. VM FAMILY QUOTA (for regular VMs, NOT ML compute)")
+    log("QUOTA", "=" * 60)
+    log("QUOTA", "")
 
     result = subprocess.run(
         ["az", "vm", "list-usage", "--location", location, "-o", "json"],
@@ -4359,83 +4514,551 @@ def cmd_azure_ml_quota(args):
     )
 
     if result.returncode != 0:
-        log("QUOTA", f"ERROR: Failed to get quota: {result.stderr}")
+        log("QUOTA", f"ERROR: Failed to get VM quota: {result.stderr}")
+    else:
+        usages = json.loads(result.stdout)
+
+        # Find relevant VM families for WAA
+        relevant_families = [
+            ("Standard DDSv4 Family", "D8ds_v4", 300, 8, False),   # x86, 300GB temp
+            ("Standard DDSv5 Family", "D8ds_v5", 300, 8, False),   # x86, 300GB temp
+            ("Standard DPDSv5 Family", "D8pds_v5", 300, 8, True),  # ARM! Won't work
+            ("Standard DSv4 Family", "D8s_v4", 0, 8, False),       # No local SSD
+            ("Standard D Family", "D4_v3", 100, 4, False),         # 100GB temp
+        ]
+
+        log("QUOTA", "VM Family Quotas (300GB temp storage required for WAA):")
+        log("QUOTA", "-" * 60)
+
+        for family_name, vm_example, temp_gb, vcpus_needed, is_arm in relevant_families:
+            for usage in usages:
+                if usage["name"]["localizedValue"] == family_name:
+                    current = usage["currentValue"]
+                    limit = usage["limit"]
+
+                    if is_arm:
+                        status = "ARM!"
+                        note = "ARM-based, won't run x86 Docker"
+                    elif limit >= vcpus_needed:
+                        status = "OK"
+                        note = f"{temp_gb}GB temp" if temp_gb > 0 else "no local SSD"
+                    else:
+                        status = "LOW"
+                        note = f"{temp_gb}GB temp" if temp_gb > 0 else "no local SSD"
+
+                    log("QUOTA", f"  [{status:4}] {family_name}")
+                    log("QUOTA", f"         {current}/{limit} vCPUs - {vm_example} ({note})")
+                    break
+
+    # =========================================================================
+    # SECTION 3: Recommendations
+    # =========================================================================
+    log("QUOTA", "")
+    log("QUOTA", "=" * 60)
+    log("QUOTA", "RECOMMENDATIONS")
+    log("QUOTA", "=" * 60)
+    log("QUOTA", "")
+    log("QUOTA", "For WAA evaluation:")
+    log("QUOTA", "  1. Use D8ds_v4 (x86, 300GB temp storage)")
+    log("QUOTA", "  2. Ensure workspace region = compute region")
+    log("QUOTA", f"     Current workspace: {workspace_name} ({location})")
+    log("QUOTA", "  3. Request ML Dedicated quota (not VM quota!) at:")
+    log("QUOTA", f"     https://ml.azure.com/quota/{subscription_id}/{location}")
+    log("QUOTA", "")
+    log("QUOTA", "AVOID:")
+    log("QUOTA", "  - D8pds_v5 (ARM-based, won't run x86 Docker/QEMU)")
+    log("QUOTA", "  - D4ds_v4 (only 150GB temp, not enough for WAA)")
+    log("QUOTA", "  - D4_v3 (only 100GB temp)")
+    log("QUOTA", "")
+
+    # Open browser if requested
+    if getattr(args, "open", True):
+        ml_quota_url = f"https://ml.azure.com/quota/{subscription_id}/{location}"
+        log("QUOTA", f"Opening ML quota page: {ml_quota_url}")
+        webbrowser.open(ml_quota_url)
+
+    return 0
+
+
+def cmd_azure_ml_quota_request(args):
+    """Request Azure quota increase via CLI automation.
+
+    Uses the `az quota` CLI extension to programmatically request quota increases.
+    Small requests (e.g., 8 vCPUs) are usually auto-approved instantly.
+    """
+    init_logging()
+
+    from openadapt_ml.config import settings
+
+    subscription_id = settings.azure_subscription_id
+    location = getattr(args, "location", "eastus")
+    family = getattr(args, "family", "standardDPDSv5Family")
+    vcpus = getattr(args, "vcpus", 8)
+
+    if not subscription_id:
+        log("QUOTA", "ERROR: AZURE_SUBSCRIPTION_ID not set in .env")
         return 1
 
-    import json
-    usages = json.loads(result.stdout)
-
-    # Find relevant VM families for WAA
-    relevant_families = [
-        ("Standard DDSv4 Family", "D8ds_v4", 300, 8),  # 300GB temp, 8 vCPU
-        ("Standard DDSv5 Family", "D8ds_v5", 300, 8),  # 300GB temp, 8 vCPU
-        ("Standard DSv4 Family", "D8s_v4", 0, 8),      # No local SSD
-        ("Standard D Family", "D4_v3", 100, 4),        # 100GB temp, 4 vCPU
-    ]
-
-    log("QUOTA", "")
-    log("QUOTA", "VM Family Quotas (for WAA - need 300GB temp storage):")
-    log("QUOTA", "-" * 60)
-
-    recommended = None
-    for family_name, vm_example, temp_gb, vcpus_needed in relevant_families:
-        for usage in usages:
-            if usage["name"]["localizedValue"] == family_name:
-                current = usage["currentValue"]
-                limit = usage["limit"]
-                status = "✓" if limit >= vcpus_needed else "✗"
-                temp_info = f"{temp_gb}GB temp" if temp_gb > 0 else "no local SSD"
-
-                log("QUOTA", f"  {status} {family_name}")
-                log("QUOTA", f"      Current: {current}/{limit} vCPUs, Need: {vcpus_needed} for {vm_example} ({temp_info})")
-
-                if limit >= vcpus_needed and temp_gb >= 300 and not recommended:
-                    recommended = family_name
-                break
-
-    # WAA requirements
-    log("QUOTA", "")
-    log("QUOTA", "WAA Requirements:")
-    log("QUOTA", "  - Docker image + Windows: ~150GB")
-    log("QUOTA", "  - Safe margin: 300GB temp storage")
-    log("QUOTA", "  - Recommended: D8ds_v4 or D8ds_v5 (8 vCPUs, 300GB)")
-
-    if recommended:
-        log("QUOTA", "")
-        log("QUOTA", f"✓ You have sufficient quota for {recommended}")
-        return 0
-
-    # Need quota increase
-    log("QUOTA", "")
     log("QUOTA", "=" * 60)
-    log("QUOTA", "QUOTA INCREASE REQUIRED")
+    log("QUOTA", "AZURE QUOTA REQUEST (AUTOMATED)")
     log("QUOTA", "=" * 60)
     log("QUOTA", "")
-    log("QUOTA", "To run Azure ML parallelization, you need to request")
-    log("QUOTA", "a quota increase for 'Standard DDSv4 Family' or 'Standard DDSv5 Family'")
-    log("QUOTA", "from 0/4 vCPUs to at least 8 vCPUs (for 1 worker)")
-    log("QUOTA", "or 16 vCPUs (for 2 parallel workers).")
+    log("QUOTA", f"Family:       {family}")
+    log("QUOTA", f"vCPUs:        {vcpus}")
+    log("QUOTA", f"Location:     {location}")
+    log("QUOTA", f"Subscription: {subscription_id}")
     log("QUOTA", "")
 
-    # Build the quota request URL
-    quota_url = (
-        f"https://portal.azure.com/#view/Microsoft_Azure_Capacity/QuotaMenuBlade/"
-        f"~/myQuotas/provider/Microsoft.Compute/location/{location}"
+    # Build scope for the quota API
+    scope = f"/subscriptions/{subscription_id}/providers/Microsoft.Compute/locations/{location}"
+
+    # Check if az quota extension is available
+    log("QUOTA", "Checking az quota extension...")
+    result = subprocess.run(
+        ["az", "extension", "show", "--name", "quota", "-o", "json"],
+        capture_output=True,
+        text=True,
     )
 
-    log("QUOTA", "Steps to request quota increase:")
-    log("QUOTA", "  1. Open the Azure Portal quota page (opening browser...)")
-    log("QUOTA", "  2. Search for 'Standard DDSv4 Family vCPUs'")
-    log("QUOTA", "  3. Click the pencil icon to edit")
-    log("QUOTA", "  4. Request new limit: 16 (for 2 workers) or 8 (for 1 worker)")
-    log("QUOTA", "  5. Submit request - usually approved within hours")
-    log("QUOTA", "")
-    log("QUOTA", f"URL: {quota_url}")
+    if result.returncode != 0:
+        log("QUOTA", "Installing az quota extension...")
+        install_result = subprocess.run(
+            ["az", "extension", "add", "--name", "quota", "-y"],
+            capture_output=True,
+            text=True,
+        )
+        if install_result.returncode != 0:
+            log("QUOTA", f"ERROR: Failed to install quota extension: {install_result.stderr}")
+            return 1
+        log("QUOTA", "Extension installed successfully")
+    else:
+        log("QUOTA", "Extension already installed")
 
-    if getattr(args, "open", True):
+    # Check current quota first
+    log("QUOTA", "")
+    log("QUOTA", "Checking current quota...")
+
+    current_result = subprocess.run(
+        [
+            "az", "quota", "show",
+            "--resource-name", family,
+            "--scope", scope,
+            "-o", "json"
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    import json
+    current_limit = 0
+    if current_result.returncode == 0:
+        try:
+            quota_data = json.loads(current_result.stdout)
+            current_limit = quota_data.get("properties", {}).get("limit", {}).get("value", 0)
+            log("QUOTA", f"Current limit: {current_limit} vCPUs")
+        except (json.JSONDecodeError, KeyError):
+            log("QUOTA", "Could not parse current quota (may be 0)")
+    else:
+        log("QUOTA", f"Could not check current quota: {current_result.stderr[:200]}")
+
+    if current_limit >= vcpus:
         log("QUOTA", "")
-        log("QUOTA", "Opening browser...")
-        webbrowser.open(quota_url)
+        log("QUOTA", f"Current quota ({current_limit}) is already >= requested ({vcpus})")
+        log("QUOTA", "No increase needed!")
+        return 0
+
+    # Request quota increase
+    log("QUOTA", "")
+    log("QUOTA", f"Requesting quota increase to {vcpus} vCPUs...")
+
+    request_result = subprocess.run(
+        [
+            "az", "quota", "create",
+            "--resource-name", family,
+            "--scope", scope,
+            "--limit-object", f"value={vcpus}",
+            "--resource-type", "dedicated",
+            "-o", "json"
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    if request_result.returncode != 0:
+        log("QUOTA", f"ERROR: Quota request failed: {request_result.stderr}")
+        log("QUOTA", "")
+        log("QUOTA", "This may happen if:")
+        log("QUOTA", "  - The subscription doesn't have permission for this quota")
+        log("QUOTA", "  - The resource name is incorrect")
+        log("QUOTA", "  - Azure requires manual approval for this region/family")
+        log("QUOTA", "")
+        log("QUOTA", "Try requesting via Azure Portal instead:")
+        quota_url = (
+            f"https://portal.azure.com/#view/Microsoft_Azure_Capacity/QuotaMenuBlade/"
+            f"~/myQuotas/provider/Microsoft.Compute/location/{location}"
+        )
+        log("QUOTA", f"  {quota_url}")
+        return 1
+
+    # Parse response
+    try:
+        response = json.loads(request_result.stdout)
+        status = response.get("properties", {}).get("provisioningState", "Unknown")
+        log("QUOTA", "")
+        log("QUOTA", f"Request submitted! Status: {status}")
+
+        if status.lower() in ["succeeded", "approved"]:
+            log("QUOTA", "Quota increase approved immediately!")
+        else:
+            log("QUOTA", "Request is being processed. Check status with:")
+            log("QUOTA", f"  az quota request list --scope \"{scope}\"")
+    except json.JSONDecodeError:
+        log("QUOTA", "Request submitted (response was not JSON)")
+        log("QUOTA", f"stdout: {request_result.stdout[:500]}")
+
+    log("QUOTA", "")
+    log("QUOTA", "=" * 60)
+
+    return 0
+
+
+def get_quota_status(location: str, family: str, target_vcpus: int) -> dict:
+    """Get quota status for a VM family.
+
+    Args:
+        location: Azure region (e.g., 'eastus')
+        family: VM family name (e.g., 'Standard DDSv4 Family')
+        target_vcpus: Target vCPU count to check against
+
+    Returns:
+        dict with keys: family, current, limit, sufficient, error
+    """
+    result = subprocess.run(
+        ["az", "vm", "list-usage", "--location", location, "-o", "json"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        return {"error": result.stderr, "sufficient": False}
+
+    try:
+        usages = json.loads(result.stdout)
+    except json.JSONDecodeError as e:
+        return {"error": f"Failed to parse JSON: {e}", "sufficient": False}
+
+    for usage in usages:
+        if usage["name"]["localizedValue"] == family:
+            limit = usage["limit"]
+            current = usage["currentValue"]
+            return {
+                "family": family,
+                "current": current,
+                "limit": limit,
+                "sufficient": limit >= target_vcpus,
+                "error": None,
+            }
+
+    return {"error": f"Family '{family}' not found", "sufficient": False}
+
+
+def cmd_azure_ml_quota_wait(args):
+    """Wait for Azure quota approval with polling.
+
+    Polls Azure quota API until the specified VM family has sufficient vCPUs,
+    then optionally runs the evaluation automatically.
+    """
+    init_logging()
+
+    location = getattr(args, "location", "eastus")
+    family = getattr(args, "family", "Standard DDSv4 Family")
+    target = getattr(args, "target", 8)
+    interval = getattr(args, "interval", 60)
+    timeout = getattr(args, "timeout", 86400)  # 24 hours default
+    auto_run = getattr(args, "auto_run", False)
+    quiet = getattr(args, "quiet", False)
+
+    log("QUOTA-WAIT", "=" * 60)
+    log("QUOTA-WAIT", "AZURE QUOTA WAIT")
+    log("QUOTA-WAIT", "=" * 60)
+    log("QUOTA-WAIT", "")
+    log("QUOTA-WAIT", f"VM Family:    {family}")
+    log("QUOTA-WAIT", f"Target vCPUs: {target}")
+    log("QUOTA-WAIT", f"Location:     {location}")
+    log("QUOTA-WAIT", f"Interval:     {interval}s")
+    log("QUOTA-WAIT", f"Timeout:      {timeout/3600:.1f}h")
+    log("QUOTA-WAIT", f"Auto-run:     {auto_run}")
+    log("QUOTA-WAIT", "")
+
+    start_time = time.time()
+    check_count = 0
+
+    while True:
+        check_count += 1
+        elapsed = time.time() - start_time
+
+        # Check timeout
+        if elapsed > timeout:
+            log("QUOTA-WAIT", f"Timeout after {elapsed/3600:.1f} hours")
+            log("QUOTA-WAIT", "Quota was not approved in time.")
+            return 1
+
+        # Check quota status
+        status = get_quota_status(location, family, target)
+
+        if status.get("error"):
+            log("QUOTA-WAIT", f"Error checking quota: {status['error']}")
+            log("QUOTA-WAIT", "Will retry...")
+        elif status["sufficient"]:
+            log("QUOTA-WAIT", "")
+            log("QUOTA-WAIT", "=" * 60)
+            log("QUOTA-WAIT", "QUOTA APPROVED!")
+            log("QUOTA-WAIT", "=" * 60)
+            log("QUOTA-WAIT", f"Family: {status['family']}")
+            log("QUOTA-WAIT", f"Limit:  {status['limit']} vCPUs (target was {target})")
+            log("QUOTA-WAIT", f"Waited: {elapsed/60:.1f} minutes ({check_count} checks)")
+            log("QUOTA-WAIT", "")
+
+            if auto_run:
+                log("QUOTA-WAIT", "Starting evaluation automatically...")
+                log("QUOTA-WAIT", "")
+                return cmd_run_azure_ml_auto(args)
+
+            log("QUOTA-WAIT", "You can now run:")
+            log("QUOTA-WAIT", "  uv run python -m openadapt_ml.benchmarks.cli azure-ml-auto")
+            return 0
+        else:
+            # Quota not sufficient yet
+            if not quiet:
+                remaining = timeout - elapsed
+                log(
+                    "QUOTA-WAIT",
+                    f"Check #{check_count}: {status.get('limit', 0)}/{target} vCPUs "
+                    f"(elapsed: {elapsed/60:.0f}m, remaining: {remaining/3600:.1f}h)"
+                )
+
+        # Wait before next check
+        try:
+            time.sleep(interval)
+        except KeyboardInterrupt:
+            log("QUOTA-WAIT", "")
+            log("QUOTA-WAIT", "Interrupted by user (Ctrl+C)")
+            log("QUOTA-WAIT", f"Waited {elapsed/60:.1f} minutes ({check_count} checks)")
+            return 130  # Standard exit code for Ctrl+C
+
+
+def find_best_region_for_vm(vm_size: str, min_vcpus: int = 8, preferred_regions: list = None, check_ml_quota: bool = True) -> dict:
+    """Find the best region for a VM size based on availability and quota.
+
+    IMPORTANT: For Azure ML, we need to check ML Dedicated quota, not VM quota!
+    - VM quota: For regular Azure VMs (az vm list-usage)
+    - ML Dedicated quota: For Azure ML compute instances (REST API)
+
+    Args:
+        vm_size: VM size to search for (e.g., "Standard_D8ds_v4")
+        min_vcpus: Minimum vCPUs required (default: 8 for D8ds_v4)
+        preferred_regions: List of regions to check (default: US regions)
+        check_ml_quota: If True, check ML Dedicated quota; if False, check VM quota
+
+    Returns dict with:
+        - region: Best region found (or None)
+        - vm_size: VM size requested
+        - quota: Current quota in that region
+        - ml_quota: ML Dedicated quota (if check_ml_quota=True)
+        - available: List of all available regions
+        - error: Error message if any
+        - warning: Warning message (e.g., ARM VM selected)
+    """
+    from openadapt_ml.config import settings
+
+    if preferred_regions is None:
+        # Check these regions in order of preference
+        # Central US first since that's where our workspace is
+        preferred_regions = [
+            "centralus", "eastus", "eastus2", "westus2", "westus",
+            "northcentralus", "southcentralus", "westeurope", "northeurope"
+        ]
+
+    # Check for ARM VM warning
+    warning = None
+    if is_arm_vm_size(vm_size):
+        warning = f"WARNING: {vm_size} is ARM-based and won't run x86 Docker images (WAA needs x86)"
+
+    # Map VM sizes to quota families
+    vm_to_family = {
+        "Standard_D8ds_v4": "Standard DDSv4 Family",
+        "Standard_D8ds_v5": "Standard DDSv5 Family",
+        "Standard_D8pds_v5": "Standard DPDSv5 Family",
+        "Standard_D4ds_v4": "Standard DDSv4 Family",
+        "Standard_D4ds_v5": "Standard DDSv5 Family",
+    }
+
+    family_name = vm_to_family.get(vm_size, f"Standard {vm_size.split('_')[1][0]}* Family")
+    available_regions = []
+    subscription_id = settings.azure_subscription_id
+
+    for region in preferred_regions:
+        try:
+            # Check if VM is available (no restrictions)
+            result = subprocess.run(
+                ["az", "vm", "list-skus", "--location", region, "--resource-type", "virtualMachines",
+                 "--query", f"[?name=='{vm_size}'].restrictions[0].reasonCode", "-o", "tsv"],
+                capture_output=True, text=True, timeout=30
+            )
+
+            restriction = result.stdout.strip()
+
+            if restriction and "NotAvailable" in restriction:
+                continue  # VM restricted in this region
+
+            # Check appropriate quota type
+            vm_quota = 0
+            ml_dedicated_quota = 0
+
+            # Always check VM quota for reference
+            quota_result = subprocess.run(
+                ["az", "vm", "list-usage", "--location", region,
+                 "--query", f"[?contains(localName, '{family_name.split()[1]}')].limit | [0]", "-o", "tsv"],
+                capture_output=True, text=True, timeout=30
+            )
+            vm_quota = int(quota_result.stdout.strip() or 0)
+
+            # Check ML Dedicated quota if requested
+            if check_ml_quota:
+                ml_result = get_azure_ml_dedicated_quota(subscription_id, region)
+                if not ml_result.get("error"):
+                    ml_dedicated_quota = ml_result.get("available", 0)
+
+            # Use ML quota for sufficiency check if checking ML, otherwise use VM quota
+            effective_quota = ml_dedicated_quota if check_ml_quota else vm_quota
+
+            available_regions.append({
+                "region": region,
+                "restriction": restriction or "None",
+                "vm_quota": vm_quota,
+                "ml_quota": ml_dedicated_quota,
+                "quota": effective_quota,  # For backward compatibility
+                "sufficient": effective_quota >= min_vcpus
+            })
+
+            # If we found a region with sufficient quota and no restrictions, use it
+            if not restriction and effective_quota >= min_vcpus:
+                return {
+                    "region": region,
+                    "vm_size": vm_size,
+                    "quota": effective_quota,
+                    "vm_quota": vm_quota,
+                    "ml_quota": ml_dedicated_quota,
+                    "family": family_name,
+                    "available": available_regions,
+                    "error": None,
+                    "warning": warning
+                }
+
+        except Exception as e:
+            continue
+
+    # No ideal region found - return best available
+    if available_regions:
+        # Sort by: sufficient quota first, then highest quota
+        available_regions.sort(key=lambda x: (x["sufficient"], x["quota"]), reverse=True)
+        best = available_regions[0]
+
+        quota_type = "ML Dedicated" if check_ml_quota else "VM"
+        error_msg = f"Best region {best['region']} has {quota_type} quota {best['quota']} < {min_vcpus}"
+
+        return {
+            "region": best["region"],
+            "vm_size": vm_size,
+            "quota": best["quota"],
+            "vm_quota": best.get("vm_quota", 0),
+            "ml_quota": best.get("ml_quota", 0),
+            "family": family_name,
+            "available": available_regions,
+            "error": None if best["sufficient"] else error_msg,
+            "warning": warning
+        }
+
+    return {
+        "region": None,
+        "vm_size": vm_size,
+        "quota": 0,
+        "vm_quota": 0,
+        "ml_quota": 0,
+        "family": family_name,
+        "available": [],
+        "error": f"No available regions found for {vm_size}",
+        "warning": warning
+    }
+
+
+def cmd_azure_ml_find_region(args):
+    """Find best region for running Azure ML WAA evaluation.
+
+    IMPORTANT: This checks Azure ML Dedicated quota, not VM quota!
+    Compute instances require "Dedicated" quota from the ML workspace.
+    """
+    init_logging()
+
+    vm_size = getattr(args, "vm_size", "Standard_D8ds_v4")
+    min_vcpus = getattr(args, "vcpus", 8)
+    check_ml = not getattr(args, "vm_quota", False)  # Default to ML quota
+
+    log("FIND-REGION", "=" * 60)
+    log("FIND-REGION", "FINDING BEST REGION FOR AZURE ML")
+    log("FIND-REGION", "=" * 60)
+    log("FIND-REGION", "")
+    log("FIND-REGION", f"VM Size:      {vm_size}")
+    log("FIND-REGION", f"Min vCPUs:    {min_vcpus}")
+    log("FIND-REGION", f"Quota Type:   {'ML Dedicated' if check_ml else 'VM'}")
+    log("FIND-REGION", "")
+
+    # Warn if ARM VM selected
+    if is_arm_vm_size(vm_size):
+        log("FIND-REGION", "!!! WARNING !!!")
+        log("FIND-REGION", f"{vm_size} is ARM-based and WILL NOT run x86 Docker images!")
+        log("FIND-REGION", "WAA requires x86 architecture. Use D8ds_v4 or D8ds_v5 instead.")
+        log("FIND-REGION", "")
+
+    log("FIND-REGION", "Scanning regions (checking ML Dedicated quota)...")
+    log("FIND-REGION", "")
+
+    result = find_best_region_for_vm(vm_size, min_vcpus, check_ml_quota=check_ml)
+
+    log("FIND-REGION", "RESULTS:")
+    log("FIND-REGION", "-" * 70)
+    log("FIND-REGION", f"{'Region':<20} {'VM Quota':>10} {'ML Quota':>10} {'Status':<15}")
+    log("FIND-REGION", "-" * 70)
+
+    for r in result.get("available", []):
+        if r["restriction"] != "None":
+            status = "RESTRICTED"
+        elif r.get("ml_quota", 0) >= min_vcpus if check_ml else r.get("vm_quota", 0) >= min_vcpus:
+            status = "OK"
+        else:
+            status = "LOW QUOTA"
+
+        vm_q = r.get("vm_quota", r.get("quota", 0))
+        ml_q = r.get("ml_quota", 0)
+        log("FIND-REGION", f"  {r['region']:<20} {vm_q:>10} {ml_q:>10} [{status}]")
+
+    log("FIND-REGION", "")
+
+    if result["error"]:
+        log("FIND-REGION", f"ERROR: {result['error']}")
+        log("FIND-REGION", "")
+        log("FIND-REGION", "To request quota in the best available region:")
+        if result["region"]:
+            log("FIND-REGION", f"  uv run python -m openadapt_ml.benchmarks.cli azure-ml-quota-request --location {result['region']}")
+        return 1
+
+    log("FIND-REGION", f"BEST REGION: {result['region']}")
+    log("FIND-REGION", f"  VM:     {result['vm_size']}")
+    log("FIND-REGION", f"  Quota:  {result['quota']} vCPUs")
+    log("FIND-REGION", f"  Family: {result['family']}")
+    log("FIND-REGION", "")
+    log("FIND-REGION", "To run evaluation in this region:")
+    log("FIND-REGION", f"  uv run python -m openadapt_ml.benchmarks.cli azure-ml-auto --location {result['region']}")
 
     return 0
 
@@ -4505,15 +5128,20 @@ def cmd_azure_ml_vnc(args):
     compute_name = args.compute
     local_port = getattr(args, "port", 8007)
 
+    ml_client = MLClient(
+        DefaultAzureCredential(),
+        settings.azure_subscription_id,
+        settings.azure_ml_resource_group,
+        settings.azure_ml_workspace_name,
+    )
+
+    # Get workspace region
+    workspace = ml_client.workspaces.get(settings.azure_ml_workspace_name)
+    workspace_region = workspace.location if workspace else "centralus"
+    log("AZURE-ML", f"Workspace region: {workspace_region}")
+
     if not compute_name:
         # Auto-detect running compute instance
-        ml_client = MLClient(
-            DefaultAzureCredential(),
-            settings.azure_subscription_id,
-            settings.azure_ml_resource_group,
-            settings.azure_ml_workspace_name,
-        )
-
         computes = list(ml_client.compute.list())
         running = [c for c in computes if c.state == "Running" and c.name.startswith("w")]
 
@@ -4525,8 +5153,8 @@ def cmd_azure_ml_vnc(args):
         compute_name = running[0].name
         log("AZURE-ML", f"Auto-detected compute: {compute_name}")
 
-    # Build WebSocket URL for compute instance
-    compute_url = f"wss://{compute_name.lower()}.eastus.instances.azureml.ms"
+    # Build WebSocket URL for compute instance (use workspace region)
+    compute_url = f"wss://{compute_name.lower()}.{workspace_region}.instances.azureml.ms"
 
     # Find Azure CLI Python path for the proxy script
     az_cli_paths = [
@@ -4689,6 +5317,1037 @@ def cmd_azure_ml_monitor(args):
     return 0
 
 
+def cmd_azure_ml_logs(args):
+    """Stream logs from Azure ML job in real-time.
+
+    Downloads and tails user_logs/std_log.txt from Azure blob storage.
+    This provides actual stdout from the job container.
+    """
+    init_logging()
+    import time
+    import tempfile
+
+    from openadapt_ml.config import settings
+
+    job_name = getattr(args, "job", None)
+    follow = getattr(args, "follow", True)
+    poll_interval = getattr(args, "interval", 5)
+
+    # If no job specified, find the most recent one
+    if not job_name:
+        log("AZURE-ML-LOGS", "Finding most recent job...")
+        result = subprocess.run(
+            [
+                "az", "ml", "job", "list",
+                "-g", settings.azure_ml_resource_group,
+                "-w", settings.azure_ml_workspace_name,
+                "--query", "[0].name",
+                "-o", "tsv"
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            log("AZURE-ML-LOGS", "ERROR: No jobs found or failed to list jobs")
+            return 1
+        job_name = result.stdout.strip()
+
+    log("AZURE-ML-LOGS", f"Streaming logs for job: {job_name}")
+
+    # Get job status and Web View URL
+    result = subprocess.run(
+        [
+            "az", "ml", "job", "show",
+            "--name", job_name,
+            "-g", settings.azure_ml_resource_group,
+            "-w", settings.azure_ml_workspace_name,
+            "--query", "{status:status,url:services.Studio.endpoint}",
+            "-o", "json"
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        import json
+        try:
+            job_info = json.loads(result.stdout)
+            log("AZURE-ML-LOGS", f"Status: {job_info.get('status', 'Unknown')}")
+            if job_info.get('url'):
+                log("AZURE-ML-LOGS", f"Web View: {job_info['url']}")
+        except json.JSONDecodeError:
+            pass
+
+    # Get storage account name from datastore
+    result = subprocess.run(
+        [
+            "az", "ml", "datastore", "show",
+            "--name", "workspaceartifactstore",
+            "-g", settings.azure_ml_resource_group,
+            "-w", settings.azure_ml_workspace_name,
+            "--query", "account_name",
+            "-o", "tsv"
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        log("AZURE-ML-LOGS", "ERROR: Could not get storage account name")
+        return 1
+    storage_account = result.stdout.strip()
+
+    # Get storage account key
+    result = subprocess.run(
+        [
+            "az", "storage", "account", "keys", "list",
+            "--account-name", storage_account,
+            "-g", settings.azure_ml_resource_group,
+            "--query", "[0].value",
+            "-o", "tsv"
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        log("AZURE-ML-LOGS", "ERROR: Could not get storage account key")
+        return 1
+    account_key = result.stdout.strip()
+
+    # Blob path for stdout logs
+    blob_name = f"ExperimentRun/dcid.{job_name}/user_logs/std_log.txt"
+    container_name = "azureml"
+
+    if follow:
+        log("AZURE-ML-LOGS", f"Polling every {poll_interval}s (Ctrl+C to stop)")
+    log("AZURE-ML-LOGS", "")
+    log("AZURE-ML-LOGS", "=" * 60)
+
+    last_size = 0
+    process = None
+
+    try:
+        while True:
+            # Download blob to temp file
+            with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.txt') as f:
+                temp_file = f.name
+
+            result = subprocess.run(
+                [
+                    "az", "storage", "blob", "download",
+                    "--account-name", storage_account,
+                    "--container-name", container_name,
+                    "--name", blob_name,
+                    "--account-key", account_key,
+                    "--file", temp_file,
+                    "--no-progress"
+                ],
+                capture_output=True,
+                text=True,
+            )
+
+            if result.returncode == 0:
+                # Read and print new content
+                try:
+                    with open(temp_file, 'r') as f:
+                        content = f.read()
+                        if len(content) > last_size:
+                            # Print only new content
+                            new_content = content[last_size:]
+                            print(new_content, end='', flush=True)
+                            last_size = len(content)
+                except Exception as e:
+                    log("AZURE-ML-LOGS", f"Error reading logs: {e}")
+
+            # Clean up temp file
+            try:
+                os.unlink(temp_file)
+            except:
+                pass
+
+            if not follow:
+                break
+
+            # Check if job is still running
+            result = subprocess.run(
+                [
+                    "az", "ml", "job", "show",
+                    "--name", job_name,
+                    "-g", settings.azure_ml_resource_group,
+                    "-w", settings.azure_ml_workspace_name,
+                    "--query", "status",
+                    "-o", "tsv"
+                ],
+                capture_output=True,
+                text=True,
+            )
+            status = result.stdout.strip() if result.returncode == 0 else "Unknown"
+            if status in ["Completed", "Failed", "Canceled"]:
+                log("AZURE-ML-LOGS", "")
+                log("AZURE-ML-LOGS", f"Job {status}")
+                break
+
+            time.sleep(poll_interval)
+
+    except KeyboardInterrupt:
+        log("AZURE-ML-LOGS", "")
+        log("AZURE-ML-LOGS", "Streaming stopped")
+
+    return 0
+
+
+def cmd_azure_ml_stream_logs(args):
+    """Stream logs from Azure ML job using Azure Storage SDK.
+
+    This command uses the Azure Storage Python SDK with account key authentication
+    to fetch logs written to ./logs/ by run_entry.py. Works for RUNNING jobs.
+
+    Files fetched from ExperimentRun/dcid.{job_name}/logs/:
+    - job.log - Plain text log (human-readable)
+    - events.jsonl - Structured events (JSON lines)
+    - progress.json - Current progress state
+
+    Usage:
+        uv run python -m openadapt_ml.benchmarks.cli azure-ml-stream --job JOB_NAME
+        uv run python -m openadapt_ml.benchmarks.cli azure-ml-stream  # Most recent job
+        uv run python -m openadapt_ml.benchmarks.cli azure-ml-stream --follow  # Real-time streaming
+        uv run python -m openadapt_ml.benchmarks.cli azure-ml-stream --progress  # Show progress only
+    """
+    init_logging()
+
+    from openadapt_ml.config import settings
+
+    job_name = getattr(args, "job", None)
+    follow = getattr(args, "follow", True)
+    poll_interval = getattr(args, "interval", 5)
+    show_progress = getattr(args, "progress", False)
+    show_events = getattr(args, "events", False)
+    auto_teardown = getattr(args, "auto_teardown", False)
+
+    # Get Azure credentials
+    subscription_id = settings.azure_subscription_id
+    resource_group = settings.azure_ml_resource_group
+    workspace_name = settings.azure_ml_workspace_name
+
+    if not all([subscription_id, resource_group, workspace_name]):
+        log("STREAM", "ERROR: Missing Azure ML configuration in .env")
+        log("STREAM", "Required: AZURE_SUBSCRIPTION_ID, AZURE_ML_RESOURCE_GROUP, AZURE_ML_WORKSPACE_NAME")
+        return 1
+
+    # Initialize Azure ML client for job info
+    try:
+        from azure.ai.ml import MLClient
+        from azure.identity import DefaultAzureCredential
+        from azure.mgmt.storage import StorageManagementClient
+        from azure.storage.blob import BlobServiceClient
+
+        credential = DefaultAzureCredential()
+        ml_client = MLClient(
+            credential=credential,
+            subscription_id=subscription_id,
+            resource_group_name=resource_group,
+            workspace_name=workspace_name,
+        )
+    except ImportError as e:
+        log("STREAM", f"ERROR: Missing SDK: {e}")
+        log("STREAM", "Install with: pip install azure-ai-ml azure-identity azure-mgmt-storage azure-storage-blob")
+        return 1
+    except Exception as e:
+        log("STREAM", f"ERROR: Failed to initialize Azure ML client: {e}")
+        return 1
+
+    # Get storage account name from workspace
+    try:
+        ws = ml_client.workspaces.get(workspace_name)
+        # Storage account is a full resource ID, extract the name
+        storage_account = ws.storage_account.split('/')[-1]
+        container_name = "azureml"  # Default artifact container
+        log("STREAM", f"Storage account: {storage_account}")
+    except Exception as e:
+        log("STREAM", f"ERROR: Failed to get workspace storage: {e}")
+        return 1
+
+    # Get storage account key for blob access
+    try:
+        storage_client = StorageManagementClient(credential, subscription_id)
+        keys = storage_client.storage_accounts.list_keys(resource_group, storage_account)
+        storage_key = keys.keys[0].value
+        blob_service = BlobServiceClient(
+            f"https://{storage_account}.blob.core.windows.net",
+            credential=storage_key
+        )
+        container_client = blob_service.get_container_client(container_name)
+        log("STREAM", "Blob storage connected")
+    except Exception as e:
+        log("STREAM", f"ERROR: Failed to get storage account key: {e}")
+        return 1
+
+    # If no job specified, find the most recent one
+    if not job_name:
+        log("STREAM", "Finding most recent job...")
+        try:
+            jobs = list(ml_client.jobs.list(max_results=10))
+            if not jobs:
+                log("STREAM", "ERROR: No jobs found")
+                return 1
+            job_name = jobs[0].name
+            log("STREAM", f"Using most recent job: {job_name}")
+        except Exception as e:
+            log("STREAM", f"ERROR: Failed to list jobs: {e}")
+            return 1
+
+    # Get job info
+    try:
+        job = ml_client.jobs.get(job_name)
+        log("STREAM", f"Job: {job_name}")
+        log("STREAM", f"Status: {job.status}")
+        if hasattr(job, 'services') and job.services and 'Studio' in job.services:
+            log("STREAM", f"Web View: {job.services['Studio'].endpoint}")
+    except Exception as e:
+        log("STREAM", f"ERROR: Failed to get job info: {e}")
+        return 1
+
+    log("STREAM", "")
+    log("STREAM", "=" * 60)
+    if follow:
+        log("STREAM", f"Streaming logs (polling every {poll_interval}s, Ctrl+C to stop)")
+    log("STREAM", "=" * 60)
+    log("STREAM", "")
+
+    # Helper function to download a blob using Python SDK
+    def download_blob(blob_name: str, local_path: str) -> bool:
+        """Download a blob using Azure Storage SDK with account key auth."""
+        try:
+            blob_client = container_client.get_blob_client(blob_name)
+            with open(local_path, "wb") as f:
+                data = blob_client.download_blob()
+                f.write(data.readall())
+            return True
+        except Exception:
+            return False
+
+    # Track what we've already shown
+    last_log_size = 0
+    last_event_count = 0
+    last_progress = None
+    blob_prefix = f"ExperimentRun/dcid.{job_name}/logs"
+
+    try:
+        while True:
+            # Create temp directory for downloaded logs
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_path = Path(temp_dir)
+
+                # Download log files using az storage CLI
+                log_file = temp_path / "job.log"
+                progress_file = temp_path / "progress.json"
+                events_file = temp_path / "events.jsonl"
+
+                # Download each file (suppress warnings)
+                job_log_ok = download_blob(f"{blob_prefix}/job.log", str(log_file))
+                progress_ok = download_blob(f"{blob_prefix}/progress.json", str(progress_file))
+                events_ok = download_blob(f"{blob_prefix}/events.jsonl", str(events_file))
+
+                # Show progress if requested
+                if show_progress and progress_ok and progress_file.exists():
+                    try:
+                        with open(progress_file) as f:
+                            progress = json.load(f)
+                        if progress != last_progress:
+                            # Progress bar
+                            pct = progress.get('percent', 0)
+                            filled = int(pct / 2)
+                            bar = '=' * filled + '-' * (50 - filled)
+                            log("PROGRESS", f"[{bar}] {pct}%")
+                            log("PROGRESS", f"Phase: {progress.get('phase', 'unknown')}")
+                            log("PROGRESS", f"Status: {progress.get('status', 'unknown')}")
+                            if progress.get('messages'):
+                                log("PROGRESS", f"Last: {progress['messages'][-1].get('text', '')}")
+                            last_progress = progress.copy()
+                            log("STREAM", "")
+                    except Exception as e:
+                        pass  # Progress file may be partially written
+
+                # Show events if requested
+                if show_events and events_ok and events_file.exists():
+                    try:
+                        with open(events_file) as f:
+                            lines = f.readlines()
+                        new_events = lines[last_event_count:]
+                        for line in new_events:
+                            try:
+                                event = json.loads(line.strip())
+                                log("EVENT", f"{event['type']}: {json.dumps(event.get('data', {}))}")
+                            except:
+                                pass
+                        last_event_count = len(lines)
+                    except:
+                        pass
+
+                # Show log content (default)
+                if job_log_ok and log_file.exists() and not (show_progress and not show_events):
+                    try:
+                        with open(log_file) as f:
+                            content = f.read()
+                        if len(content) > last_log_size:
+                            # Print only new content
+                            new_content = content[last_log_size:]
+                            print(new_content, end='', flush=True)
+                            last_log_size = len(content)
+                    except:
+                        pass
+
+                # If no logs available yet
+                if not job_log_ok and not progress_ok:
+                    log("STREAM", "Waiting for logs to appear...")
+
+            # Check if job is still running
+            try:
+                job = ml_client.jobs.get(job_name)
+                status = job.status
+            except:
+                status = "Unknown"
+
+            if not follow:
+                break
+
+            if status in ["Completed", "Failed", "Canceled"]:
+                log("STREAM", "")
+                log("STREAM", f"Job {status}")
+
+                # Auto-teardown if requested
+                if auto_teardown:
+                    log("STREAM", "")
+                    log("STREAM", "Auto-teardown enabled, cleaning up compute instances...")
+                    # Use the teardown command with force flag
+                    teardown_args = type("Args", (), {"force": True, "delete_resource_group": False})()
+                    cmd_azure_ml_teardown(teardown_args)
+
+                break
+
+            time.sleep(poll_interval)
+
+    except KeyboardInterrupt:
+        log("STREAM", "")
+        log("STREAM", "Streaming stopped")
+
+    return 0
+
+
+def cmd_azure_ml_progress(args):
+    """Show current progress of an Azure ML job.
+
+    This fetches the progress.json file written by run_entry.py and displays
+    a summary of the job's current state.
+
+    Usage:
+        uv run python -m openadapt_ml.benchmarks.cli azure-ml-progress --job JOB_NAME
+        uv run python -m openadapt_ml.benchmarks.cli azure-ml-progress  # Most recent job
+        uv run python -m openadapt_ml.benchmarks.cli azure-ml-progress --watch  # Poll continuously
+    """
+    init_logging()
+
+    from openadapt_ml.config import settings
+
+    job_name = getattr(args, "job", None)
+    watch = getattr(args, "watch", False)
+    poll_interval = getattr(args, "interval", 10)
+
+    # Get Azure credentials
+    subscription_id = settings.azure_subscription_id
+    resource_group = settings.azure_ml_resource_group
+    workspace_name = settings.azure_ml_workspace_name
+
+    if not all([subscription_id, resource_group, workspace_name]):
+        log("PROGRESS", "ERROR: Missing Azure ML configuration in .env")
+        return 1
+
+    # Initialize Azure ML client
+    try:
+        from azure.ai.ml import MLClient
+        from azure.identity import DefaultAzureCredential
+
+        credential = DefaultAzureCredential()
+        ml_client = MLClient(
+            credential=credential,
+            subscription_id=subscription_id,
+            resource_group_name=resource_group,
+            workspace_name=workspace_name,
+        )
+    except ImportError:
+        log("PROGRESS", "ERROR: Azure ML SDK not installed")
+        return 1
+    except Exception as e:
+        log("PROGRESS", f"ERROR: Failed to initialize Azure ML client: {e}")
+        return 1
+
+    # If no job specified, find the most recent one
+    if not job_name:
+        try:
+            jobs = list(ml_client.jobs.list(max_results=5))
+            if not jobs:
+                log("PROGRESS", "ERROR: No jobs found")
+                return 1
+            job_name = jobs[0].name
+        except Exception as e:
+            log("PROGRESS", f"ERROR: Failed to list jobs: {e}")
+            return 1
+
+    def show_progress():
+        """Fetch and display progress."""
+        try:
+            job = ml_client.jobs.get(job_name)
+
+            # Clear screen for watch mode
+            if watch:
+                print("\033[H\033[J", end='')
+
+            print("=" * 60)
+            print(f"Job: {job_name}")
+            print(f"Status: {job.status}")
+            print("=" * 60)
+
+            # Try to get progress.json from job outputs
+            # This requires the job to have written to ./logs/progress.json
+            with tempfile.TemporaryDirectory() as temp_dir:
+                try:
+                    ml_client.jobs.download(
+                        name=job_name,
+                        download_path=temp_dir,
+                        all=True,
+                    )
+
+                    # Find progress.json
+                    for root, dirs, files in os.walk(temp_dir):
+                        if "progress.json" in files:
+                            with open(os.path.join(root, "progress.json")) as f:
+                                progress = json.load(f)
+
+                            print(f"\nPhase: {progress.get('phase', 'unknown')}")
+                            print(f"Progress: {progress.get('percent', 0)}%")
+
+                            # Progress bar
+                            pct = progress.get('percent', 0)
+                            filled = int(pct / 2)
+                            bar = '=' * filled + '-' * (50 - filled)
+                            print(f"[{bar}] {pct}%")
+
+                            print(f"Status: {progress.get('status', 'unknown')}")
+                            print(f"Last Update: {progress.get('last_update', 'N/A')}")
+
+                            if progress.get('messages'):
+                                print(f"\nRecent Messages:")
+                                for msg in progress['messages'][-5:]:
+                                    print(f"  {msg.get('time', '')} - {msg.get('text', '')}")
+                            return
+                except Exception as e:
+                    # If can't download, just show job status
+                    pass
+
+            print("\nProgress file not available yet.")
+            print("(Job may still be initializing or progress.json not written)")
+
+        except Exception as e:
+            log("PROGRESS", f"Error: {e}")
+
+    try:
+        if watch:
+            log("PROGRESS", f"Watching progress (Ctrl+C to stop)")
+            while True:
+                show_progress()
+
+                # Check if job finished
+                try:
+                    job = ml_client.jobs.get(job_name)
+                    if job.status in ["Completed", "Failed", "Canceled"]:
+                        print(f"\nJob {job.status}")
+                        break
+                except:
+                    pass
+
+                time.sleep(poll_interval)
+        else:
+            show_progress()
+    except KeyboardInterrupt:
+        print("\nStopped")
+
+    return 0
+
+
+def cmd_azure_ml_cancel(args):
+    """Cancel a running Azure ML job.
+
+    Usage:
+        uv run python -m openadapt_ml.benchmarks.cli azure-ml-cancel --job JOB_NAME
+        uv run python -m openadapt_ml.benchmarks.cli azure-ml-cancel  # Cancels most recent running job
+    """
+    init_logging()
+    from openadapt_ml.config import settings
+
+    job_name = getattr(args, "job", None)
+
+    # If no job specified, find the most recent running one
+    if not job_name:
+        log("AZURE-ML", "Finding most recent running job...")
+        result = subprocess.run(
+            [
+                "az", "ml", "job", "list",
+                "-g", settings.azure_ml_resource_group,
+                "-w", settings.azure_ml_workspace_name,
+                "--query", "[?status=='Running'].name",
+                "-o", "tsv"
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            log("AZURE-ML", "No running jobs found")
+            return 0
+        job_name = result.stdout.strip().split("\n")[0]
+        log("AZURE-ML", f"Found running job: {job_name}")
+
+    # Cancel the job
+    log("AZURE-ML", f"Canceling job: {job_name}")
+    result = subprocess.run(
+        [
+            "az", "ml", "job", "cancel",
+            "--name", job_name,
+            "-g", settings.azure_ml_resource_group,
+            "-w", settings.azure_ml_workspace_name,
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode == 0:
+        log("AZURE-ML", f"Job {job_name} canceled successfully")
+    else:
+        log("AZURE-ML", f"Failed to cancel job: {result.stderr}")
+        return 1
+
+    return 0
+
+
+def cmd_azure_ml_delete_compute(args):
+    """Delete an Azure ML compute instance.
+
+    Usage:
+        uv run python -m openadapt_ml.benchmarks.cli azure-ml-delete-compute --name COMPUTE_NAME
+        uv run python -m openadapt_ml.benchmarks.cli azure-ml-delete-compute --all  # Deletes all instances
+    """
+    init_logging()
+    from openadapt_ml.config import settings
+
+    compute_name = getattr(args, "name", None)
+    delete_all = getattr(args, "all", False)
+    confirm = getattr(args, "yes", False)
+
+    if delete_all:
+        # List all compute instances
+        instances = list_azure_ml_compute_instances()
+        if not instances:
+            log("AZURE-ML", "No compute instances found")
+            return 0
+
+        log("AZURE-ML", f"Found {len(instances)} compute instance(s):")
+        for inst in instances:
+            log("AZURE-ML", f"  - {inst['name']} ({inst['state']})")
+
+        if not confirm:
+            log("AZURE-ML", "")
+            log("AZURE-ML", "Use --yes to confirm deletion of all instances")
+            return 1
+
+        # Delete all instances
+        for inst in instances:
+            log("AZURE-ML", f"Deleting {inst['name']}...")
+            if delete_azure_ml_compute_instance(inst['name']):
+                log("AZURE-ML", f"  Deleted {inst['name']}")
+            else:
+                log("AZURE-ML", f"  Failed to delete {inst['name']}")
+
+        return 0
+
+    if not compute_name:
+        # Find compute instances
+        instances = list_azure_ml_compute_instances()
+        if not instances:
+            log("AZURE-ML", "No compute instances found")
+            return 0
+
+        if len(instances) == 1:
+            compute_name = instances[0]["name"]
+            log("AZURE-ML", f"Found single compute instance: {compute_name}")
+        else:
+            log("AZURE-ML", f"Found {len(instances)} compute instances:")
+            for inst in instances:
+                log("AZURE-ML", f"  - {inst['name']} ({inst['state']})")
+            log("AZURE-ML", "")
+            log("AZURE-ML", "Specify --name or --all")
+            return 1
+
+    if not confirm:
+        log("AZURE-ML", f"Will delete compute instance: {compute_name}")
+        log("AZURE-ML", "Use --yes to confirm")
+        return 1
+
+    # Delete the compute instance
+    log("AZURE-ML", f"Deleting compute instance: {compute_name}")
+    if delete_azure_ml_compute_instance(compute_name):
+        log("AZURE-ML", f"Compute instance {compute_name} deleted successfully")
+    else:
+        log("AZURE-ML", f"Failed to delete compute instance {compute_name}")
+        return 1
+
+    return 0
+
+
+def cmd_azure_ml_cleanup(args):
+    """Clean up Azure ML resources (cancel jobs + delete compute instances).
+
+    This is a convenience command that combines cancel + delete.
+
+    Usage:
+        uv run python -m openadapt_ml.benchmarks.cli azure-ml-cleanup --yes
+    """
+    init_logging()
+
+    confirm = getattr(args, "yes", False)
+
+    if not confirm:
+        log("AZURE-ML", "This will:")
+        log("AZURE-ML", "  1. Cancel all running jobs")
+        log("AZURE-ML", "  2. Delete all compute instances")
+        log("AZURE-ML", "")
+        log("AZURE-ML", "Use --yes to confirm")
+        return 1
+
+    # Cancel all running jobs
+    log("AZURE-ML", "Canceling all running jobs...")
+    args_cancel = type("Args", (), {"job": None})()
+    cmd_azure_ml_cancel(args_cancel)
+
+    # Delete all compute instances
+    log("AZURE-ML", "")
+    log("AZURE-ML", "Deleting all compute instances...")
+    args_delete = type("Args", (), {"name": None, "all": True, "yes": True})()
+    cmd_azure_ml_delete_compute(args_delete)
+
+    log("AZURE-ML", "")
+    log("AZURE-ML", "Cleanup complete")
+
+    return 0
+
+
+# Azure ML pricing (per hour) for common VM sizes
+AZURE_ML_VM_PRICING = {
+    "Standard_D8ds_v4": 0.45,
+    "Standard_D8ds_v5": 0.45,
+    "Standard_D4ds_v4": 0.23,
+    "Standard_D4ds_v5": 0.23,
+    "Standard_D16ds_v4": 0.91,
+    "Standard_D16ds_v5": 0.91,
+    "Standard_NC6": 0.90,
+    "Standard_NC12": 1.80,
+    "Standard_NC24": 3.60,
+}
+
+
+def get_compute_instance_details() -> list[dict]:
+    """Get detailed info for all Azure ML compute instances including creation time.
+
+    Returns:
+        List of dicts with compute instance details (name, state, vmSize, createdOn)
+    """
+    from openadapt_ml.config import settings
+
+    workspace = settings.azure_ml_workspace_name
+    resource_group = settings.azure_ml_resource_group
+
+    result = subprocess.run(
+        [
+            "az", "ml", "compute", "show-all",
+            "--workspace-name", workspace,
+            "--resource-group", resource_group,
+            "-o", "json"
+        ],
+        capture_output=True,
+        text=True
+    )
+
+    if result.returncode != 0:
+        # Fallback to list command with more detailed query
+        result = subprocess.run(
+            [
+                "az", "ml", "compute", "list",
+                "--workspace-name", workspace,
+                "--resource-group", resource_group,
+                "-o", "json"
+            ],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode != 0:
+            return []
+
+    try:
+        all_compute = json.loads(result.stdout) if result.stdout.strip() else []
+        # Filter to only compute instances
+        instances = [c for c in all_compute if c.get("type") == "computeinstance"]
+        return instances
+    except json.JSONDecodeError:
+        return []
+
+
+def get_compute_instance_creation_time(compute_name: str) -> Optional[datetime]:
+    """Get the creation time of a compute instance.
+
+    Args:
+        compute_name: Name of the compute instance
+
+    Returns:
+        datetime of creation or None if not found
+    """
+    from openadapt_ml.config import settings
+
+    workspace = settings.azure_ml_workspace_name
+    resource_group = settings.azure_ml_resource_group
+
+    result = subprocess.run(
+        [
+            "az", "ml", "compute", "show",
+            "--name", compute_name,
+            "--workspace-name", workspace,
+            "--resource-group", resource_group,
+            "--query", "created_on",
+            "-o", "tsv"
+        ],
+        capture_output=True,
+        text=True
+    )
+
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+
+    try:
+        # Parse ISO format timestamp
+        created_str = result.stdout.strip()
+        # Handle both formats: with and without microseconds
+        for fmt in ["%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"]:
+            try:
+                return datetime.strptime(created_str.replace("Z", "+00:00"), fmt)
+            except ValueError:
+                continue
+        return None
+    except Exception:
+        return None
+
+
+def cmd_azure_ml_cost(args):
+    """Show estimated cost of running Azure ML compute instances.
+
+    Usage:
+        uv run python -m openadapt_ml.benchmarks.cli azure-ml-cost
+    """
+    init_logging()
+
+    log("COST", "Azure ML Compute Instances:")
+    log("COST", "=" * 60)
+
+    # Get all compute instances
+    instances = list_azure_ml_compute_instances()
+
+    if not instances:
+        log("COST", "No compute instances found")
+        return 0
+
+    total_cost = 0.0
+    now = datetime.now()
+
+    for inst in instances:
+        name = inst.get("name", "unknown")
+        state = inst.get("state", "unknown")
+        vm_size = inst.get("vmSize", "unknown")
+
+        # Get hourly rate
+        hourly_rate = AZURE_ML_VM_PRICING.get(vm_size, 0.45)  # Default to $0.45/hr
+
+        # Get creation time
+        created_on = get_compute_instance_creation_time(name)
+
+        if created_on:
+            # Calculate uptime
+            if created_on.tzinfo:
+                # Make now timezone-aware for comparison
+                from datetime import timezone
+                now_tz = datetime.now(timezone.utc)
+                uptime_seconds = (now_tz - created_on).total_seconds()
+            else:
+                uptime_seconds = (now - created_on).total_seconds()
+
+            uptime_hours = uptime_seconds / 3600
+            uptime_minutes = int((uptime_seconds % 3600) / 60)
+            cost = uptime_hours * hourly_rate
+
+            # Only count cost if running
+            if state.lower() in ["running", "starting"]:
+                total_cost += cost
+
+            log("COST", f"  {name}")
+            log("COST", f"    Status: {state}")
+            log("COST", f"    Size: {vm_size} (${hourly_rate:.2f}/hr)")
+            log("COST", f"    Created: {created_on.strftime('%Y-%m-%d %H:%M:%S')}")
+            log("COST", f"    Uptime: {int(uptime_hours)}h {uptime_minutes}m")
+            log("COST", f"    Cost: ${cost:.2f}")
+        else:
+            log("COST", f"  {name}")
+            log("COST", f"    Status: {state}")
+            log("COST", f"    Size: {vm_size} (${hourly_rate:.2f}/hr)")
+            log("COST", f"    Created: (unknown)")
+
+    log("COST", "=" * 60)
+    log("COST", f"Total Running Cost: ${total_cost:.2f}")
+
+    return 0
+
+
+def cmd_azure_ml_teardown(args):
+    """Tear down Azure ML resources (cancel jobs, delete compute, optionally delete resource group).
+
+    Usage:
+        uv run python -m openadapt_ml.benchmarks.cli azure-ml-teardown
+        uv run python -m openadapt_ml.benchmarks.cli azure-ml-teardown --force  # Skip confirmation
+        uv run python -m openadapt_ml.benchmarks.cli azure-ml-teardown --delete-resource-group
+    """
+    init_logging()
+    from openadapt_ml.config import settings
+
+    force = getattr(args, "force", False)
+    delete_rg = getattr(args, "delete_resource_group", False)
+
+    # Calculate current cost before teardown
+    log("TEARDOWN", "Calculating current costs...")
+    instances = list_azure_ml_compute_instances()
+    total_cost = 0.0
+
+    for inst in instances:
+        name = inst.get("name", "unknown")
+        vm_size = inst.get("vmSize", "unknown")
+        state = inst.get("state", "unknown")
+        hourly_rate = AZURE_ML_VM_PRICING.get(vm_size, 0.45)
+
+        created_on = get_compute_instance_creation_time(name)
+        if created_on and state.lower() in ["running", "starting"]:
+            from datetime import timezone
+            now_tz = datetime.now(timezone.utc)
+            if created_on.tzinfo:
+                uptime_hours = (now_tz - created_on).total_seconds() / 3600
+            else:
+                uptime_hours = (datetime.now() - created_on).total_seconds() / 3600
+            total_cost += uptime_hours * hourly_rate
+
+    # Find running jobs
+    log("TEARDOWN", "Finding running jobs...")
+    result = subprocess.run(
+        [
+            "az", "ml", "job", "list",
+            "-g", settings.azure_ml_resource_group,
+            "-w", settings.azure_ml_workspace_name,
+            "--query", "[?status=='Running'].name",
+            "-o", "tsv"
+        ],
+        capture_output=True,
+        text=True,
+    )
+    running_jobs = result.stdout.strip().split("\n") if result.returncode == 0 and result.stdout.strip() else []
+    running_jobs = [j for j in running_jobs if j]  # Filter empty strings
+
+    if running_jobs:
+        log("TEARDOWN", f"Found {len(running_jobs)} running job(s): {', '.join(running_jobs)}")
+    else:
+        log("TEARDOWN", "No running jobs found")
+
+    # Find compute instances
+    log("TEARDOWN", "")
+    log("TEARDOWN", "Finding compute instances...")
+    if instances:
+        log("TEARDOWN", f"Found {len(instances)} compute instance(s): {', '.join(i['name'] for i in instances)}")
+    else:
+        log("TEARDOWN", "No compute instances found")
+
+    # Confirm if not force
+    if not force and (running_jobs or instances):
+        log("TEARDOWN", "")
+        log("TEARDOWN", "This will:")
+        if running_jobs:
+            log("TEARDOWN", f"  - Cancel {len(running_jobs)} running job(s)")
+        if instances:
+            log("TEARDOWN", f"  - Delete {len(instances)} compute instance(s)")
+        if delete_rg:
+            log("TEARDOWN", f"  - Delete resource group: {settings.azure_ml_resource_group}")
+        log("TEARDOWN", "")
+
+        try:
+            confirm = input("Proceed? [y/N]: ").strip().lower()
+            if confirm != 'y':
+                log("TEARDOWN", "Aborted")
+                return 1
+        except (KeyboardInterrupt, EOFError):
+            log("TEARDOWN", "Aborted")
+            return 1
+
+    # Cancel running jobs
+    for job_name in running_jobs:
+        log("TEARDOWN", f"Canceling job {job_name}...")
+        result = subprocess.run(
+            [
+                "az", "ml", "job", "cancel",
+                "--name", job_name,
+                "-g", settings.azure_ml_resource_group,
+                "-w", settings.azure_ml_workspace_name,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            log("TEARDOWN", f"Canceled job {job_name}")
+        else:
+            log("TEARDOWN", f"Failed to cancel job {job_name}: {result.stderr}")
+
+    # Delete compute instances
+    log("TEARDOWN", "")
+    for inst in instances:
+        name = inst.get("name", "unknown")
+        log("TEARDOWN", f"Deleting compute instance {name}...")
+        if delete_azure_ml_compute_instance(name):
+            log("TEARDOWN", f"Deleted compute instance {name}")
+        else:
+            log("TEARDOWN", f"Failed to delete compute instance {name}")
+
+    # Delete resource group if requested
+    if delete_rg:
+        log("TEARDOWN", "")
+        log("TEARDOWN", f"Deleting resource group: {settings.azure_ml_resource_group}...")
+        result = subprocess.run(
+            [
+                "az", "group", "delete",
+                "--name", settings.azure_ml_resource_group,
+                "--yes",
+                "--no-wait"
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            log("TEARDOWN", f"Resource group deletion initiated (async)")
+        else:
+            log("TEARDOWN", f"Failed to delete resource group: {result.stderr}")
+
+    log("TEARDOWN", "")
+    log("TEARDOWN", "Cleanup complete!")
+    log("TEARDOWN", f"Total cost for this session: ${total_cost:.2f}")
+
+    return 0
+
+
 def cmd_tail_output(args):
     """List or tail background task output files."""
     task_dir = Path("/private/tmp/claude-501/-Users-abrichr-oa-src-openadapt-ml/tasks/")
@@ -4732,6 +6391,84 @@ def cmd_tail_output(args):
 
     print("Use --list to list tasks or --task <id> to tail specific task")
     return 1
+
+
+def cmd_resources(args):
+    """Check Azure resources and update RESOURCES.md.
+
+    This command:
+    1. Queries Azure for running VMs and compute instances
+    2. Updates RESOURCES.md with current status
+    3. Warns about running resources and their costs
+
+    Use this after session start or context compaction to avoid
+    losing track of deployed resources.
+    """
+    from openadapt_ml.benchmarks.resource_tracker import (
+        check_resources,
+        update_resources_file,
+    )
+
+    status = check_resources()
+
+    # Update RESOURCES.md
+    try:
+        update_resources_file(status)
+    except Exception as e:
+        print(f"Warning: Could not update RESOURCES.md: {e}")
+
+    if getattr(args, "json", False):
+        print(json.dumps(status, indent=2))
+        return 0
+
+    # Print human-readable status
+    print("=" * 60)
+    print("AZURE RESOURCE STATUS")
+    print("=" * 60)
+    print(f"Timestamp: {status['timestamp']}")
+    print()
+
+    if status["has_running_resources"]:
+        print("WARNING: Running resources detected!")
+        print(f"Estimated cost: ${status['total_running_cost_per_hour']:.2f}/hour")
+        print()
+        for warning in status["warnings"]:
+            print(f"  - {warning}")
+        print()
+    else:
+        print("No running resources detected.")
+        print()
+
+    # Show VMs
+    if status["vms"]:
+        print("Virtual Machines:")
+        for vm in status["vms"]:
+            state = "RUNNING" if vm["is_running"] else vm["state"]
+            print(f"  {vm['name']}: {state} ({vm['size']}) - ${vm['hourly_rate']:.2f}/hr")
+            if vm.get("ip"):
+                print(f"    IP: {vm['ip']}")
+        print()
+
+    # Show compute instances
+    if status["compute_instances"]:
+        print("Azure ML Compute Instances:")
+        for ci in status["compute_instances"]:
+            state = "RUNNING" if ci["is_running"] else ci["state"]
+            print(f"  {ci['name']}: {state} ({ci['size']}) - ${ci['hourly_rate']:.2f}/hr")
+        print()
+
+    # Show commands
+    if status["has_running_resources"]:
+        print("To stop billing:")
+        print("  uv run python -m openadapt_ml.benchmarks.cli deallocate")
+        print()
+        print("To delete all resources:")
+        print("  uv run python -m openadapt_ml.benchmarks.cli delete -y")
+    else:
+        print("All resources are stopped. No billing in progress.")
+
+    print("=" * 60)
+    return 0
 
 
 # =============================================================================
@@ -5221,12 +6958,119 @@ Example:
         help="Check Azure ML quota and help request increases",
     )
     p_azure_quota.add_argument(
+        "--location",
+        help="Azure region (default: centralus for openadapt-ml-central workspace)",
+    )
+    p_azure_quota.add_argument(
         "--no-open",
         dest="open",
         action="store_false",
         help="Don't open browser automatically",
     )
     p_azure_quota.set_defaults(func=cmd_azure_ml_quota)
+
+    # azure-ml-quota-request - Request quota increase via CLI
+    p_azure_quota_req = subparsers.add_parser(
+        "azure-ml-quota-request",
+        help="Request Azure quota increase via CLI automation",
+    )
+    p_azure_quota_req.add_argument(
+        "--family",
+        default="standardDPDSv5Family",
+        help="VM family resource name (default: standardDPDSv5Family)",
+    )
+    p_azure_quota_req.add_argument(
+        "--vcpus",
+        type=int,
+        default=8,
+        help="Number of vCPUs to request (default: 8)",
+    )
+    p_azure_quota_req.add_argument(
+        "--location",
+        default="eastus",
+        help="Azure region (default: eastus)",
+    )
+    p_azure_quota_req.set_defaults(func=cmd_azure_ml_quota_request)
+
+    # azure-ml-quota-wait - Wait for quota approval with polling
+    p_azure_quota_wait = subparsers.add_parser(
+        "azure-ml-quota-wait",
+        help="Wait for Azure quota approval with polling",
+    )
+    p_azure_quota_wait.add_argument(
+        "--family",
+        default="Standard DDSv4 Family",
+        help="VM family name (default: Standard DDSv4 Family)",
+    )
+    p_azure_quota_wait.add_argument(
+        "--target",
+        type=int,
+        default=8,
+        help="Target vCPU quota (default: 8)",
+    )
+    p_azure_quota_wait.add_argument(
+        "--location",
+        default="eastus",
+        help="Azure region (default: eastus)",
+    )
+    p_azure_quota_wait.add_argument(
+        "--interval",
+        type=int,
+        default=60,
+        help="Poll interval in seconds (default: 60)",
+    )
+    p_azure_quota_wait.add_argument(
+        "--timeout",
+        type=int,
+        default=86400,
+        help="Max wait time in seconds (default: 86400 = 24h)",
+    )
+    p_azure_quota_wait.add_argument(
+        "--auto-run",
+        action="store_true",
+        help="Run evaluation when quota is ready",
+    )
+    p_azure_quota_wait.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress progress output",
+    )
+    # Pass-through args for auto-run
+    p_azure_quota_wait.add_argument(
+        "--tasks",
+        type=int,
+        default=10,
+        help="Number of tasks for auto-run (default: 10)",
+    )
+    p_azure_quota_wait.add_argument(
+        "--model",
+        default="gpt-4o-mini",
+        help="OpenAI model for auto-run (default: gpt-4o-mini)",
+    )
+    p_azure_quota_wait.set_defaults(func=cmd_azure_ml_quota_wait)
+
+    # azure-ml-find-region - Find best region for a VM size
+    p_azure_find_region = subparsers.add_parser(
+        "azure-ml-find-region",
+        help="Find best region for running Azure ML WAA evaluation",
+    )
+    p_azure_find_region.add_argument(
+        "--vm-size",
+        default="Standard_D8ds_v4",
+        help="VM size to search for (default: Standard_D8ds_v4)",
+    )
+    p_azure_find_region.add_argument(
+        "--vcpus",
+        type=int,
+        default=8,
+        help="Minimum vCPUs required (default: 8)",
+    )
+    p_azure_find_region.add_argument(
+        "--vm-quota",
+        action="store_true",
+        help="Check VM quota instead of ML Dedicated quota (default: ML Dedicated)",
+    )
+    p_azure_find_region.set_defaults(func=cmd_azure_ml_find_region)
 
     # azure-ml-status - Show Azure ML jobs and compute instances
     p_azure_status = subparsers.add_parser(
@@ -5285,6 +7129,218 @@ Example:
     )
     p_azure_monitor.set_defaults(func=cmd_azure_ml_monitor)
 
+    # azure-ml-logs - Stream logs from Azure ML job
+    p_azure_logs = subparsers.add_parser(
+        "azure-ml-logs",
+        help="Stream logs from Azure ML job in real-time",
+    )
+    p_azure_logs.add_argument(
+        "--job",
+        help="Job name to stream logs from (auto-detects most recent if not specified)",
+    )
+    p_azure_logs.add_argument(
+        "--no-follow",
+        dest="follow",
+        action="store_false",
+        help="Don't follow logs (exit after current output)",
+    )
+    p_azure_logs.add_argument(
+        "--interval",
+        type=int,
+        default=5,
+        help="Poll interval in seconds when following (default: 5)",
+    )
+    p_azure_logs.set_defaults(func=cmd_azure_ml_logs)
+
+    # azure-ml-stream - Stream logs via SDK (recommended)
+    p_azure_stream = subparsers.add_parser(
+        "azure-ml-stream",
+        help="Stream job logs via Azure ML SDK (recommended)",
+        description="""
+Stream logs from Azure ML job using the ./logs/ folder.
+
+This command uses the Azure ML SDK to fetch logs written to ./logs/
+by run_entry.py. It's more reliable than direct blob access and
+doesn't require storage account keys.
+
+Files fetched:
+  - ./logs/job.log     - Plain text log (human-readable)
+  - ./logs/events.jsonl - Structured events (JSON lines)
+  - ./logs/progress.json - Current progress state
+
+Examples:
+  azure-ml-stream                    # Most recent job
+  azure-ml-stream --job JOB_NAME     # Specific job
+  azure-ml-stream --follow           # Real-time streaming (default)
+  azure-ml-stream --no-follow        # Fetch once and exit
+  azure-ml-stream --progress         # Show progress bar only
+  azure-ml-stream --events           # Show structured events
+""",
+    )
+    p_azure_stream.add_argument(
+        "--job",
+        help="Job name (auto-detects most recent if not specified)",
+    )
+    p_azure_stream.add_argument(
+        "--no-follow",
+        dest="follow",
+        action="store_false",
+        help="Don't follow logs (exit after fetching)",
+    )
+    p_azure_stream.add_argument(
+        "--interval",
+        type=int,
+        default=5,
+        help="Poll interval in seconds (default: 5)",
+    )
+    p_azure_stream.add_argument(
+        "--progress",
+        action="store_true",
+        help="Show progress bar only (from progress.json)",
+    )
+    p_azure_stream.add_argument(
+        "--events",
+        action="store_true",
+        help="Show structured events (from events.jsonl)",
+    )
+    p_azure_stream.add_argument(
+        "--auto-teardown",
+        action="store_true",
+        help="Automatically delete compute instance when job completes/fails",
+    )
+    p_azure_stream.set_defaults(func=cmd_azure_ml_stream_logs)
+
+    # azure-ml-progress - Show job progress summary
+    p_azure_progress = subparsers.add_parser(
+        "azure-ml-progress",
+        help="Show current progress of an Azure ML job",
+        description="""
+Show progress of an Azure ML job from progress.json.
+
+This fetches the progress.json file written by run_entry.py and displays
+a visual summary including:
+  - Current phase (init, setup, vm_startup, benchmark)
+  - Progress percentage with progress bar
+  - Recent log messages
+  - Job status
+
+Examples:
+  azure-ml-progress                  # Most recent job
+  azure-ml-progress --job JOB_NAME   # Specific job
+  azure-ml-progress --watch          # Poll continuously
+""",
+    )
+    p_azure_progress.add_argument(
+        "--job",
+        help="Job name (auto-detects most recent if not specified)",
+    )
+    p_azure_progress.add_argument(
+        "--watch",
+        action="store_true",
+        help="Poll continuously (Ctrl+C to stop)",
+    )
+    p_azure_progress.add_argument(
+        "--interval",
+        type=int,
+        default=10,
+        help="Poll interval in seconds for --watch (default: 10)",
+    )
+    p_azure_progress.set_defaults(func=cmd_azure_ml_progress)
+
+    # azure-ml-cancel - Cancel a running Azure ML job
+    p_azure_cancel = subparsers.add_parser(
+        "azure-ml-cancel",
+        help="Cancel a running Azure ML job",
+    )
+    p_azure_cancel.add_argument(
+        "--job",
+        help="Job name to cancel (default: most recent running job)",
+    )
+    p_azure_cancel.set_defaults(func=cmd_azure_ml_cancel)
+
+    # azure-ml-delete-compute - Delete Azure ML compute instances
+    p_azure_delete_compute = subparsers.add_parser(
+        "azure-ml-delete-compute",
+        help="Delete Azure ML compute instance(s)",
+    )
+    p_azure_delete_compute.add_argument(
+        "--name",
+        help="Compute instance name to delete",
+    )
+    p_azure_delete_compute.add_argument(
+        "--all",
+        action="store_true",
+        help="Delete all compute instances",
+    )
+    p_azure_delete_compute.add_argument(
+        "-y", "--yes",
+        action="store_true",
+        help="Confirm deletion without prompting",
+    )
+    p_azure_delete_compute.set_defaults(func=cmd_azure_ml_delete_compute)
+
+    # azure-ml-cleanup - Cancel jobs and delete compute instances
+    p_azure_cleanup = subparsers.add_parser(
+        "azure-ml-cleanup",
+        help="Clean up Azure ML resources (cancel jobs + delete compute)",
+    )
+    p_azure_cleanup.add_argument(
+        "-y", "--yes",
+        action="store_true",
+        help="Confirm cleanup without prompting",
+    )
+    p_azure_cleanup.set_defaults(func=cmd_azure_ml_cleanup)
+
+    # azure-ml-cost - Show compute instance costs
+    p_azure_cost = subparsers.add_parser(
+        "azure-ml-cost",
+        help="Show estimated cost of Azure ML compute instances",
+        description="""
+Show estimated cost of running Azure ML compute instances.
+
+Calculates cost based on:
+  - VM size (Standard_D8ds_v4 = $0.45/hr)
+  - Uptime from creation time
+  - Current state (running/stopped)
+
+Examples:
+  azure-ml-cost                 # Show all compute instances and costs
+""",
+    )
+    p_azure_cost.set_defaults(func=cmd_azure_ml_cost)
+
+    # azure-ml-teardown - Full teardown with cost summary
+    p_azure_teardown = subparsers.add_parser(
+        "azure-ml-teardown",
+        help="Tear down Azure ML resources with cost summary",
+        description="""
+Tear down Azure ML resources (cancel jobs, delete compute instances).
+
+This command:
+  1. Shows all running jobs and compute instances
+  2. Calculates total cost
+  3. Cancels all running jobs
+  4. Deletes all compute instances
+  5. Optionally deletes the entire resource group
+
+Examples:
+  azure-ml-teardown                    # Interactive teardown
+  azure-ml-teardown --force            # Skip confirmation
+  azure-ml-teardown --delete-resource-group  # Also delete resource group
+""",
+    )
+    p_azure_teardown.add_argument(
+        "--force",
+        action="store_true",
+        help="Skip confirmation prompts",
+    )
+    p_azure_teardown.add_argument(
+        "--delete-resource-group",
+        action="store_true",
+        help="Also delete the entire resource group (DESTRUCTIVE)",
+    )
+    p_azure_teardown.set_defaults(func=cmd_azure_ml_teardown)
+
     # tail-output
     p_tail = subparsers.add_parser(
         "tail-output",
@@ -5306,6 +7362,18 @@ Example:
         help="Number of lines to show (default: 50)",
     )
     p_tail.set_defaults(func=cmd_tail_output)
+
+    # resources - Check Azure resource status
+    p_resources = subparsers.add_parser(
+        "resources",
+        help="Check Azure resources and update RESOURCES.md",
+    )
+    p_resources.add_argument(
+        "--json",
+        action="store_true",
+        help="Output as JSON",
+    )
+    p_resources.set_defaults(func=cmd_resources)
 
     args = parser.parse_args()
     sys.exit(args.func(args))
