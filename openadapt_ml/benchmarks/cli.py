@@ -626,7 +626,9 @@ def cmd_pool_status(args):
     for w in pool.workers:
         waa_status = "Ready" if w.waa_ready else "---"
         task_progress = f"{len(w.completed_tasks)}/{len(w.assigned_tasks)}"
-        print(f"{w.name:<18} {w.ip:<16} {w.status:<12} {waa_status:<6} {task_progress:<10}")
+        print(
+            f"{w.name:<18} {w.ip:<16} {w.status:<12} {waa_status:<6} {task_progress:<10}"
+        )
 
     # Probe each VM for live status if --probe flag
     if getattr(args, "probe", False):
@@ -688,7 +690,11 @@ def cmd_delete_pool(args):
         if result.returncode == 0:
             return (name, True, "deleted")
         else:
-            return (name, False, result.stderr[:100] if result.stderr else "unknown error")
+            return (
+                name,
+                False,
+                result.stderr[:100] if result.stderr else "unknown error",
+            )
 
     print("\nDeleting VMs...")
     with ThreadPoolExecutor(max_workers=5) as executor:
@@ -703,17 +709,44 @@ def cmd_delete_pool(args):
     for w in pool.workers:
         # Delete NIC
         subprocess.run(
-            ["az", "network", "nic", "delete", "-g", pool.resource_group, "-n", f"{w.name}VMNic"],
+            [
+                "az",
+                "network",
+                "nic",
+                "delete",
+                "-g",
+                pool.resource_group,
+                "-n",
+                f"{w.name}VMNic",
+            ],
             capture_output=True,
         )
         # Delete public IP
         subprocess.run(
-            ["az", "network", "public-ip", "delete", "-g", pool.resource_group, "-n", f"{w.name}PublicIP"],
+            [
+                "az",
+                "network",
+                "public-ip",
+                "delete",
+                "-g",
+                pool.resource_group,
+                "-n",
+                f"{w.name}PublicIP",
+            ],
             capture_output=True,
         )
         # Delete disk
         subprocess.run(
-            ["az", "disk", "delete", "-g", pool.resource_group, "-n", f"{w.name}_disk1_*", "--yes"],
+            [
+                "az",
+                "disk",
+                "delete",
+                "-g",
+                pool.resource_group,
+                "-n",
+                f"{w.name}_disk1_*",
+                "--yes",
+            ],
             capture_output=True,
         )
 
@@ -764,15 +797,24 @@ def cmd_pool_create(args):
             test_name = f"waa-pool-test-{int(time.time())}"
             result = subprocess.run(
                 [
-                    "az", "vm", "create",
-                    "--resource-group", RESOURCE_GROUP,
-                    "--name", test_name,
-                    "--location", region,
-                    "--image", "Ubuntu2204",
-                    "--size", vm_size,
-                    "--admin-username", "azureuser",
+                    "az",
+                    "vm",
+                    "create",
+                    "--resource-group",
+                    RESOURCE_GROUP,
+                    "--name",
+                    test_name,
+                    "--location",
+                    region,
+                    "--image",
+                    "Ubuntu2204",
+                    "--size",
+                    vm_size,
+                    "--admin-username",
+                    "azureuser",
                     "--generate-ssh-keys",
-                    "--public-ip-sku", "Standard",
+                    "--public-ip-sku",
+                    "Standard",
                     "--no-wait",  # Don't wait for completion
                 ],
                 capture_output=True,
@@ -785,16 +827,45 @@ def cmd_pool_create(args):
                 # Delete the test VM and wait for completion
                 log("POOL", "  Found working combo, cleaning up test VM...")
                 subprocess.run(
-                    ["az", "vm", "delete", "-g", RESOURCE_GROUP, "-n", test_name, "--yes", "--force-deletion", "true"],
+                    [
+                        "az",
+                        "vm",
+                        "delete",
+                        "-g",
+                        RESOURCE_GROUP,
+                        "-n",
+                        test_name,
+                        "--yes",
+                        "--force-deletion",
+                        "true",
+                    ],
                     capture_output=True,
                 )
                 # Also clean up associated resources
                 subprocess.run(
-                    ["az", "network", "nic", "delete", "-g", RESOURCE_GROUP, "-n", f"{test_name}VMNic"],
+                    [
+                        "az",
+                        "network",
+                        "nic",
+                        "delete",
+                        "-g",
+                        RESOURCE_GROUP,
+                        "-n",
+                        f"{test_name}VMNic",
+                    ],
                     capture_output=True,
                 )
                 subprocess.run(
-                    ["az", "network", "public-ip", "delete", "-g", RESOURCE_GROUP, "-n", f"{test_name}PublicIP"],
+                    [
+                        "az",
+                        "network",
+                        "public-ip",
+                        "delete",
+                        "-g",
+                        RESOURCE_GROUP,
+                        "-n",
+                        f"{test_name}PublicIP",
+                    ],
                     capture_output=True,
                 )
                 break
@@ -803,7 +874,10 @@ def cmd_pool_create(args):
 
     if not working_size:
         log("POOL", "ERROR: No available VM size/region found")
-        log("POOL", "Check quota: uv run python -m openadapt_ml.benchmarks.cli azure-ml-quota")
+        log(
+            "POOL",
+            "Check quota: uv run python -m openadapt_ml.benchmarks.cli azure-ml-quota",
+        )
         return 1
 
     log("POOL", f"Using {working_size} (${working_cost:.2f}/hr) in {working_region}")
@@ -814,14 +888,41 @@ def cmd_pool_create(args):
 
         # Check if VM already exists
         check = subprocess.run(
-            ["az", "vm", "show", "-g", RESOURCE_GROUP, "-n", name, "--query", "id", "-o", "tsv"],
-            capture_output=True, text=True,
+            [
+                "az",
+                "vm",
+                "show",
+                "-g",
+                RESOURCE_GROUP,
+                "-n",
+                name,
+                "--query",
+                "id",
+                "-o",
+                "tsv",
+            ],
+            capture_output=True,
+            text=True,
         )
         if check.returncode == 0 and check.stdout.strip():
             # Get existing IP
             ip_result = subprocess.run(
-                ["az", "vm", "show", "-d", "-g", RESOURCE_GROUP, "-n", name, "--query", "publicIps", "-o", "tsv"],
-                capture_output=True, text=True,
+                [
+                    "az",
+                    "vm",
+                    "show",
+                    "-d",
+                    "-g",
+                    RESOURCE_GROUP,
+                    "-n",
+                    name,
+                    "--query",
+                    "publicIps",
+                    "-o",
+                    "tsv",
+                ],
+                capture_output=True,
+                text=True,
             )
             if ip_result.returncode == 0 and ip_result.stdout.strip():
                 return (name, ip_result.stdout.strip(), None)
@@ -829,17 +930,27 @@ def cmd_pool_create(args):
         # Create VM
         result = subprocess.run(
             [
-                "az", "vm", "create",
-                "--resource-group", RESOURCE_GROUP,
-                "--name", name,
-                "--location", working_region,
-                "--image", "Ubuntu2204",
-                "--size", working_size,
-                "--admin-username", "azureuser",
+                "az",
+                "vm",
+                "create",
+                "--resource-group",
+                RESOURCE_GROUP,
+                "--name",
+                name,
+                "--location",
+                working_region,
+                "--image",
+                "Ubuntu2204",
+                "--size",
+                working_size,
+                "--admin-username",
+                "azureuser",
                 "--generate-ssh-keys",
-                "--public-ip-sku", "Standard",
+                "--public-ip-sku",
+                "Standard",
             ],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
 
         if result.returncode != 0:
@@ -1055,7 +1166,9 @@ echo "STARTED"
             return (worker.name, result.returncode == 0, output)
 
         with ThreadPoolExecutor(max_workers=min(len(pool.workers), 5)) as executor:
-            futures = {executor.submit(start_container, w): w.name for w in pool.workers}
+            futures = {
+                executor.submit(start_container, w): w.name for w in pool.workers
+            }
             for future in as_completed(futures):
                 name, success, output = future.result()
                 if "ALREADY_RUNNING" in output:
@@ -1069,7 +1182,10 @@ echo "STARTED"
                 log("POOL-WAIT", f"  {name}: {status}")
 
     # Wait for WAA to be ready on all workers
-    log("POOL-WAIT", f"Waiting for WAA server on all workers (timeout: {timeout_minutes}m)...")
+    log(
+        "POOL-WAIT",
+        f"Waiting for WAA server on all workers (timeout: {timeout_minutes}m)...",
+    )
     start_time = time.time()
     timeout_seconds = timeout_minutes * 60
 
@@ -1080,7 +1196,9 @@ echo "STARTED"
         for name, worker in list(workers_pending.items()):
             try:
                 # Vanilla windowsarena/winarena uses 20.20.20.21 for Windows VM
-                config = VMConfig(name=name, ssh_host=worker.ip, internal_ip="20.20.20.21")
+                config = VMConfig(
+                    name=name, ssh_host=worker.ip, internal_ip="20.20.20.21"
+                )
                 monitor = VMMonitor(config, timeout=5)
                 ready, response = monitor.check_waa_probe()
 
@@ -1095,7 +1213,9 @@ echo "STARTED"
         if workers_pending:
             elapsed = int(time.time() - start_time)
             pending_names = ", ".join(workers_pending.keys())
-            print(f"\r  [{elapsed}s] Waiting for: {pending_names}...", end="", flush=True)
+            print(
+                f"\r  [{elapsed}s] Waiting for: {pending_names}...", end="", flush=True
+            )
             time.sleep(10)
 
     print()  # New line after progress
@@ -1103,7 +1223,10 @@ echo "STARTED"
     if workers_pending:
         log("POOL-WAIT", f"TIMEOUT: {len(workers_pending)} workers not ready")
         for name in workers_pending:
-            log("POOL-WAIT", f"  {name}: not ready (check with: ssh azureuser@{workers_pending[name].ip})")
+            log(
+                "POOL-WAIT",
+                f"  {name}: not ready (check with: ssh azureuser@{workers_pending[name].ip})",
+            )
 
     log("POOL-WAIT", "=" * 60)
     log("POOL-WAIT", f"Workers ready: {len(workers_ready)}/{len(pool.workers)}")
@@ -1143,9 +1266,13 @@ def cmd_pool_run(args):
     if not api_key:
         try:
             from openadapt_ml.config import settings
+
             api_key = settings.openai_api_key
         except Exception:
-            log("POOL-RUN", "ERROR: No API key provided. Use --api-key or set OPENAI_API_KEY in .env")
+            log(
+                "POOL-RUN",
+                "ERROR: No API key provided. Use --api-key or set OPENAI_API_KEY in .env",
+            )
             return 1
 
     # Get ready workers
@@ -1166,8 +1293,13 @@ def cmd_pool_run(args):
     log("POOL-RUN", "Task distribution (handled by WAA):")
     for worker_idx, worker in enumerate(ready_workers):
         # Estimate: worker_id=0 gets tasks 0, N, 2N, ...; worker_id=1 gets 1, N+1, 2N+1, ...
-        tasks_for_worker = (num_tasks + len(ready_workers) - 1 - worker_idx) // len(ready_workers)
-        log("POOL-RUN", f"  {worker.name}: worker_id={worker_idx}, ~{tasks_for_worker} tasks")
+        tasks_for_worker = (num_tasks + len(ready_workers) - 1 - worker_idx) // len(
+            ready_workers
+        )
+        log(
+            "POOL-RUN",
+            f"  {worker.name}: worker_id={worker_idx}, ~{tasks_for_worker} tasks",
+        )
 
     # Update registry with assigned tasks
     pool.total_tasks = num_tasks
@@ -1176,7 +1308,9 @@ def cmd_pool_run(args):
     # Create experiment name
     exp_name = datetime.now().strftime("pool_%Y%m%d_%H%M%S")
 
-    def run_on_worker(worker, worker_idx: int, num_workers: int) -> tuple[str, int, int, str]:
+    def run_on_worker(
+        worker, worker_idx: int, num_workers: int
+    ) -> tuple[str, int, int, str]:
         """Run tasks on a single worker. Returns (name, completed, failed, error)."""
         # Run the benchmark using WAA's native worker distribution
         # WAA splits tasks across workers using --worker_id and --num_workers
@@ -1235,7 +1369,7 @@ docker exec -e OPENAI_API_KEY='{api_key}' winarena bash -c 'cd /client && python
     log("POOL-RUN", "")
     log("POOL-RUN", "=" * 60)
     log("POOL-RUN", "BENCHMARK COMPLETE")
-    log("POOL-RUN", f"  Time: {elapsed/60:.1f} minutes")
+    log("POOL-RUN", f"  Time: {elapsed / 60:.1f} minutes")
     log("POOL-RUN", f"  Completed: {total_completed}/{num_tasks}")
     log("POOL-RUN", f"  Failed: {total_failed}")
     log("POOL-RUN", "=" * 60)
@@ -1245,7 +1379,10 @@ docker exec -e OPENAI_API_KEY='{api_key}' winarena bash -c 'cd /client && python
     log("POOL-RUN", "Results saved on each worker at /home/azureuser/benchmark.log")
     log("POOL-RUN", "To collect results:")
     for worker in ready_workers:
-        log("POOL-RUN", f"  scp azureuser@{worker.ip}:/home/azureuser/benchmark.log ./{worker.name}.log")
+        log(
+            "POOL-RUN",
+            f"  scp azureuser@{worker.ip}:/home/azureuser/benchmark.log ./{worker.name}.log",
+        )
 
     return 0 if total_failed == 0 else 1
 
@@ -1262,29 +1399,75 @@ def cmd_pool_cleanup(args):
 
     # Find pool VMs
     result = subprocess.run(
-        ["az", "vm", "list", "-g", RESOURCE_GROUP, "--query", "[?contains(name, 'waa-pool')].name", "-o", "tsv"],
-        capture_output=True, text=True,
+        [
+            "az",
+            "vm",
+            "list",
+            "-g",
+            RESOURCE_GROUP,
+            "--query",
+            "[?contains(name, 'waa-pool')].name",
+            "-o",
+            "tsv",
+        ],
+        capture_output=True,
+        text=True,
     )
     vms = [v.strip() for v in result.stdout.strip().split("\n") if v.strip()]
 
     # Find NICs
     result = subprocess.run(
-        ["az", "network", "nic", "list", "-g", RESOURCE_GROUP, "--query", "[?contains(name, 'waa-pool')].name", "-o", "tsv"],
-        capture_output=True, text=True,
+        [
+            "az",
+            "network",
+            "nic",
+            "list",
+            "-g",
+            RESOURCE_GROUP,
+            "--query",
+            "[?contains(name, 'waa-pool')].name",
+            "-o",
+            "tsv",
+        ],
+        capture_output=True,
+        text=True,
     )
     nics = [n.strip() for n in result.stdout.strip().split("\n") if n.strip()]
 
     # Find public IPs
     result = subprocess.run(
-        ["az", "network", "public-ip", "list", "-g", RESOURCE_GROUP, "--query", "[?contains(name, 'waa-pool')].name", "-o", "tsv"],
-        capture_output=True, text=True,
+        [
+            "az",
+            "network",
+            "public-ip",
+            "list",
+            "-g",
+            RESOURCE_GROUP,
+            "--query",
+            "[?contains(name, 'waa-pool')].name",
+            "-o",
+            "tsv",
+        ],
+        capture_output=True,
+        text=True,
     )
     ips = [i.strip() for i in result.stdout.strip().split("\n") if i.strip()]
 
     # Find disks
     result = subprocess.run(
-        ["az", "disk", "list", "-g", RESOURCE_GROUP, "--query", "[?contains(name, 'waa-pool')].name", "-o", "tsv"],
-        capture_output=True, text=True,
+        [
+            "az",
+            "disk",
+            "list",
+            "-g",
+            RESOURCE_GROUP,
+            "--query",
+            "[?contains(name, 'waa-pool')].name",
+            "-o",
+            "tsv",
+        ],
+        capture_output=True,
+        text=True,
     )
     disks = [d.strip() for d in result.stdout.strip().split("\n") if d.strip()]
 
@@ -1314,7 +1497,18 @@ def cmd_pool_cleanup(args):
     for vm in vms:
         log("POOL-CLEANUP", f"  Deleting VM: {vm}")
         subprocess.run(
-            ["az", "vm", "delete", "-g", RESOURCE_GROUP, "-n", vm, "--yes", "--force-deletion", "true"],
+            [
+                "az",
+                "vm",
+                "delete",
+                "-g",
+                RESOURCE_GROUP,
+                "-n",
+                vm,
+                "--yes",
+                "--force-deletion",
+                "true",
+            ],
             capture_output=True,
         )
 
@@ -1387,11 +1581,21 @@ def cmd_pool_vnc(args):
             local_port = 8006 + i
 
             # Kill any existing tunnel on this port
-            subprocess.run(["pkill", "-f", f"ssh.*{local_port}:localhost:8006"], capture_output=True)
+            subprocess.run(
+                ["pkill", "-f", f"ssh.*{local_port}:localhost:8006"],
+                capture_output=True,
+            )
 
             # Start SSH tunnel
             tunnel_proc = subprocess.Popen(
-                ["ssh", *SSH_OPTS, "-N", "-L", f"{local_port}:localhost:8006", f"azureuser@{ip}"],
+                [
+                    "ssh",
+                    *SSH_OPTS,
+                    "-N",
+                    "-L",
+                    f"{local_port}:localhost:8006",
+                    f"azureuser@{ip}",
+                ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
@@ -1456,12 +1660,21 @@ def cmd_pool_vnc(args):
         local_port = 8006 + worker_idx
 
         # Kill any existing tunnel on this port
-        subprocess.run(["pkill", "-f", f"ssh.*{local_port}:localhost:8006"], capture_output=True)
+        subprocess.run(
+            ["pkill", "-f", f"ssh.*{local_port}:localhost:8006"], capture_output=True
+        )
 
         # Start SSH tunnel
         log("POOL-VNC", f"Setting up VNC tunnel to {worker_name} ({ip})...")
         tunnel_proc = subprocess.Popen(
-            ["ssh", *SSH_OPTS, "-N", "-L", f"{local_port}:localhost:8006", f"azureuser@{ip}"],
+            [
+                "ssh",
+                *SSH_OPTS,
+                "-N",
+                "-L",
+                f"{local_port}:localhost:8006",
+                f"azureuser@{ip}",
+            ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -1525,11 +1738,14 @@ def cmd_pool_logs(args):
         """Stream logs from a single worker."""
         ssh_cmd = [
             "ssh",
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "UserKnownHostsFile=/dev/null",
-            "-o", "LogLevel=ERROR",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            "-o",
+            "LogLevel=ERROR",
             f"azureuser@{ip}",
-            "docker logs -f winarena"
+            "docker logs -f winarena",
         ]
         try:
             proc = subprocess.Popen(
@@ -1539,7 +1755,7 @@ def cmd_pool_logs(args):
                 text=True,
                 bufsize=1,
             )
-            for line in iter(proc.stdout.readline, ''):
+            for line in iter(proc.stdout.readline, ""):
                 if stop_event.is_set():
                     break
                 output_queue.put((worker_name, line.rstrip()))
@@ -1860,7 +2076,9 @@ def cmd_build_status(args):
     log("BUILD-STATUS", f"Latest build log: {log_file}")
 
     # Check if build is still running
-    result = ssh_run(ip, "pgrep -f 'docker build' >/dev/null && echo RUNNING || echo DONE")
+    result = ssh_run(
+        ip, "pgrep -f 'docker build' >/dev/null && echo RUNNING || echo DONE"
+    )
     status = "RUNNING" if "RUNNING" in result.stdout else "DONE"
     log("BUILD-STATUS", f"Build status: {status}")
 
@@ -1956,10 +2174,19 @@ def cmd_push_acr(args):
         from openadapt_ml.config import settings
 
         if not all(
-            [settings.azure_client_id, settings.azure_client_secret, settings.azure_tenant_id]
+            [
+                settings.azure_client_id,
+                settings.azure_client_secret,
+                settings.azure_tenant_id,
+            ]
         ):
-            log("PUSH-ACR", "ERROR: Missing Azure service principal credentials in .env")
-            log("PUSH-ACR", "  Required: AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_TENANT_ID")
+            log(
+                "PUSH-ACR", "ERROR: Missing Azure service principal credentials in .env"
+            )
+            log(
+                "PUSH-ACR",
+                "  Required: AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_TENANT_ID",
+            )
             return 1
 
         # Login with service principal
@@ -2149,10 +2376,15 @@ def cmd_test_golden_image(args):
 
     # Check if golden image exists
     log("TEST", "Checking for golden image...")
-    result = ssh_run(ip, "ls -la /mnt/waa-storage/data.img 2>/dev/null || echo 'NOT_FOUND'")
+    result = ssh_run(
+        ip, "ls -la /mnt/waa-storage/data.img 2>/dev/null || echo 'NOT_FOUND'"
+    )
     if "NOT_FOUND" in result.stdout:
         log("TEST", "ERROR: Golden image not found at /mnt/waa-storage/data.img")
-        log("TEST", "  Run 'start' first to create a golden image, then wait for Windows to install")
+        log(
+            "TEST",
+            "  Run 'start' first to create a golden image, then wait for Windows to install",
+        )
         return 1
 
     # Get image size
@@ -2250,7 +2482,9 @@ def cmd_test_blob_access(args):
 
     # Check Azure CLI login
     log("TEST-BLOB", "1. Checking Azure CLI authentication...")
-    result = ssh_run(ip, "az account show --query name -o tsv 2>/dev/null || echo 'NOT_LOGGED_IN'")
+    result = ssh_run(
+        ip, "az account show --query name -o tsv 2>/dev/null || echo 'NOT_LOGGED_IN'"
+    )
     if "NOT_LOGGED_IN" in result.stdout:
         log("TEST-BLOB", "❌ Azure CLI not logged in on VM")
         log("TEST-BLOB", "   Run: az login --identity  (if using managed identity)")
@@ -2258,7 +2492,9 @@ def cmd_test_blob_access(args):
     log("TEST-BLOB", f"   ✓ Logged in as: {result.stdout.strip()}")
 
     # Get storage account - try to detect it dynamically
-    result = ssh_run(ip, "az storage account list --query '[0].name' -o tsv 2>/dev/null")
+    result = ssh_run(
+        ip, "az storage account list --query '[0].name' -o tsv 2>/dev/null"
+    )
     storage_account = result.stdout.strip()
     if not storage_account:
         storage_account = "openadaptstorage"  # Fallback
@@ -2271,9 +2507,11 @@ def cmd_test_blob_access(args):
     # Also check for azureml-blobstore-* containers
     result = ssh_run(
         ip,
-        f"az storage container list --account-name {storage_account} --auth-mode login --query '[].name' -o tsv 2>/dev/null"
+        f"az storage container list --account-name {storage_account} --auth-mode login --query '[].name' -o tsv 2>/dev/null",
     )
-    available_containers = result.stdout.strip().split("\n") if result.stdout.strip() else []
+    available_containers = (
+        result.stdout.strip().split("\n") if result.stdout.strip() else []
+    )
     azureml_containers = [c for c in available_containers if c.startswith("azureml")]
     container_candidates = azureml_containers + container_candidates
 
@@ -2283,10 +2521,13 @@ def cmd_test_blob_access(args):
     log("TEST-BLOB", f"2. Checking storage account: {storage_account}...")
     result = ssh_run(
         ip,
-        f"az storage account show --name {storage_account} --query 'name' -o tsv 2>/dev/null || echo 'NOT_FOUND'"
+        f"az storage account show --name {storage_account} --query 'name' -o tsv 2>/dev/null || echo 'NOT_FOUND'",
     )
     if "NOT_FOUND" in result.stdout:
-        log("TEST-BLOB", f"❌ Storage account '{storage_account}' not found or not accessible")
+        log(
+            "TEST-BLOB",
+            f"❌ Storage account '{storage_account}' not found or not accessible",
+        )
         return 1
     log("TEST-BLOB", "   ✓ Storage account accessible")
 
@@ -2297,7 +2538,7 @@ def cmd_test_blob_access(args):
             continue
         result = ssh_run(
             ip,
-            f"az storage container exists --name {candidate} --account-name {storage_account} --auth-mode login --query exists -o tsv 2>/dev/null || echo 'ERROR'"
+            f"az storage container exists --name {candidate} --account-name {storage_account} --auth-mode login --query exists -o tsv 2>/dev/null || echo 'ERROR'",
         )
         if result.stdout.strip() == "true":
             container_name = candidate
@@ -2307,18 +2548,27 @@ def cmd_test_blob_access(args):
     if not container_name:
         log("TEST-BLOB", "❌ No suitable container found")
         log("TEST-BLOB", f"   Available: {available_containers}")
-        log("TEST-BLOB", f"   Create one with: az storage container create --name waa-golden-images --account-name {storage_account}")
+        log(
+            "TEST-BLOB",
+            f"   Create one with: az storage container create --name waa-golden-images --account-name {storage_account}",
+        )
         return 1
 
     # List blobs in container (optional - may fail due to permissions)
     log("TEST-BLOB", "4. Listing blobs in container...")
     result = ssh_run(
         ip,
-        f"az storage blob list --container-name {container_name} --account-name {storage_account} --auth-mode login --query '[].{{name:name, size:properties.contentLength}}' -o table 2>/dev/null || echo 'ERROR'"
+        f"az storage blob list --container-name {container_name} --account-name {storage_account} --auth-mode login --query '[].{{name:name, size:properties.contentLength}}' -o table 2>/dev/null || echo 'ERROR'",
     )
     if "ERROR" in result.stdout:
-        log("TEST-BLOB", "   ⚠ Cannot list blobs (may be normal - some containers restrict listing)")
-        log("TEST-BLOB", "   Container exists, which is sufficient for golden image upload")
+        log(
+            "TEST-BLOB",
+            "   ⚠ Cannot list blobs (may be normal - some containers restrict listing)",
+        )
+        log(
+            "TEST-BLOB",
+            "   Container exists, which is sufficient for golden image upload",
+        )
     else:
         blob_output = result.stdout.strip()
         if not blob_output or "Name" not in blob_output:
@@ -2345,12 +2595,14 @@ def cmd_test_api_key(args):
     if not api_key:
         try:
             from openadapt_ml.config import settings
+
             api_key = settings.openai_api_key
         except Exception:
             pass
 
     if not api_key:
         import os
+
         api_key = os.environ.get("OPENAI_API_KEY")
 
     if not api_key:
@@ -2366,6 +2618,7 @@ def cmd_test_api_key(args):
     log("TEST-API", "Making test API call...")
     try:
         import httpx
+
         response = httpx.post(
             "https://api.openai.com/v1/chat/completions",
             headers={
@@ -2415,7 +2668,9 @@ def cmd_test_waa_tasks(args):
     log("TEST-TASKS", "Testing WAA task accessibility...")
 
     # Check if container is running
-    result = ssh_run(ip, "docker ps --filter name=winarena --format '{{.Status}}' 2>/dev/null")
+    result = ssh_run(
+        ip, "docker ps --filter name=winarena --format '{{.Status}}' 2>/dev/null"
+    )
     if not result.stdout.strip():
         log("TEST-TASKS", "❌ Container not running. Start it first with 'start'")
         return 1
@@ -2425,7 +2680,7 @@ def cmd_test_waa_tasks(args):
     log("TEST-TASKS", "Fetching task list from WAA server...")
     result = ssh_run(
         ip,
-        "docker exec winarena curl -s --max-time 10 http://172.30.0.2:5000/tasks 2>/dev/null || echo 'FAIL'"
+        "docker exec winarena curl -s --max-time 10 http://172.30.0.2:5000/tasks 2>/dev/null || echo 'FAIL'",
     )
 
     if "FAIL" in result.stdout or not result.stdout.strip():
@@ -2433,7 +2688,7 @@ def cmd_test_waa_tasks(args):
         log("TEST-TASKS", "WAA /tasks endpoint not available, checking task files...")
         result = ssh_run(
             ip,
-            "docker exec winarena ls -la /app/WindowsAgentArena/src/win-arena-container/tasks/ 2>/dev/null | head -20 || echo 'NOT_FOUND'"
+            "docker exec winarena ls -la /app/WindowsAgentArena/src/win-arena-container/tasks/ 2>/dev/null | head -20 || echo 'NOT_FOUND'",
         )
         if "NOT_FOUND" in result.stdout:
             log("TEST-TASKS", "❌ Task directory not found")
@@ -3589,14 +3844,21 @@ def upload_startup_script_to_datastore(script_path: str, file_path: str) -> bool
     log("AZURE-ML", f"Getting storage account for workspace {workspace}...")
     result = subprocess.run(
         [
-            "az", "ml", "workspace", "show",
-            "--name", workspace,
-            "--resource-group", resource_group,
-            "--query", "storage_account",
-            "-o", "tsv"
+            "az",
+            "ml",
+            "workspace",
+            "show",
+            "--name",
+            workspace,
+            "--resource-group",
+            resource_group,
+            "--query",
+            "storage_account",
+            "-o",
+            "tsv",
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode != 0:
@@ -3611,13 +3873,20 @@ def upload_startup_script_to_datastore(script_path: str, file_path: str) -> bool
     # Get storage account key
     result = subprocess.run(
         [
-            "az", "storage", "account", "keys", "list",
-            "--account-name", storage_account,
-            "--query", "[0].value",
-            "-o", "tsv"
+            "az",
+            "storage",
+            "account",
+            "keys",
+            "list",
+            "--account-name",
+            storage_account,
+            "--query",
+            "[0].value",
+            "-o",
+            "tsv",
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode != 0:
@@ -3630,14 +3899,21 @@ def upload_startup_script_to_datastore(script_path: str, file_path: str) -> bool
     # Azure ML uses the code file share for startup scripts
     result = subprocess.run(
         [
-            "az", "storage", "share", "list",
-            "--account-name", storage_account,
-            "--account-key", storage_key,
-            "--query", "[].name",
-            "-o", "tsv"
+            "az",
+            "storage",
+            "share",
+            "list",
+            "--account-name",
+            storage_account,
+            "--account-key",
+            storage_key,
+            "--query",
+            "[].name",
+            "-o",
+            "tsv",
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode != 0:
@@ -3668,14 +3944,21 @@ def upload_startup_script_to_datastore(script_path: str, file_path: str) -> bool
             current_path = f"{current_path}/{part}" if current_path else part
             subprocess.run(
                 [
-                    "az", "storage", "directory", "create",
-                    "--account-name", storage_account,
-                    "--account-key", storage_key,
-                    "--share-name", code_share,
-                    "--name", current_path,
+                    "az",
+                    "storage",
+                    "directory",
+                    "create",
+                    "--account-name",
+                    storage_account,
+                    "--account-key",
+                    storage_key,
+                    "--share-name",
+                    code_share,
+                    "--name",
+                    current_path,
                 ],
                 capture_output=True,
-                text=True
+                text=True,
             )
             # Ignore errors - directory may already exist
 
@@ -3683,22 +3966,33 @@ def upload_startup_script_to_datastore(script_path: str, file_path: str) -> bool
     log("AZURE-ML", f"Uploading {script_path} to {file_path}...")
     result = subprocess.run(
         [
-            "az", "storage", "file", "upload",
-            "--account-name", storage_account,
-            "--account-key", storage_key,
-            "--share-name", code_share,
-            "--source", script_path,
-            "--path", file_path,
+            "az",
+            "storage",
+            "file",
+            "upload",
+            "--account-name",
+            storage_account,
+            "--account-key",
+            storage_key,
+            "--share-name",
+            code_share,
+            "--source",
+            script_path,
+            "--path",
+            file_path,
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode != 0:
         log("AZURE-ML", f"ERROR: Failed to upload: {result.stderr}")
         return False
 
-    log("AZURE-ML", f"SUCCESS: Uploaded startup script to file share {code_share}/{file_path}")
+    log(
+        "AZURE-ML",
+        f"SUCCESS: Uploaded startup script to file share {code_share}/{file_path}",
+    )
     return True
 
 
@@ -3717,14 +4011,21 @@ def get_azure_ml_storage_info() -> tuple[str, str, str]:
     log("AZURE-ML", f"Getting storage account for workspace {workspace}...")
     result = subprocess.run(
         [
-            "az", "ml", "workspace", "show",
-            "--name", workspace,
-            "--resource-group", resource_group,
-            "--query", "storage_account",
-            "-o", "tsv"
+            "az",
+            "ml",
+            "workspace",
+            "show",
+            "--name",
+            workspace,
+            "--resource-group",
+            resource_group,
+            "--query",
+            "storage_account",
+            "-o",
+            "tsv",
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode != 0:
@@ -3737,13 +4038,20 @@ def get_azure_ml_storage_info() -> tuple[str, str, str]:
     # Get storage account key
     result = subprocess.run(
         [
-            "az", "storage", "account", "keys", "list",
-            "--account-name", storage_account,
-            "--query", "[0].value",
-            "-o", "tsv"
+            "az",
+            "storage",
+            "account",
+            "keys",
+            "list",
+            "--account-name",
+            storage_account,
+            "--query",
+            "[0].value",
+            "-o",
+            "tsv",
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode != 0:
@@ -3754,14 +4062,21 @@ def get_azure_ml_storage_info() -> tuple[str, str, str]:
     # List blob containers and find the 'azureml-blobstore-*' one
     result = subprocess.run(
         [
-            "az", "storage", "container", "list",
-            "--account-name", storage_account,
-            "--account-key", storage_key,
-            "--query", "[].name",
-            "-o", "tsv"
+            "az",
+            "storage",
+            "container",
+            "list",
+            "--account-name",
+            storage_account,
+            "--account-key",
+            storage_key,
+            "--query",
+            "[].name",
+            "-o",
+            "tsv",
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode != 0:
@@ -3775,14 +4090,18 @@ def get_azure_ml_storage_info() -> tuple[str, str, str]:
             break
 
     if not blob_container:
-        raise RuntimeError(f"Could not find azureml-blobstore container. Available: {containers}")
+        raise RuntimeError(
+            f"Could not find azureml-blobstore container. Available: {containers}"
+        )
 
     log("AZURE-ML", f"Blob container: {blob_container}")
 
     return storage_account, storage_key, blob_container
 
 
-def check_golden_image_in_blob(storage_account: str, storage_key: str, blob_container: str) -> dict:
+def check_golden_image_in_blob(
+    storage_account: str, storage_key: str, blob_container: str
+) -> dict:
     """Check if golden image files exist in blob storage.
 
     Returns:
@@ -3792,16 +4111,25 @@ def check_golden_image_in_blob(storage_account: str, storage_key: str, blob_cont
 
     result = subprocess.run(
         [
-            "az", "storage", "blob", "list",
-            "--account-name", storage_account,
-            "--account-key", storage_key,
-            "--container-name", blob_container,
-            "--prefix", "storage/",
-            "--query", "[].{name:name, size:properties.contentLength}",
-            "-o", "json"
+            "az",
+            "storage",
+            "blob",
+            "list",
+            "--account-name",
+            storage_account,
+            "--account-key",
+            storage_key,
+            "--container-name",
+            blob_container,
+            "--prefix",
+            "storage/",
+            "--query",
+            "[].{name:name, size:properties.contentLength}",
+            "-o",
+            "json",
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode != 0:
@@ -3825,7 +4153,7 @@ def check_golden_image_in_blob(storage_account: str, storage_key: str, blob_cont
         "exists": has_required,
         "files": files,
         "total_size": total_size,
-        "found_files": found_files
+        "found_files": found_files,
     }
 
 
@@ -3868,25 +4196,36 @@ def upload_golden_image_to_blob(source_path: str) -> bool:
         return False
 
     # Check if azcopy is available (faster for large files)
-    azcopy_available = subprocess.run(
-        ["which", "azcopy"], capture_output=True
-    ).returncode == 0
+    azcopy_available = (
+        subprocess.run(["which", "azcopy"], capture_output=True).returncode == 0
+    )
 
     if azcopy_available:
         log("AZURE-ML", "Using azcopy for faster upload...")
         # Generate SAS token for azcopy
         result = subprocess.run(
             [
-                "az", "storage", "container", "generate-sas",
-                "--account-name", storage_account,
-                "--account-key", storage_key,
-                "--name", blob_container,
-                "--permissions", "racwdl",
-                "--expiry", (datetime.now().replace(hour=23, minute=59, second=59)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "-o", "tsv"
+                "az",
+                "storage",
+                "container",
+                "generate-sas",
+                "--account-name",
+                storage_account,
+                "--account-key",
+                storage_key,
+                "--name",
+                blob_container,
+                "--permissions",
+                "racwdl",
+                "--expiry",
+                (datetime.now().replace(hour=23, minute=59, second=59)).strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                ),
+                "-o",
+                "tsv",
             ],
             capture_output=True,
-            text=True
+            text=True,
         )
 
         if result.returncode == 0:
@@ -3896,20 +4235,24 @@ def upload_golden_image_to_blob(source_path: str) -> bool:
             log("AZURE-ML", "Uploading with azcopy (progress will be shown)...")
             result = subprocess.run(
                 [
-                    "azcopy", "copy",
+                    "azcopy",
+                    "copy",
                     str(source_dir) + "/*",
                     dest_url,
                     "--recursive=false",
-                    "--overwrite=true"
+                    "--overwrite=true",
                 ],
-                text=True
+                text=True,
             )
 
             if result.returncode == 0:
                 log("AZURE-ML", "SUCCESS: Upload completed with azcopy")
                 return True
             else:
-                log("AZURE-ML", "azcopy failed, falling back to az storage blob upload-batch...")
+                log(
+                    "AZURE-ML",
+                    "azcopy failed, falling back to az storage blob upload-batch...",
+                )
 
     # Fallback to az storage blob upload-batch
     log("AZURE-ML", "Uploading with az storage blob upload-batch...")
@@ -3918,16 +4261,24 @@ def upload_golden_image_to_blob(source_path: str) -> bool:
 
     result = subprocess.run(
         [
-            "az", "storage", "blob", "upload-batch",
-            "--account-name", storage_account,
-            "--account-key", storage_key,
-            "--destination", blob_container,
-            "--destination-path", "storage",
-            "--source", str(source_dir),
+            "az",
+            "storage",
+            "blob",
+            "upload-batch",
+            "--account-name",
+            storage_account,
+            "--account-key",
+            storage_key,
+            "--destination",
+            blob_container,
+            "--destination-path",
+            "storage",
+            "--source",
+            str(source_dir),
             "--overwrite",
-            "--progress"
+            "--progress",
         ],
-        text=True
+        text=True,
     )
 
     if result.returncode != 0:
@@ -3939,7 +4290,10 @@ def upload_golden_image_to_blob(source_path: str) -> bool:
     info = check_golden_image_in_blob(storage_account, storage_key, blob_container)
 
     if info["exists"]:
-        log("AZURE-ML", f"SUCCESS: Golden image uploaded ({info['total_size'] / (1024**3):.2f} GB)")
+        log(
+            "AZURE-ML",
+            f"SUCCESS: Golden image uploaded ({info['total_size'] / (1024**3):.2f} GB)",
+        )
         log("AZURE-ML", f"Files: {info['found_files']}")
         return True
     else:
@@ -3970,16 +4324,24 @@ def upload_placeholder_to_blob() -> bool:
     # Upload placeholder
     result = subprocess.run(
         [
-            "az", "storage", "blob", "upload",
-            "--account-name", storage_account,
-            "--account-key", storage_key,
-            "--container-name", blob_container,
-            "--name", "storage/README.txt",
-            "--data", placeholder_content,
-            "--overwrite"
+            "az",
+            "storage",
+            "blob",
+            "upload",
+            "--account-name",
+            storage_account,
+            "--account-key",
+            storage_key,
+            "--container-name",
+            blob_container,
+            "--name",
+            "storage/README.txt",
+            "--data",
+            placeholder_content,
+            "--overwrite",
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode != 0:
@@ -3988,7 +4350,10 @@ def upload_placeholder_to_blob() -> bool:
 
     log("AZURE-ML", "SUCCESS: Placeholder uploaded to storage/README.txt")
     log("AZURE-ML", "")
-    log("AZURE-ML", "The container will auto-download Windows 11 Enterprise on first run.")
+    log(
+        "AZURE-ML",
+        "The container will auto-download Windows 11 Enterprise on first run.",
+    )
     log("AZURE-ML", "This adds ~15-20 minutes to the first startup time.")
     return True
 
@@ -4017,7 +4382,9 @@ def upload_golden_image_from_vm() -> bool:
 
     # Check if golden image exists on VM
     log("AZURE-ML", "Checking for golden image on VM...")
-    result = ssh_run(ip, "ls -la /mnt/waa-storage/data.img 2>/dev/null || echo 'NOT_FOUND'")
+    result = ssh_run(
+        ip, "ls -la /mnt/waa-storage/data.img 2>/dev/null || echo 'NOT_FOUND'"
+    )
     if "NOT_FOUND" in result.stdout or result.returncode != 0:
         log("AZURE-ML", "ERROR: Golden image not found on VM at /mnt/waa-storage/")
         log("AZURE-ML", "")
@@ -4072,7 +4439,10 @@ az storage blob upload-batch \\
         log("AZURE-ML", f"  Files: {info['found_files']}")
         log("AZURE-ML", "")
         log("AZURE-ML", "Ready to run benchmark:")
-        log("AZURE-ML", "  uv run python -m openadapt_ml.benchmarks.cli run-azure-ml --workers 1")
+        log(
+            "AZURE-ML",
+            "  uv run python -m openadapt_ml.benchmarks.cli run-azure-ml --workers 1",
+        )
         return True
     else:
         log("AZURE-ML", "ERROR: Upload verification failed")
@@ -4111,14 +4481,21 @@ def list_azure_ml_compute_instances() -> list[dict]:
 
     result = subprocess.run(
         [
-            "az", "ml", "compute", "list",
-            "--workspace-name", workspace,
-            "--resource-group", resource_group,
-            "--query", "[?type=='computeinstance'].{name:name, state:state, vmSize:size}",
-            "-o", "json"
+            "az",
+            "ml",
+            "compute",
+            "list",
+            "--workspace-name",
+            workspace,
+            "--resource-group",
+            resource_group,
+            "--query",
+            "[?type=='computeinstance'].{name:name, state:state, vmSize:size}",
+            "-o",
+            "json",
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode != 0:
@@ -4132,7 +4509,12 @@ def list_azure_ml_compute_instances() -> list[dict]:
         return []
 
 
-def list_azure_ml_blob_files(storage_account: str, storage_key: str, blob_container: str, prefix: str = "storage/") -> list[dict]:
+def list_azure_ml_blob_files(
+    storage_account: str,
+    storage_key: str,
+    blob_container: str,
+    prefix: str = "storage/",
+) -> list[dict]:
     """List files in Azure blob storage with given prefix.
 
     Returns:
@@ -4140,16 +4522,25 @@ def list_azure_ml_blob_files(storage_account: str, storage_key: str, blob_contai
     """
     result = subprocess.run(
         [
-            "az", "storage", "blob", "list",
-            "--account-name", storage_account,
-            "--account-key", storage_key,
-            "--container-name", blob_container,
-            "--prefix", prefix,
-            "--query", "[].{name:name, size:properties.contentLength}",
-            "-o", "json"
+            "az",
+            "storage",
+            "blob",
+            "list",
+            "--account-name",
+            storage_account,
+            "--account-key",
+            storage_key,
+            "--container-name",
+            blob_container,
+            "--prefix",
+            prefix,
+            "--query",
+            "[].{name:name, size:properties.contentLength}",
+            "-o",
+            "json",
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode != 0:
@@ -4163,7 +4554,9 @@ def list_azure_ml_blob_files(storage_account: str, storage_key: str, blob_contai
         return []
 
 
-def list_azure_ml_file_share_files(storage_account: str, storage_key: str, code_share: str, prefix: str = "Users/") -> list[dict]:
+def list_azure_ml_file_share_files(
+    storage_account: str, storage_key: str, code_share: str, prefix: str = "Users/"
+) -> list[dict]:
     """List files in Azure file share with given prefix.
 
     Returns:
@@ -4171,15 +4564,23 @@ def list_azure_ml_file_share_files(storage_account: str, storage_key: str, code_
     """
     result = subprocess.run(
         [
-            "az", "storage", "file", "list",
-            "--account-name", storage_account,
-            "--account-key", storage_key,
-            "--share-name", code_share,
-            "--path", prefix,
-            "-o", "json"
+            "az",
+            "storage",
+            "file",
+            "list",
+            "--account-name",
+            storage_account,
+            "--account-key",
+            storage_key,
+            "--share-name",
+            code_share,
+            "--path",
+            prefix,
+            "-o",
+            "json",
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode != 0:
@@ -4207,14 +4608,21 @@ def get_azure_ml_file_share_name() -> str | None:
     # Get storage account
     result = subprocess.run(
         [
-            "az", "ml", "workspace", "show",
-            "--name", workspace,
-            "--resource-group", resource_group,
-            "--query", "storage_account",
-            "-o", "tsv"
+            "az",
+            "ml",
+            "workspace",
+            "show",
+            "--name",
+            workspace,
+            "--resource-group",
+            resource_group,
+            "--query",
+            "storage_account",
+            "-o",
+            "tsv",
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode != 0:
@@ -4225,13 +4633,20 @@ def get_azure_ml_file_share_name() -> str | None:
     # Get storage key
     result = subprocess.run(
         [
-            "az", "storage", "account", "keys", "list",
-            "--account-name", storage_account,
-            "--query", "[0].value",
-            "-o", "tsv"
+            "az",
+            "storage",
+            "account",
+            "keys",
+            "list",
+            "--account-name",
+            storage_account,
+            "--query",
+            "[0].value",
+            "-o",
+            "tsv",
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode != 0:
@@ -4242,14 +4657,21 @@ def get_azure_ml_file_share_name() -> str | None:
     # List file shares
     result = subprocess.run(
         [
-            "az", "storage", "share", "list",
-            "--account-name", storage_account,
-            "--account-key", storage_key,
-            "--query", "[].name",
-            "-o", "tsv"
+            "az",
+            "storage",
+            "share",
+            "list",
+            "--account-name",
+            storage_account,
+            "--account-key",
+            storage_key,
+            "--query",
+            "[].name",
+            "-o",
+            "tsv",
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode != 0:
@@ -4281,14 +4703,20 @@ def delete_azure_ml_compute_instance(name: str) -> bool:
 
     result = subprocess.run(
         [
-            "az", "ml", "compute", "delete",
-            "--name", name,
-            "--workspace-name", workspace,
-            "--resource-group", resource_group,
-            "--yes"
+            "az",
+            "ml",
+            "compute",
+            "delete",
+            "--name",
+            name,
+            "--workspace-name",
+            workspace,
+            "--resource-group",
+            resource_group,
+            "--yes",
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode != 0:
@@ -4299,7 +4727,9 @@ def delete_azure_ml_compute_instance(name: str) -> bool:
     return True
 
 
-def delete_azure_ml_blob_files(storage_account: str, storage_key: str, blob_container: str, prefix: str) -> int:
+def delete_azure_ml_blob_files(
+    storage_account: str, storage_key: str, blob_container: str, prefix: str
+) -> int:
     """Delete all blob files with given prefix.
 
     Args:
@@ -4312,7 +4742,9 @@ def delete_azure_ml_blob_files(storage_account: str, storage_key: str, blob_cont
         Number of files deleted
     """
     # First list all files
-    files = list_azure_ml_blob_files(storage_account, storage_key, blob_container, prefix)
+    files = list_azure_ml_blob_files(
+        storage_account, storage_key, blob_container, prefix
+    )
 
     deleted = 0
     for f in files:
@@ -4323,14 +4755,21 @@ def delete_azure_ml_blob_files(storage_account: str, storage_key: str, blob_cont
         log("AZURE-ML", f"Deleting blob: {name}...")
         result = subprocess.run(
             [
-                "az", "storage", "blob", "delete",
-                "--account-name", storage_account,
-                "--account-key", storage_key,
-                "--container-name", blob_container,
-                "--name", name
+                "az",
+                "storage",
+                "blob",
+                "delete",
+                "--account-name",
+                storage_account,
+                "--account-key",
+                storage_key,
+                "--container-name",
+                blob_container,
+                "--name",
+                name,
             ],
             capture_output=True,
-            text=True
+            text=True,
         )
 
         if result.returncode == 0:
@@ -4341,7 +4780,9 @@ def delete_azure_ml_blob_files(storage_account: str, storage_key: str, blob_cont
     return deleted
 
 
-def delete_azure_ml_file_share_files(storage_account: str, storage_key: str, code_share: str, path: str) -> int:
+def delete_azure_ml_file_share_files(
+    storage_account: str, storage_key: str, code_share: str, path: str
+) -> int:
     """Delete files in file share at given path.
 
     Args:
@@ -4357,14 +4798,21 @@ def delete_azure_ml_file_share_files(storage_account: str, storage_key: str, cod
 
     result = subprocess.run(
         [
-            "az", "storage", "file", "delete",
-            "--account-name", storage_account,
-            "--account-key", storage_key,
-            "--share-name", code_share,
-            "--path", path
+            "az",
+            "storage",
+            "file",
+            "delete",
+            "--account-name",
+            storage_account,
+            "--account-key",
+            storage_key,
+            "--share-name",
+            code_share,
+            "--path",
+            path,
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode == 0:
@@ -4409,12 +4857,14 @@ def show_azure_ml_cost_summary() -> dict:
             # Users should check Azure portal for actual usage
             log("AZURE-ML", f"  {name}  {vm_size}  {state}  ${hourly_rate:.2f}/hr")
 
-            result_summary["compute_instances"].append({
-                "name": name,
-                "state": state,
-                "vmSize": vm_size,
-                "hourly_rate": hourly_rate
-            })
+            result_summary["compute_instances"].append(
+                {
+                    "name": name,
+                    "state": state,
+                    "vmSize": vm_size,
+                    "hourly_rate": hourly_rate,
+                }
+            )
 
     log("AZURE-ML", "")
 
@@ -4422,7 +4872,9 @@ def show_azure_ml_cost_summary() -> dict:
     log("AZURE-ML", "Blob Storage:")
     try:
         storage_account, storage_key, blob_container = get_azure_ml_storage_info()
-        files = list_azure_ml_blob_files(storage_account, storage_key, blob_container, "storage/")
+        files = list_azure_ml_blob_files(
+            storage_account, storage_key, blob_container, "storage/"
+        )
 
         if not files:
             log("AZURE-ML", "  (no files in storage/ prefix)")
@@ -4499,7 +4951,9 @@ def show_azure_ml_resources() -> dict:
     log("AZURE-ML", "Blob Storage (storage/ prefix):")
     try:
         storage_account, storage_key, blob_container = get_azure_ml_storage_info()
-        files = list_azure_ml_blob_files(storage_account, storage_key, blob_container, "storage/")
+        files = list_azure_ml_blob_files(
+            storage_account, storage_key, blob_container, "storage/"
+        )
 
         if not files:
             log("AZURE-ML", "  (empty)")
@@ -4533,7 +4987,9 @@ def show_azure_ml_resources() -> dict:
     return result
 
 
-def teardown_azure_ml_resources(confirm: bool = False, keep_image: bool = False) -> bool:
+def teardown_azure_ml_resources(
+    confirm: bool = False, keep_image: bool = False
+) -> bool:
     """Teardown Azure ML resources to stop all costs.
 
     Args:
@@ -4551,7 +5007,9 @@ def teardown_azure_ml_resources(confirm: bool = False, keep_image: bool = False)
 
     try:
         storage_account, storage_key, blob_container = get_azure_ml_storage_info()
-        blob_files = list_azure_ml_blob_files(storage_account, storage_key, blob_container, "storage/")
+        blob_files = list_azure_ml_blob_files(
+            storage_account, storage_key, blob_container, "storage/"
+        )
     except RuntimeError as e:
         log("AZURE-ML", f"Warning: Could not access storage: {e}")
         storage_account = None
@@ -4583,7 +5041,11 @@ def teardown_azure_ml_resources(confirm: bool = False, keep_image: bool = False)
         for f in blob_files:
             name = f.get("name", "").replace("storage/", "")
             # Check if this is the golden image
-            is_golden_image = name in ["data.img", "OVMF_CODE_4M.ms.fd", "OVMF_VARS_4M.ms.fd"]
+            is_golden_image = name in [
+                "data.img",
+                "OVMF_CODE_4M.ms.fd",
+                "OVMF_VARS_4M.ms.fd",
+            ]
             if is_golden_image and keep_image:
                 log("AZURE-ML", f"    - {name} (KEEPING - golden image)")
             else:
@@ -4604,8 +5066,12 @@ def teardown_azure_ml_resources(confirm: bool = False, keep_image: bool = False)
     log("AZURE-ML", "")
 
     if not confirm:
-        log("AZURE-ML", "This is a DRY RUN. Use --confirm to actually delete resources.")
-        log("AZURE-ML", "Use --keep-image to preserve the golden image for future runs.")
+        log(
+            "AZURE-ML", "This is a DRY RUN. Use --confirm to actually delete resources."
+        )
+        log(
+            "AZURE-ML", "Use --keep-image to preserve the golden image for future runs."
+        )
         return True
 
     # Actually delete resources
@@ -4636,14 +5102,21 @@ def teardown_azure_ml_resources(confirm: bool = False, keep_image: bool = False)
                 log("AZURE-ML", f"Deleting blob: {name}...")
                 result = subprocess.run(
                     [
-                        "az", "storage", "blob", "delete",
-                        "--account-name", storage_account,
-                        "--account-key", storage_key,
-                        "--container-name", blob_container,
-                        "--name", name
+                        "az",
+                        "storage",
+                        "blob",
+                        "delete",
+                        "--account-name",
+                        storage_account,
+                        "--account-key",
+                        storage_key,
+                        "--container-name",
+                        blob_container,
+                        "--name",
+                        name,
                     ],
                     capture_output=True,
-                    text=True
+                    text=True,
                 )
                 if result.returncode == 0:
                     deleted_count += 1
@@ -4651,8 +5124,10 @@ def teardown_azure_ml_resources(confirm: bool = False, keep_image: bool = False)
     # Delete startup script
     if code_share and storage_account and storage_key:
         deleted_count += delete_azure_ml_file_share_files(
-            storage_account, storage_key, code_share,
-            "Users/openadapt/compute-instance-startup.sh"
+            storage_account,
+            storage_key,
+            code_share,
+            "Users/openadapt/compute-instance-startup.sh",
         )
 
     log("AZURE-ML", "")
@@ -4805,14 +5280,13 @@ def cmd_run_azure_ml_auto(args):
         log("AUTO", "  Starting Windows container with VERSION=11e...")
 
         # Pull image if needed
-        result = ssh_run(ip, "docker images windowsarena/winarena:latest --format '{{.ID}}'")
+        result = ssh_run(
+            ip, "docker images windowsarena/winarena:latest --format '{{.ID}}'"
+        )
         if not result.stdout.strip():
             log("AUTO", "  Pulling windowsarena/winarena:latest...")
             result = ssh_run(
-                ip,
-                "docker pull windowsarena/winarena:latest",
-                stream=True,
-                step="PULL"
+                ip, "docker pull windowsarena/winarena:latest", stream=True, step="PULL"
             )
             if result.returncode != 0:
                 log("AUTO", "  ERROR: Failed to pull Docker image")
@@ -4825,7 +5299,9 @@ def cmd_run_azure_ml_auto(args):
         )
 
         # Stop any existing container
-        ssh_run(ip, "docker stop winarena 2>/dev/null; docker rm -f winarena 2>/dev/null")
+        ssh_run(
+            ip, "docker stop winarena 2>/dev/null; docker rm -f winarena 2>/dev/null"
+        )
 
         # Start container with VERSION=11e
         ram_size = "16G" if fast_vm else "8G"
@@ -4924,21 +5400,34 @@ def cmd_run_azure_ml_auto(args):
     else:
         try:
             storage_account, storage_key, blob_container = get_azure_ml_storage_info()
-            image_info = check_golden_image_in_blob(storage_account, storage_key, blob_container)
+            image_info = check_golden_image_in_blob(
+                storage_account, storage_key, blob_container
+            )
 
             if image_info["exists"]:
-                log("AUTO", f"  Golden image already exists ({image_info['total_size'] / (1024**3):.2f} GB)")
+                log(
+                    "AUTO",
+                    f"  Golden image already exists ({image_info['total_size'] / (1024**3):.2f} GB)",
+                )
                 log("AUTO", f"  Files: {image_info['found_files']}")
             else:
                 log("AUTO", "  Golden image not found, uploading from VM...")
                 log("AUTO", "  (This may take 5-10 minutes for ~25GB)")
 
                 # Check if golden image exists on VM
-                result = ssh_run(ip, "ls -la /mnt/waa-storage/data.img 2>/dev/null || echo 'NOT_FOUND'")
+                result = ssh_run(
+                    ip,
+                    "ls -la /mnt/waa-storage/data.img 2>/dev/null || echo 'NOT_FOUND'",
+                )
                 if "NOT_FOUND" in result.stdout:
-                    log("AUTO", "  ERROR: Golden image not found on VM at /mnt/waa-storage/")
+                    log(
+                        "AUTO",
+                        "  ERROR: Golden image not found on VM at /mnt/waa-storage/",
+                    )
                     log("AUTO", "  The Windows installation may not have completed.")
-                    log("AUTO", "  Wait for WAA server to be ready first, or check VNC.")
+                    log(
+                        "AUTO", "  Wait for WAA server to be ready first, or check VNC."
+                    )
                     return 1
 
                 # Upload using existing function
@@ -4963,15 +5452,21 @@ def cmd_run_azure_ml_auto(args):
         log("AUTO", "  Skipping benchmark (--skip-benchmark specified)")
     else:
         # Ensure startup script is uploaded
-        waa_scripts = Path(__file__).parent.parent.parent / "vendor" / "WindowsAgentArena" / "scripts"
-        startup_script_local = waa_scripts / "azure_files" / "compute-instance-startup.sh"
+        waa_scripts = (
+            Path(__file__).parent.parent.parent
+            / "vendor"
+            / "WindowsAgentArena"
+            / "scripts"
+        )
+        startup_script_local = (
+            waa_scripts / "azure_files" / "compute-instance-startup.sh"
+        )
         startup_script_datastore_path = "Users/openadapt/compute-instance-startup.sh"
 
         if startup_script_local.exists():
             log("AUTO", "  Ensuring startup script is uploaded...")
             success = upload_startup_script_to_datastore(
-                str(startup_script_local),
-                startup_script_datastore_path
+                str(startup_script_local), startup_script_datastore_path
             )
             if not success:
                 log("AUTO", "  WARNING: Failed to upload startup script")
@@ -4990,7 +5485,9 @@ def cmd_run_azure_ml_auto(args):
         log("AUTO", f"  Updated {config_path}")
 
         # Build run_azure.py command
-        exp_name = getattr(args, "exp_name", None) or f"e{datetime.now().strftime('%m%d%H%M')}"
+        exp_name = (
+            getattr(args, "exp_name", None) or f"e{datetime.now().strftime('%m%d%H%M')}"
+        )
         docker_image = getattr(args, "image", None) or "windowsarena/winarena:latest"
         model = getattr(args, "model", None) or "gpt-4o-mini"
         agent = getattr(args, "agent", None) or "navi"
@@ -4998,12 +5495,18 @@ def cmd_run_azure_ml_auto(args):
         cmd = [
             "python",
             str(waa_scripts / "run_azure.py"),
-            "--docker_img_name", docker_image,
-            "--num_workers", str(num_workers),
-            "--exp_name", exp_name,
-            "--model_name", model,
-            "--agent", agent,
-            "--ci_startup_script_path", startup_script_datastore_path,
+            "--docker_img_name",
+            docker_image,
+            "--num_workers",
+            str(num_workers),
+            "--exp_name",
+            exp_name,
+            "--model_name",
+            model,
+            "--agent",
+            agent,
+            "--ci_startup_script_path",
+            startup_script_datastore_path,
         ]
 
         log("AUTO", f"  Running: {' '.join(cmd)}")
@@ -5060,14 +5563,14 @@ def cmd_run_azure_ml(args):
 
     # Only require OpenAI key if actually running benchmark (not setup/image/management operations)
     is_management_operation = (
-        getattr(args, "setup", False) or
-        getattr(args, "check_image", False) or
-        getattr(args, "upload_image", False) or
-        getattr(args, "upload_placeholder", False) or
-        getattr(args, "upload_image_from_vm", False) or
-        getattr(args, "cost_summary", False) or
-        getattr(args, "list_resources", False) or
-        getattr(args, "teardown", False)
+        getattr(args, "setup", False)
+        or getattr(args, "check_image", False)
+        or getattr(args, "upload_image", False)
+        or getattr(args, "upload_placeholder", False)
+        or getattr(args, "upload_image_from_vm", False)
+        or getattr(args, "cost_summary", False)
+        or getattr(args, "list_resources", False)
+        or getattr(args, "teardown", False)
     )
     if not is_management_operation:
         required.append(("openai_api_key", "OPENAI_API_KEY"))
@@ -5077,11 +5580,16 @@ def cmd_run_azure_ml(args):
         if not getattr(settings, attr, None):
             missing.append(env_name)
     if missing:
-        log("AZURE-ML", f"ERROR: Missing required settings in .env: {', '.join(missing)}")
+        log(
+            "AZURE-ML",
+            f"ERROR: Missing required settings in .env: {', '.join(missing)}",
+        )
         return 1
 
     # Paths
-    waa_scripts = Path(__file__).parent.parent.parent / "vendor" / "WindowsAgentArena" / "scripts"
+    waa_scripts = (
+        Path(__file__).parent.parent.parent / "vendor" / "WindowsAgentArena" / "scripts"
+    )
     if not waa_scripts.exists():
         log("AZURE-ML", f"ERROR: WAA scripts not found at {waa_scripts}")
         return 1
@@ -5089,33 +5597,52 @@ def cmd_run_azure_ml(args):
     # Startup script configuration
     startup_script_local = waa_scripts / "azure_files" / "compute-instance-startup.sh"
     # Use custom path or default to Users/openadapt/...
-    startup_script_datastore_path = getattr(args, "ci_startup_script_path", None) or "Users/openadapt/compute-instance-startup.sh"
+    startup_script_datastore_path = (
+        getattr(args, "ci_startup_script_path", None)
+        or "Users/openadapt/compute-instance-startup.sh"
+    )
 
     # Handle --setup: upload startup script to datastore
     if getattr(args, "setup", False):
-        log("AZURE-ML", "=== SETUP MODE: Uploading startup script to Azure ML datastore ===")
+        log(
+            "AZURE-ML",
+            "=== SETUP MODE: Uploading startup script to Azure ML datastore ===",
+        )
 
         if not startup_script_local.exists():
-            log("AZURE-ML", f"ERROR: Startup script not found at {startup_script_local}")
+            log(
+                "AZURE-ML", f"ERROR: Startup script not found at {startup_script_local}"
+            )
             return 1
 
         success = upload_startup_script_to_datastore(
-            str(startup_script_local),
-            startup_script_datastore_path
+            str(startup_script_local), startup_script_datastore_path
         )
 
         if success:
             log("AZURE-ML", "")
             log("AZURE-ML", "=== SETUP COMPLETE ===")
-            log("AZURE-ML", f"Startup script uploaded to: {startup_script_datastore_path}")
+            log(
+                "AZURE-ML",
+                f"Startup script uploaded to: {startup_script_datastore_path}",
+            )
             log("AZURE-ML", "")
             log("AZURE-ML", "Next steps:")
             log("AZURE-ML", "  1. Check/upload golden image:")
-            log("AZURE-ML", "     uv run python -m openadapt_ml.benchmarks.cli run-azure-ml --check-image")
-            log("AZURE-ML", "     uv run python -m openadapt_ml.benchmarks.cli run-azure-ml --upload-image")
+            log(
+                "AZURE-ML",
+                "     uv run python -m openadapt_ml.benchmarks.cli run-azure-ml --check-image",
+            )
+            log(
+                "AZURE-ML",
+                "     uv run python -m openadapt_ml.benchmarks.cli run-azure-ml --upload-image",
+            )
             log("AZURE-ML", "")
             log("AZURE-ML", "  2. Run benchmark:")
-            log("AZURE-ML", "     uv run python -m openadapt_ml.benchmarks.cli run-azure-ml --workers 1")
+            log(
+                "AZURE-ML",
+                "     uv run python -m openadapt_ml.benchmarks.cli run-azure-ml --workers 1",
+            )
             return 0
         else:
             log("AZURE-ML", "ERROR: Setup failed")
@@ -5126,7 +5653,9 @@ def cmd_run_azure_ml(args):
         log("AZURE-ML", "=== CHECK IMAGE: Verifying golden image in blob storage ===")
         try:
             storage_account, storage_key, blob_container = get_azure_ml_storage_info()
-            info = check_golden_image_in_blob(storage_account, storage_key, blob_container)
+            info = check_golden_image_in_blob(
+                storage_account, storage_key, blob_container
+            )
 
             if info["exists"]:
                 log("AZURE-ML", "")
@@ -5135,7 +5664,10 @@ def cmd_run_azure_ml(args):
                 log("AZURE-ML", f"Files: {info['found_files']}")
                 log("AZURE-ML", "")
                 log("AZURE-ML", "Ready to run benchmark:")
-                log("AZURE-ML", "  uv run python -m openadapt_ml.benchmarks.cli run-azure-ml --workers 1")
+                log(
+                    "AZURE-ML",
+                    "  uv run python -m openadapt_ml.benchmarks.cli run-azure-ml --workers 1",
+                )
                 return 0
             else:
                 log("AZURE-ML", "")
@@ -5144,11 +5676,20 @@ def cmd_run_azure_ml(args):
                     log("AZURE-ML", f"Found partial files: {info['found_files']}")
                 log("AZURE-ML", "")
                 log("AZURE-ML", "To upload golden image:")
-                log("AZURE-ML", "  1. Prepare locally: cd vendor/WindowsAgentArena && ./scripts/run.sh --prepare-image true")
-                log("AZURE-ML", "  2. Upload: uv run python -m openadapt_ml.benchmarks.cli run-azure-ml --upload-image")
+                log(
+                    "AZURE-ML",
+                    "  1. Prepare locally: cd vendor/WindowsAgentArena && ./scripts/run.sh --prepare-image true",
+                )
+                log(
+                    "AZURE-ML",
+                    "  2. Upload: uv run python -m openadapt_ml.benchmarks.cli run-azure-ml --upload-image",
+                )
                 log("AZURE-ML", "")
                 log("AZURE-ML", "Alternative (no upload, slower first run):")
-                log("AZURE-ML", "  uv run python -m openadapt_ml.benchmarks.cli run-azure-ml --upload-placeholder")
+                log(
+                    "AZURE-ML",
+                    "  uv run python -m openadapt_ml.benchmarks.cli run-azure-ml --upload-placeholder",
+                )
                 return 1
         except RuntimeError as e:
             log("AZURE-ML", f"ERROR: {e}")
@@ -5159,7 +5700,9 @@ def cmd_run_azure_ml(args):
         log("AZURE-ML", "=== UPLOAD IMAGE: Uploading golden image to blob storage ===")
 
         # Determine source path
-        default_source = waa_scripts.parent / "src" / "win-arena-container" / "vm" / "storage"
+        default_source = (
+            waa_scripts.parent / "src" / "win-arena-container" / "vm" / "storage"
+        )
         source_path = getattr(args, "image_source", None) or str(default_source)
 
         success = upload_golden_image_to_blob(source_path)
@@ -5167,7 +5710,10 @@ def cmd_run_azure_ml(args):
             log("AZURE-ML", "")
             log("AZURE-ML", "=== UPLOAD COMPLETE ===")
             log("AZURE-ML", "Ready to run benchmark:")
-            log("AZURE-ML", "  uv run python -m openadapt_ml.benchmarks.cli run-azure-ml --workers 1")
+            log(
+                "AZURE-ML",
+                "  uv run python -m openadapt_ml.benchmarks.cli run-azure-ml --workers 1",
+            )
             return 0
         else:
             log("AZURE-ML", "ERROR: Upload failed")
@@ -5175,14 +5721,23 @@ def cmd_run_azure_ml(args):
 
     # Handle --upload-placeholder: create placeholder for VERSION=11e approach
     if getattr(args, "upload_placeholder", False):
-        log("AZURE-ML", "=== UPLOAD PLACEHOLDER: Creating placeholder for VERSION=11e ===")
+        log(
+            "AZURE-ML",
+            "=== UPLOAD PLACEHOLDER: Creating placeholder for VERSION=11e ===",
+        )
 
         success = upload_placeholder_to_blob()
         if success:
             log("AZURE-ML", "")
             log("AZURE-ML", "=== PLACEHOLDER CREATED ===")
-            log("AZURE-ML", "Ready to run benchmark (Windows will auto-download on first run):")
-            log("AZURE-ML", "  uv run python -m openadapt_ml.benchmarks.cli run-azure-ml --workers 1")
+            log(
+                "AZURE-ML",
+                "Ready to run benchmark (Windows will auto-download on first run):",
+            )
+            log(
+                "AZURE-ML",
+                "  uv run python -m openadapt_ml.benchmarks.cli run-azure-ml --workers 1",
+            )
             return 0
         else:
             log("AZURE-ML", "ERROR: Placeholder creation failed")
@@ -5231,7 +5786,9 @@ def cmd_run_azure_ml(args):
     # Build run_azure.py command
     num_workers = getattr(args, "workers", None) or 1
     # Keep exp_name short - compute instance name is "w{worker_id}Exp{exp_name}" and max 24 chars
-    exp_name = getattr(args, "exp_name", None) or f"e{datetime.now().strftime('%m%d%H%M')}"
+    exp_name = (
+        getattr(args, "exp_name", None) or f"e{datetime.now().strftime('%m%d%H%M')}"
+    )
     docker_image = getattr(args, "image", None) or "windowsarena/winarena:latest"
     model = getattr(args, "model", None) or "gpt-4o-mini"
     agent = getattr(args, "agent", None) or "navi"
@@ -5239,12 +5796,18 @@ def cmd_run_azure_ml(args):
     cmd = [
         "python",
         str(waa_scripts / "run_azure.py"),
-        "--docker_img_name", docker_image,
-        "--num_workers", str(num_workers),
-        "--exp_name", exp_name,
-        "--model_name", model,
-        "--agent", agent,
-        "--ci_startup_script_path", startup_script_datastore_path,
+        "--docker_img_name",
+        docker_image,
+        "--num_workers",
+        str(num_workers),
+        "--exp_name",
+        exp_name,
+        "--model_name",
+        model,
+        "--agent",
+        agent,
+        "--ci_startup_script_path",
+        startup_script_datastore_path,
     ]
 
     log("AZURE-ML", f"Running: {' '.join(cmd)}")
@@ -5286,7 +5849,12 @@ def get_azure_ml_dedicated_quota(subscription_id: str, location: str) -> dict:
         text=True,
     )
     if token_result.returncode != 0:
-        return {"error": f"Failed to get access token: {token_result.stderr}", "quota": 0, "usage": 0, "available": 0}
+        return {
+            "error": f"Failed to get access token: {token_result.stderr}",
+            "quota": 0,
+            "usage": 0,
+            "available": 0,
+        }
 
     token = token_result.stdout.strip()
 
@@ -5305,7 +5873,12 @@ def get_azure_ml_dedicated_quota(subscription_id: str, location: str) -> dict:
         with urllib.request.urlopen(req, timeout=30) as response:
             data = json.loads(response.read().decode())
     except urllib.error.HTTPError as e:
-        return {"error": f"HTTP {e.code}: {e.reason}", "quota": 0, "usage": 0, "available": 0}
+        return {
+            "error": f"HTTP {e.code}: {e.reason}",
+            "quota": 0,
+            "usage": 0,
+            "available": 0,
+        }
     except Exception as e:
         return {"error": str(e), "quota": 0, "usage": 0, "available": 0}
 
@@ -5321,12 +5894,14 @@ def get_azure_ml_dedicated_quota(subscription_id: str, location: str) -> dict:
         if "Dedicated" in local_name or "dedicated" in local_name.lower():
             current = usage.get("currentValue", 0)
             limit = usage.get("limit", 0)
-            result["details"].append({
-                "name": local_name,
-                "usage": current,
-                "quota": limit,
-                "available": limit - current
-            })
+            result["details"].append(
+                {
+                    "name": local_name,
+                    "usage": current,
+                    "quota": limit,
+                    "available": limit - current,
+                }
+            )
 
             # Sum up total dedicated quota
             result["quota"] += limit
@@ -5354,7 +5929,8 @@ def is_arm_vm_size(vm_size: str) -> bool:
     # Pattern: Standard_D{N}p{optional-l}{type}_v{version}
     # The 'p' indicates ARM processor (Ampere Altra)
     import re
-    return bool(re.search(r'_D\d+pl?[ld]?s_v\d+', vm_size, re.IGNORECASE))
+
+    return bool(re.search(r"_D\d+pl?[ld]?s_v\d+", vm_size, re.IGNORECASE))
 
 
 def cmd_azure_ml_quota(args):
@@ -5371,10 +5947,14 @@ def cmd_azure_ml_quota(args):
     from openadapt_ml.config import settings
 
     subscription_id = settings.azure_subscription_id
-    location = getattr(args, "location", None) or "centralus"  # Default to Central US workspace
+    location = (
+        getattr(args, "location", None) or "centralus"
+    )  # Default to Central US workspace
 
     # Try to get workspace location from settings
-    workspace_name = getattr(settings, "azure_ml_workspace_name", "openadapt-ml-central")
+    workspace_name = getattr(
+        settings, "azure_ml_workspace_name", "openadapt-ml-central"
+    )
     if "central" in workspace_name.lower():
         location = "centralus"
 
@@ -5402,7 +5982,10 @@ def cmd_azure_ml_quota(args):
     if ml_quota.get("error"):
         log("QUOTA", f"ERROR: {ml_quota['error']}")
     else:
-        log("QUOTA", f"Total Dedicated: {ml_quota['usage']}/{ml_quota['quota']} vCPUs used")
+        log(
+            "QUOTA",
+            f"Total Dedicated: {ml_quota['usage']}/{ml_quota['quota']} vCPUs used",
+        )
         log("QUOTA", f"Available:       {ml_quota['available']} vCPUs")
         log("QUOTA", "")
 
@@ -5415,10 +5998,16 @@ def cmd_azure_ml_quota(args):
         # Check if we have enough for WAA (need 8 vCPUs for D8ds_v4)
         if ml_quota["available"] >= 8:
             log("QUOTA", "")
-            log("QUOTA", ">>> You have sufficient ML Dedicated quota for WAA (8+ vCPUs)")
+            log(
+                "QUOTA", ">>> You have sufficient ML Dedicated quota for WAA (8+ vCPUs)"
+            )
         else:
             log("QUOTA", "")
-            log("QUOTA", ">>> INSUFFICIENT ML Dedicated quota! Need 8 vCPUs, have " + str(ml_quota['available']))
+            log(
+                "QUOTA",
+                ">>> INSUFFICIENT ML Dedicated quota! Need 8 vCPUs, have "
+                + str(ml_quota["available"]),
+            )
             log("QUOTA", "")
             log("QUOTA", "Request quota increase at:")
             ml_quota_url = f"https://ml.azure.com/quota/{subscription_id}/{location}"
@@ -5446,11 +6035,11 @@ def cmd_azure_ml_quota(args):
 
         # Find relevant VM families for WAA
         relevant_families = [
-            ("Standard DDSv4 Family", "D8ds_v4", 300, 8, False),   # x86, 300GB temp
-            ("Standard DDSv5 Family", "D8ds_v5", 300, 8, False),   # x86, 300GB temp
+            ("Standard DDSv4 Family", "D8ds_v4", 300, 8, False),  # x86, 300GB temp
+            ("Standard DDSv5 Family", "D8ds_v5", 300, 8, False),  # x86, 300GB temp
             ("Standard DPDSv5 Family", "D8pds_v5", 300, 8, True),  # ARM! Won't work
-            ("Standard DSv4 Family", "D8s_v4", 0, 8, False),       # No local SSD
-            ("Standard D Family", "D4_v3", 100, 4, False),         # 100GB temp
+            ("Standard DSv4 Family", "D8s_v4", 0, 8, False),  # No local SSD
+            ("Standard D Family", "D4_v3", 100, 4, False),  # 100GB temp
         ]
 
         log("QUOTA", "VM Family Quotas (300GB temp storage required for WAA):")
@@ -5473,7 +6062,10 @@ def cmd_azure_ml_quota(args):
                         note = f"{temp_gb}GB temp" if temp_gb > 0 else "no local SSD"
 
                     log("QUOTA", f"  [{status:4}] {family_name}")
-                    log("QUOTA", f"         {current}/{limit} vCPUs - {vm_example} ({note})")
+                    log(
+                        "QUOTA",
+                        f"         {current}/{limit} vCPUs - {vm_example} ({note})",
+                    )
                     break
 
     # =========================================================================
@@ -5554,7 +6146,10 @@ def cmd_azure_ml_quota_request(args):
             text=True,
         )
         if install_result.returncode != 0:
-            log("QUOTA", f"ERROR: Failed to install quota extension: {install_result.stderr}")
+            log(
+                "QUOTA",
+                f"ERROR: Failed to install quota extension: {install_result.stderr}",
+            )
             return 1
         log("QUOTA", "Extension installed successfully")
     else:
@@ -5566,21 +6161,29 @@ def cmd_azure_ml_quota_request(args):
 
     current_result = subprocess.run(
         [
-            "az", "quota", "show",
-            "--resource-name", family,
-            "--scope", scope,
-            "-o", "json"
+            "az",
+            "quota",
+            "show",
+            "--resource-name",
+            family,
+            "--scope",
+            scope,
+            "-o",
+            "json",
         ],
         capture_output=True,
         text=True,
     )
 
     import json
+
     current_limit = 0
     if current_result.returncode == 0:
         try:
             quota_data = json.loads(current_result.stdout)
-            current_limit = quota_data.get("properties", {}).get("limit", {}).get("value", 0)
+            current_limit = (
+                quota_data.get("properties", {}).get("limit", {}).get("value", 0)
+            )
             log("QUOTA", f"Current limit: {current_limit} vCPUs")
         except (json.JSONDecodeError, KeyError):
             log("QUOTA", "Could not parse current quota (may be 0)")
@@ -5589,7 +6192,10 @@ def cmd_azure_ml_quota_request(args):
 
     if current_limit >= vcpus:
         log("QUOTA", "")
-        log("QUOTA", f"Current quota ({current_limit}) is already >= requested ({vcpus})")
+        log(
+            "QUOTA",
+            f"Current quota ({current_limit}) is already >= requested ({vcpus})",
+        )
         log("QUOTA", "No increase needed!")
         return 0
 
@@ -5599,12 +6205,19 @@ def cmd_azure_ml_quota_request(args):
 
     request_result = subprocess.run(
         [
-            "az", "quota", "create",
-            "--resource-name", family,
-            "--scope", scope,
-            "--limit-object", f"value={vcpus}",
-            "--resource-type", "dedicated",
-            "-o", "json"
+            "az",
+            "quota",
+            "create",
+            "--resource-name",
+            family,
+            "--scope",
+            scope,
+            "--limit-object",
+            f"value={vcpus}",
+            "--resource-type",
+            "dedicated",
+            "-o",
+            "json",
         ],
         capture_output=True,
         text=True,
@@ -5637,7 +6250,7 @@ def cmd_azure_ml_quota_request(args):
             log("QUOTA", "Quota increase approved immediately!")
         else:
             log("QUOTA", "Request is being processed. Check status with:")
-            log("QUOTA", f"  az quota request list --scope \"{scope}\"")
+            log("QUOTA", f'  az quota request list --scope "{scope}"')
     except json.JSONDecodeError:
         log("QUOTA", "Request submitted (response was not JSON)")
         log("QUOTA", f"stdout: {request_result.stdout[:500]}")
@@ -5712,7 +6325,7 @@ def cmd_azure_ml_quota_wait(args):
     log("QUOTA-WAIT", f"Target vCPUs: {target}")
     log("QUOTA-WAIT", f"Location:     {location}")
     log("QUOTA-WAIT", f"Interval:     {interval}s")
-    log("QUOTA-WAIT", f"Timeout:      {timeout/3600:.1f}h")
+    log("QUOTA-WAIT", f"Timeout:      {timeout / 3600:.1f}h")
     log("QUOTA-WAIT", f"Auto-run:     {auto_run}")
     log("QUOTA-WAIT", "")
 
@@ -5725,7 +6338,7 @@ def cmd_azure_ml_quota_wait(args):
 
         # Check timeout
         if elapsed > timeout:
-            log("QUOTA-WAIT", f"Timeout after {elapsed/3600:.1f} hours")
+            log("QUOTA-WAIT", f"Timeout after {elapsed / 3600:.1f} hours")
             log("QUOTA-WAIT", "Quota was not approved in time.")
             return 1
 
@@ -5742,7 +6355,10 @@ def cmd_azure_ml_quota_wait(args):
             log("QUOTA-WAIT", "=" * 60)
             log("QUOTA-WAIT", f"Family: {status['family']}")
             log("QUOTA-WAIT", f"Limit:  {status['limit']} vCPUs (target was {target})")
-            log("QUOTA-WAIT", f"Waited: {elapsed/60:.1f} minutes ({check_count} checks)")
+            log(
+                "QUOTA-WAIT",
+                f"Waited: {elapsed / 60:.1f} minutes ({check_count} checks)",
+            )
             log("QUOTA-WAIT", "")
 
             if auto_run:
@@ -5751,7 +6367,10 @@ def cmd_azure_ml_quota_wait(args):
                 return cmd_run_azure_ml_auto(args)
 
             log("QUOTA-WAIT", "You can now run:")
-            log("QUOTA-WAIT", "  uv run python -m openadapt_ml.benchmarks.cli azure-ml-auto")
+            log(
+                "QUOTA-WAIT",
+                "  uv run python -m openadapt_ml.benchmarks.cli azure-ml-auto",
+            )
             return 0
         else:
             # Quota not sufficient yet
@@ -5760,7 +6379,7 @@ def cmd_azure_ml_quota_wait(args):
                 log(
                     "QUOTA-WAIT",
                     f"Check #{check_count}: {status.get('limit', 0)}/{target} vCPUs "
-                    f"(elapsed: {elapsed/60:.0f}m, remaining: {remaining/3600:.1f}h)"
+                    f"(elapsed: {elapsed / 60:.0f}m, remaining: {remaining / 3600:.1f}h)",
                 )
 
         # Wait before next check
@@ -5769,11 +6388,19 @@ def cmd_azure_ml_quota_wait(args):
         except KeyboardInterrupt:
             log("QUOTA-WAIT", "")
             log("QUOTA-WAIT", "Interrupted by user (Ctrl+C)")
-            log("QUOTA-WAIT", f"Waited {elapsed/60:.1f} minutes ({check_count} checks)")
+            log(
+                "QUOTA-WAIT",
+                f"Waited {elapsed / 60:.1f} minutes ({check_count} checks)",
+            )
             return 130  # Standard exit code for Ctrl+C
 
 
-def find_best_region_for_vm(vm_size: str, min_vcpus: int = 8, preferred_regions: list = None, check_ml_quota: bool = True) -> dict:
+def find_best_region_for_vm(
+    vm_size: str,
+    min_vcpus: int = 8,
+    preferred_regions: list = None,
+    check_ml_quota: bool = True,
+) -> dict:
     """Find the best region for a VM size based on availability and quota.
 
     IMPORTANT: For Azure ML, we need to check ML Dedicated quota, not VM quota!
@@ -5801,8 +6428,15 @@ def find_best_region_for_vm(vm_size: str, min_vcpus: int = 8, preferred_regions:
         # Check these regions in order of preference
         # Central US first since that's where our workspace is
         preferred_regions = [
-            "centralus", "eastus", "eastus2", "westus2", "westus",
-            "northcentralus", "southcentralus", "westeurope", "northeurope"
+            "centralus",
+            "eastus",
+            "eastus2",
+            "westus2",
+            "westus",
+            "northcentralus",
+            "southcentralus",
+            "westeurope",
+            "northeurope",
         ]
 
     # Check for ARM VM warning
@@ -5819,7 +6453,9 @@ def find_best_region_for_vm(vm_size: str, min_vcpus: int = 8, preferred_regions:
         "Standard_D4ds_v5": "Standard DDSv5 Family",
     }
 
-    family_name = vm_to_family.get(vm_size, f"Standard {vm_size.split('_')[1][0]}* Family")
+    family_name = vm_to_family.get(
+        vm_size, f"Standard {vm_size.split('_')[1][0]}* Family"
+    )
     available_regions = []
     subscription_id = settings.azure_subscription_id
 
@@ -5827,9 +6463,22 @@ def find_best_region_for_vm(vm_size: str, min_vcpus: int = 8, preferred_regions:
         try:
             # Check if VM is available (no restrictions)
             result = subprocess.run(
-                ["az", "vm", "list-skus", "--location", region, "--resource-type", "virtualMachines",
-                 "--query", f"[?name=='{vm_size}'].restrictions[0].reasonCode", "-o", "tsv"],
-                capture_output=True, text=True, timeout=30
+                [
+                    "az",
+                    "vm",
+                    "list-skus",
+                    "--location",
+                    region,
+                    "--resource-type",
+                    "virtualMachines",
+                    "--query",
+                    f"[?name=='{vm_size}'].restrictions[0].reasonCode",
+                    "-o",
+                    "tsv",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
 
             restriction = result.stdout.strip()
@@ -5843,9 +6492,20 @@ def find_best_region_for_vm(vm_size: str, min_vcpus: int = 8, preferred_regions:
 
             # Always check VM quota for reference
             quota_result = subprocess.run(
-                ["az", "vm", "list-usage", "--location", region,
-                 "--query", f"[?contains(localName, '{family_name.split()[1]}')].limit | [0]", "-o", "tsv"],
-                capture_output=True, text=True, timeout=30
+                [
+                    "az",
+                    "vm",
+                    "list-usage",
+                    "--location",
+                    region,
+                    "--query",
+                    f"[?contains(localName, '{family_name.split()[1]}')].limit | [0]",
+                    "-o",
+                    "tsv",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             vm_quota = int(quota_result.stdout.strip() or 0)
 
@@ -5858,14 +6518,16 @@ def find_best_region_for_vm(vm_size: str, min_vcpus: int = 8, preferred_regions:
             # Use ML quota for sufficiency check if checking ML, otherwise use VM quota
             effective_quota = ml_dedicated_quota if check_ml_quota else vm_quota
 
-            available_regions.append({
-                "region": region,
-                "restriction": restriction or "None",
-                "vm_quota": vm_quota,
-                "ml_quota": ml_dedicated_quota,
-                "quota": effective_quota,  # For backward compatibility
-                "sufficient": effective_quota >= min_vcpus
-            })
+            available_regions.append(
+                {
+                    "region": region,
+                    "restriction": restriction or "None",
+                    "vm_quota": vm_quota,
+                    "ml_quota": ml_dedicated_quota,
+                    "quota": effective_quota,  # For backward compatibility
+                    "sufficient": effective_quota >= min_vcpus,
+                }
+            )
 
             # If we found a region with sufficient quota and no restrictions, use it
             if not restriction and effective_quota >= min_vcpus:
@@ -5878,7 +6540,7 @@ def find_best_region_for_vm(vm_size: str, min_vcpus: int = 8, preferred_regions:
                     "family": family_name,
                     "available": available_regions,
                     "error": None,
-                    "warning": warning
+                    "warning": warning,
                 }
 
         except Exception:
@@ -5887,7 +6549,9 @@ def find_best_region_for_vm(vm_size: str, min_vcpus: int = 8, preferred_regions:
     # No ideal region found - return best available
     if available_regions:
         # Sort by: sufficient quota first, then highest quota
-        available_regions.sort(key=lambda x: (x["sufficient"], x["quota"]), reverse=True)
+        available_regions.sort(
+            key=lambda x: (x["sufficient"], x["quota"]), reverse=True
+        )
         best = available_regions[0]
 
         quota_type = "ML Dedicated" if check_ml_quota else "VM"
@@ -5902,7 +6566,7 @@ def find_best_region_for_vm(vm_size: str, min_vcpus: int = 8, preferred_regions:
             "family": family_name,
             "available": available_regions,
             "error": None if best["sufficient"] else error_msg,
-            "warning": warning
+            "warning": warning,
         }
 
     return {
@@ -5914,7 +6578,7 @@ def find_best_region_for_vm(vm_size: str, min_vcpus: int = 8, preferred_regions:
         "family": family_name,
         "available": [],
         "error": f"No available regions found for {vm_size}",
-        "warning": warning
+        "warning": warning,
     }
 
 
@@ -5942,8 +6606,13 @@ def cmd_azure_ml_find_region(args):
     # Warn if ARM VM selected
     if is_arm_vm_size(vm_size):
         log("FIND-REGION", "!!! WARNING !!!")
-        log("FIND-REGION", f"{vm_size} is ARM-based and WILL NOT run x86 Docker images!")
-        log("FIND-REGION", "WAA requires x86 architecture. Use D8ds_v4 or D8ds_v5 instead.")
+        log(
+            "FIND-REGION", f"{vm_size} is ARM-based and WILL NOT run x86 Docker images!"
+        )
+        log(
+            "FIND-REGION",
+            "WAA requires x86 architecture. Use D8ds_v4 or D8ds_v5 instead.",
+        )
         log("FIND-REGION", "")
 
     log("FIND-REGION", "Scanning regions (checking ML Dedicated quota)...")
@@ -5953,13 +6622,20 @@ def cmd_azure_ml_find_region(args):
 
     log("FIND-REGION", "RESULTS:")
     log("FIND-REGION", "-" * 70)
-    log("FIND-REGION", f"{'Region':<20} {'VM Quota':>10} {'ML Quota':>10} {'Status':<15}")
+    log(
+        "FIND-REGION",
+        f"{'Region':<20} {'VM Quota':>10} {'ML Quota':>10} {'Status':<15}",
+    )
     log("FIND-REGION", "-" * 70)
 
     for r in result.get("available", []):
         if r["restriction"] != "None":
             status = "RESTRICTED"
-        elif r.get("ml_quota", 0) >= min_vcpus if check_ml else r.get("vm_quota", 0) >= min_vcpus:
+        elif (
+            r.get("ml_quota", 0) >= min_vcpus
+            if check_ml
+            else r.get("vm_quota", 0) >= min_vcpus
+        ):
             status = "OK"
         else:
             status = "LOW QUOTA"
@@ -5975,7 +6651,10 @@ def cmd_azure_ml_find_region(args):
         log("FIND-REGION", "")
         log("FIND-REGION", "To request quota in the best available region:")
         if result["region"]:
-            log("FIND-REGION", f"  uv run python -m openadapt_ml.benchmarks.cli azure-ml-quota-request --location {result['region']}")
+            log(
+                "FIND-REGION",
+                f"  uv run python -m openadapt_ml.benchmarks.cli azure-ml-quota-request --location {result['region']}",
+            )
         return 1
 
     log("FIND-REGION", f"BEST REGION: {result['region']}")
@@ -5984,7 +6663,10 @@ def cmd_azure_ml_find_region(args):
     log("FIND-REGION", f"  Family: {result['family']}")
     log("FIND-REGION", "")
     log("FIND-REGION", "To run evaluation in this region:")
-    log("FIND-REGION", f"  uv run python -m openadapt_ml.benchmarks.cli azure-ml-auto --location {result['region']}")
+    log(
+        "FIND-REGION",
+        f"  uv run python -m openadapt_ml.benchmarks.cli azure-ml-auto --location {result['region']}",
+    )
 
     return 0
 
@@ -6033,7 +6715,11 @@ def cmd_azure_ml_status(args):
         log("AZURE-ML", "  No jobs found")
     else:
         for job in jobs:
-            created = job.creation_context.created_at.strftime("%m-%d %H:%M") if job.creation_context else "?"
+            created = (
+                job.creation_context.created_at.strftime("%m-%d %H:%M")
+                if job.creation_context
+                else "?"
+            )
             log("AZURE-ML", f"  {job.name}: {job.status} ({created})")
 
     return 0
@@ -6069,7 +6755,9 @@ def cmd_azure_ml_vnc(args):
     if not compute_name:
         # Auto-detect running compute instance
         computes = list(ml_client.compute.list())
-        running = [c for c in computes if c.state == "Running" and c.name.startswith("w")]
+        running = [
+            c for c in computes if c.state == "Running" and c.name.startswith("w")
+        ]
 
         if not running:
             log("AZURE-ML", "No running compute instances found")
@@ -6080,7 +6768,9 @@ def cmd_azure_ml_vnc(args):
         log("AZURE-ML", f"Auto-detected compute: {compute_name}")
 
     # Build WebSocket URL for compute instance (use workspace region)
-    compute_url = f"wss://{compute_name.lower()}.{workspace_region}.instances.azureml.ms"
+    compute_url = (
+        f"wss://{compute_name.lower()}.{workspace_region}.instances.azureml.ms"
+    )
 
     # Find Azure CLI Python path for the proxy script
     az_cli_paths = [
@@ -6098,7 +6788,16 @@ def cmd_azure_ml_vnc(args):
         log("AZURE-ML", "ERROR: Azure CLI Python not found. Install Azure CLI.")
         return 1
 
-    proxy_script = Path.home() / ".azure" / "cliextensions" / "ml" / "azext_mlv2" / "manual" / "custom" / "_ssh_connector.py"
+    proxy_script = (
+        Path.home()
+        / ".azure"
+        / "cliextensions"
+        / "ml"
+        / "azext_mlv2"
+        / "manual"
+        / "custom"
+        / "_ssh_connector.py"
+    )
     if not proxy_script.exists():
         log("AZURE-ML", f"ERROR: SSH connector not found at {proxy_script}")
         log("AZURE-ML", "Install Azure ML CLI extension: az extension add -n ml")
@@ -6111,14 +6810,20 @@ def cmd_azure_ml_vnc(args):
     proxy_cmd = f"{az_python} {proxy_script} {compute_url} --is-compute"
     ssh_cmd = [
         "ssh",
-        "-L", f"{local_port}:localhost:8006",
+        "-L",
+        f"{local_port}:localhost:8006",
         "-N",
-        "-o", "StrictHostKeyChecking=no",
-        "-o", f"ProxyCommand={proxy_cmd}",
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        f"ProxyCommand={proxy_cmd}",
         f"azureuser@{compute_url}",
     ]
 
-    log("AZURE-ML", f"Starting VNC tunnel: localhost:{local_port} -> {compute_name}:8006")
+    log(
+        "AZURE-ML",
+        f"Starting VNC tunnel: localhost:{local_port} -> {compute_name}:8006",
+    )
 
     tunnel_proc = subprocess.Popen(
         ssh_cmd,
@@ -6177,7 +6882,9 @@ def cmd_azure_ml_monitor(args):
     if not job_name:
         # Get most recent running job
         jobs = list(ml_client.jobs.list(max_results=5))
-        running_jobs = [j for j in jobs if j.status in ["Running", "Queued", "Starting"]]
+        running_jobs = [
+            j for j in jobs if j.status in ["Running", "Queued", "Starting"]
+        ]
 
         if not running_jobs:
             log("AZURE-ML", "No running jobs found")
@@ -6198,7 +6905,7 @@ def cmd_azure_ml_monitor(args):
     if auto_vnc:
         # Find compute instance for this job
         job = ml_client.jobs.get(job_name)
-        compute_name = job.compute if hasattr(job, 'compute') else None
+        compute_name = job.compute if hasattr(job, "compute") else None
 
         if compute_name:
             # Set up VNC tunnel (reuse cmd_azure_ml_vnc logic)
@@ -6225,12 +6932,15 @@ def cmd_azure_ml_monitor(args):
             created = job.creation_context.created_at if job.creation_context else now
             elapsed = (now - created).total_seconds() / 60
 
-            log("AZURE-ML", f"[{datetime.now().strftime('%H:%M:%S')}] Status: {job.status}, Elapsed: {elapsed:.0f} min")
+            log(
+                "AZURE-ML",
+                f"[{datetime.now().strftime('%H:%M:%S')}] Status: {job.status}, Elapsed: {elapsed:.0f} min",
+            )
 
             if job.status in ["Completed", "Failed", "Canceled"]:
                 log("AZURE-ML", "")
                 log("AZURE-ML", f"Job finished: {job.status}")
-                if job.status == "Failed" and hasattr(job, 'error') and job.error:
+                if job.status == "Failed" and hasattr(job, "error") and job.error:
                     log("AZURE-ML", f"Error: {job.error}")
                 break
 
@@ -6263,11 +6973,18 @@ def cmd_azure_ml_logs(args):
         log("AZURE-ML-LOGS", "Finding most recent job...")
         result = subprocess.run(
             [
-                "az", "ml", "job", "list",
-                "-g", settings.azure_ml_resource_group,
-                "-w", settings.azure_ml_workspace_name,
-                "--query", "[0].name",
-                "-o", "tsv"
+                "az",
+                "ml",
+                "job",
+                "list",
+                "-g",
+                settings.azure_ml_resource_group,
+                "-w",
+                settings.azure_ml_workspace_name,
+                "--query",
+                "[0].name",
+                "-o",
+                "tsv",
             ],
             capture_output=True,
             text=True,
@@ -6282,22 +6999,31 @@ def cmd_azure_ml_logs(args):
     # Get job status and Web View URL
     result = subprocess.run(
         [
-            "az", "ml", "job", "show",
-            "--name", job_name,
-            "-g", settings.azure_ml_resource_group,
-            "-w", settings.azure_ml_workspace_name,
-            "--query", "{status:status,url:services.Studio.endpoint}",
-            "-o", "json"
+            "az",
+            "ml",
+            "job",
+            "show",
+            "--name",
+            job_name,
+            "-g",
+            settings.azure_ml_resource_group,
+            "-w",
+            settings.azure_ml_workspace_name,
+            "--query",
+            "{status:status,url:services.Studio.endpoint}",
+            "-o",
+            "json",
         ],
         capture_output=True,
         text=True,
     )
     if result.returncode == 0:
         import json
+
         try:
             job_info = json.loads(result.stdout)
             log("AZURE-ML-LOGS", f"Status: {job_info.get('status', 'Unknown')}")
-            if job_info.get('url'):
+            if job_info.get("url"):
                 log("AZURE-ML-LOGS", f"Web View: {job_info['url']}")
         except json.JSONDecodeError:
             pass
@@ -6305,12 +7031,20 @@ def cmd_azure_ml_logs(args):
     # Get storage account name from datastore
     result = subprocess.run(
         [
-            "az", "ml", "datastore", "show",
-            "--name", "workspaceartifactstore",
-            "-g", settings.azure_ml_resource_group,
-            "-w", settings.azure_ml_workspace_name,
-            "--query", "account_name",
-            "-o", "tsv"
+            "az",
+            "ml",
+            "datastore",
+            "show",
+            "--name",
+            "workspaceartifactstore",
+            "-g",
+            settings.azure_ml_resource_group,
+            "-w",
+            settings.azure_ml_workspace_name,
+            "--query",
+            "account_name",
+            "-o",
+            "tsv",
         ],
         capture_output=True,
         text=True,
@@ -6323,11 +7057,19 @@ def cmd_azure_ml_logs(args):
     # Get storage account key
     result = subprocess.run(
         [
-            "az", "storage", "account", "keys", "list",
-            "--account-name", storage_account,
-            "-g", settings.azure_ml_resource_group,
-            "--query", "[0].value",
-            "-o", "tsv"
+            "az",
+            "storage",
+            "account",
+            "keys",
+            "list",
+            "--account-name",
+            storage_account,
+            "-g",
+            settings.azure_ml_resource_group,
+            "--query",
+            "[0].value",
+            "-o",
+            "tsv",
         ],
         capture_output=True,
         text=True,
@@ -6351,18 +7093,28 @@ def cmd_azure_ml_logs(args):
     try:
         while True:
             # Download blob to temp file
-            with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.txt') as f:
+            with tempfile.NamedTemporaryFile(
+                mode="w+", delete=False, suffix=".txt"
+            ) as f:
                 temp_file = f.name
 
             result = subprocess.run(
                 [
-                    "az", "storage", "blob", "download",
-                    "--account-name", storage_account,
-                    "--container-name", container_name,
-                    "--name", blob_name,
-                    "--account-key", account_key,
-                    "--file", temp_file,
-                    "--no-progress"
+                    "az",
+                    "storage",
+                    "blob",
+                    "download",
+                    "--account-name",
+                    storage_account,
+                    "--container-name",
+                    container_name,
+                    "--name",
+                    blob_name,
+                    "--account-key",
+                    account_key,
+                    "--file",
+                    temp_file,
+                    "--no-progress",
                 ],
                 capture_output=True,
                 text=True,
@@ -6371,12 +7123,12 @@ def cmd_azure_ml_logs(args):
             if result.returncode == 0:
                 # Read and print new content
                 try:
-                    with open(temp_file, 'r') as f:
+                    with open(temp_file, "r") as f:
                         content = f.read()
                         if len(content) > last_size:
                             # Print only new content
                             new_content = content[last_size:]
-                            print(new_content, end='', flush=True)
+                            print(new_content, end="", flush=True)
                             last_size = len(content)
                 except Exception as e:
                     log("AZURE-ML-LOGS", f"Error reading logs: {e}")
@@ -6393,12 +7145,20 @@ def cmd_azure_ml_logs(args):
             # Check if job is still running
             result = subprocess.run(
                 [
-                    "az", "ml", "job", "show",
-                    "--name", job_name,
-                    "-g", settings.azure_ml_resource_group,
-                    "-w", settings.azure_ml_workspace_name,
-                    "--query", "status",
-                    "-o", "tsv"
+                    "az",
+                    "ml",
+                    "job",
+                    "show",
+                    "--name",
+                    job_name,
+                    "-g",
+                    settings.azure_ml_resource_group,
+                    "-w",
+                    settings.azure_ml_workspace_name,
+                    "--query",
+                    "status",
+                    "-o",
+                    "tsv",
                 ],
                 capture_output=True,
                 text=True,
@@ -6453,7 +7213,10 @@ def cmd_azure_ml_stream_logs(args):
 
     if not all([subscription_id, resource_group, workspace_name]):
         log("STREAM", "ERROR: Missing Azure ML configuration in .env")
-        log("STREAM", "Required: AZURE_SUBSCRIPTION_ID, AZURE_ML_RESOURCE_GROUP, AZURE_ML_WORKSPACE_NAME")
+        log(
+            "STREAM",
+            "Required: AZURE_SUBSCRIPTION_ID, AZURE_ML_RESOURCE_GROUP, AZURE_ML_WORKSPACE_NAME",
+        )
         return 1
 
     # Initialize Azure ML client for job info
@@ -6472,7 +7235,10 @@ def cmd_azure_ml_stream_logs(args):
         )
     except ImportError as e:
         log("STREAM", f"ERROR: Missing SDK: {e}")
-        log("STREAM", "Install with: pip install azure-ai-ml azure-identity azure-mgmt-storage azure-storage-blob")
+        log(
+            "STREAM",
+            "Install with: pip install azure-ai-ml azure-identity azure-mgmt-storage azure-storage-blob",
+        )
         return 1
     except Exception as e:
         log("STREAM", f"ERROR: Failed to initialize Azure ML client: {e}")
@@ -6482,7 +7248,7 @@ def cmd_azure_ml_stream_logs(args):
     try:
         ws = ml_client.workspaces.get(workspace_name)
         # Storage account is a full resource ID, extract the name
-        storage_account = ws.storage_account.split('/')[-1]
+        storage_account = ws.storage_account.split("/")[-1]
         container_name = "azureml"  # Default artifact container
         log("STREAM", f"Storage account: {storage_account}")
     except Exception as e:
@@ -6492,11 +7258,12 @@ def cmd_azure_ml_stream_logs(args):
     # Get storage account key for blob access
     try:
         storage_client = StorageManagementClient(credential, subscription_id)
-        keys = storage_client.storage_accounts.list_keys(resource_group, storage_account)
+        keys = storage_client.storage_accounts.list_keys(
+            resource_group, storage_account
+        )
         storage_key = keys.keys[0].value
         blob_service = BlobServiceClient(
-            f"https://{storage_account}.blob.core.windows.net",
-            credential=storage_key
+            f"https://{storage_account}.blob.core.windows.net", credential=storage_key
         )
         container_client = blob_service.get_container_client(container_name)
         log("STREAM", "Blob storage connected")
@@ -6523,7 +7290,7 @@ def cmd_azure_ml_stream_logs(args):
         job = ml_client.jobs.get(job_name)
         log("STREAM", f"Job: {job_name}")
         log("STREAM", f"Status: {job.status}")
-        if hasattr(job, 'services') and job.services and 'Studio' in job.services:
+        if hasattr(job, "services") and job.services and "Studio" in job.services:
             log("STREAM", f"Web View: {job.services['Studio'].endpoint}")
     except Exception as e:
         log("STREAM", f"ERROR: Failed to get job info: {e}")
@@ -6532,7 +7299,9 @@ def cmd_azure_ml_stream_logs(args):
     log("STREAM", "")
     log("STREAM", "=" * 60)
     if follow:
-        log("STREAM", f"Streaming logs (polling every {poll_interval}s, Ctrl+C to stop)")
+        log(
+            "STREAM", f"Streaming logs (polling every {poll_interval}s, Ctrl+C to stop)"
+        )
     log("STREAM", "=" * 60)
     log("STREAM", "")
 
@@ -6567,8 +7336,12 @@ def cmd_azure_ml_stream_logs(args):
 
                 # Download each file (suppress warnings)
                 job_log_ok = download_blob(f"{blob_prefix}/job.log", str(log_file))
-                progress_ok = download_blob(f"{blob_prefix}/progress.json", str(progress_file))
-                events_ok = download_blob(f"{blob_prefix}/events.jsonl", str(events_file))
+                progress_ok = download_blob(
+                    f"{blob_prefix}/progress.json", str(progress_file)
+                )
+                events_ok = download_blob(
+                    f"{blob_prefix}/events.jsonl", str(events_file)
+                )
 
                 # Show progress if requested
                 if show_progress and progress_ok and progress_file.exists():
@@ -6577,14 +7350,22 @@ def cmd_azure_ml_stream_logs(args):
                             progress = json.load(f)
                         if progress != last_progress:
                             # Progress bar
-                            pct = progress.get('percent', 0)
+                            pct = progress.get("percent", 0)
                             filled = int(pct / 2)
-                            bar = '=' * filled + '-' * (50 - filled)
+                            bar = "=" * filled + "-" * (50 - filled)
                             log("PROGRESS", f"[{bar}] {pct}%")
-                            log("PROGRESS", f"Phase: {progress.get('phase', 'unknown')}")
-                            log("PROGRESS", f"Status: {progress.get('status', 'unknown')}")
-                            if progress.get('messages'):
-                                log("PROGRESS", f"Last: {progress['messages'][-1].get('text', '')}")
+                            log(
+                                "PROGRESS", f"Phase: {progress.get('phase', 'unknown')}"
+                            )
+                            log(
+                                "PROGRESS",
+                                f"Status: {progress.get('status', 'unknown')}",
+                            )
+                            if progress.get("messages"):
+                                log(
+                                    "PROGRESS",
+                                    f"Last: {progress['messages'][-1].get('text', '')}",
+                                )
                             last_progress = progress.copy()
                             log("STREAM", "")
                     except Exception:
@@ -6599,7 +7380,10 @@ def cmd_azure_ml_stream_logs(args):
                         for line in new_events:
                             try:
                                 event = json.loads(line.strip())
-                                log("EVENT", f"{event['type']}: {json.dumps(event.get('data', {}))}")
+                                log(
+                                    "EVENT",
+                                    f"{event['type']}: {json.dumps(event.get('data', {}))}",
+                                )
                             except Exception:
                                 pass
                         last_event_count = len(lines)
@@ -6607,14 +7391,18 @@ def cmd_azure_ml_stream_logs(args):
                         pass
 
                 # Show log content (default)
-                if job_log_ok and log_file.exists() and not (show_progress and not show_events):
+                if (
+                    job_log_ok
+                    and log_file.exists()
+                    and not (show_progress and not show_events)
+                ):
                     try:
                         with open(log_file) as f:
                             content = f.read()
                         if len(content) > last_log_size:
                             # Print only new content
                             new_content = content[last_log_size:]
-                            print(new_content, end='', flush=True)
+                            print(new_content, end="", flush=True)
                             last_log_size = len(content)
                     except Exception:
                         pass
@@ -6640,9 +7428,14 @@ def cmd_azure_ml_stream_logs(args):
                 # Auto-teardown if requested
                 if auto_teardown:
                     log("STREAM", "")
-                    log("STREAM", "Auto-teardown enabled, cleaning up compute instances...")
+                    log(
+                        "STREAM",
+                        "Auto-teardown enabled, cleaning up compute instances...",
+                    )
                     # Use the teardown command with force flag
-                    teardown_args = type("Args", (), {"force": True, "delete_resource_group": False})()
+                    teardown_args = type(
+                        "Args", (), {"force": True, "delete_resource_group": False}
+                    )()
                     cmd_azure_ml_teardown(teardown_args)
 
                 break
@@ -6722,7 +7515,7 @@ def cmd_azure_ml_progress(args):
 
             # Clear screen for watch mode
             if watch:
-                print("\033[H\033[J", end='')
+                print("\033[H\033[J", end="")
 
             print("=" * 60)
             print(f"Job: {job_name}")
@@ -6749,18 +7542,20 @@ def cmd_azure_ml_progress(args):
                             print(f"Progress: {progress.get('percent', 0)}%")
 
                             # Progress bar
-                            pct = progress.get('percent', 0)
+                            pct = progress.get("percent", 0)
                             filled = int(pct / 2)
-                            bar = '=' * filled + '-' * (50 - filled)
+                            bar = "=" * filled + "-" * (50 - filled)
                             print(f"[{bar}] {pct}%")
 
                             print(f"Status: {progress.get('status', 'unknown')}")
                             print(f"Last Update: {progress.get('last_update', 'N/A')}")
 
-                            if progress.get('messages'):
+                            if progress.get("messages"):
                                 print("\nRecent Messages:")
-                                for msg in progress['messages'][-5:]:
-                                    print(f"  {msg.get('time', '')} - {msg.get('text', '')}")
+                                for msg in progress["messages"][-5:]:
+                                    print(
+                                        f"  {msg.get('time', '')} - {msg.get('text', '')}"
+                                    )
                             return
                 except Exception:
                     # If can't download, just show job status
@@ -6813,11 +7608,18 @@ def cmd_azure_ml_cancel(args):
         log("AZURE-ML", "Finding most recent running job...")
         result = subprocess.run(
             [
-                "az", "ml", "job", "list",
-                "-g", settings.azure_ml_resource_group,
-                "-w", settings.azure_ml_workspace_name,
-                "--query", "[?status=='Running'].name",
-                "-o", "tsv"
+                "az",
+                "ml",
+                "job",
+                "list",
+                "-g",
+                settings.azure_ml_resource_group,
+                "-w",
+                settings.azure_ml_workspace_name,
+                "--query",
+                "[?status=='Running'].name",
+                "-o",
+                "tsv",
             ],
             capture_output=True,
             text=True,
@@ -6832,10 +7634,16 @@ def cmd_azure_ml_cancel(args):
     log("AZURE-ML", f"Canceling job: {job_name}")
     result = subprocess.run(
         [
-            "az", "ml", "job", "cancel",
-            "--name", job_name,
-            "-g", settings.azure_ml_resource_group,
-            "-w", settings.azure_ml_workspace_name,
+            "az",
+            "ml",
+            "job",
+            "cancel",
+            "--name",
+            job_name,
+            "-g",
+            settings.azure_ml_resource_group,
+            "-w",
+            settings.azure_ml_workspace_name,
         ],
         capture_output=True,
         text=True,
@@ -6882,7 +7690,7 @@ def cmd_azure_ml_delete_compute(args):
         # Delete all instances
         for inst in instances:
             log("AZURE-ML", f"Deleting {inst['name']}...")
-            if delete_azure_ml_compute_instance(inst['name']):
+            if delete_azure_ml_compute_instance(inst["name"]):
                 log("AZURE-ML", f"  Deleted {inst['name']}")
             else:
                 log("AZURE-ML", f"  Failed to delete {inst['name']}")
@@ -6987,26 +7795,38 @@ def get_compute_instance_details() -> list[dict]:
 
     result = subprocess.run(
         [
-            "az", "ml", "compute", "show-all",
-            "--workspace-name", workspace,
-            "--resource-group", resource_group,
-            "-o", "json"
+            "az",
+            "ml",
+            "compute",
+            "show-all",
+            "--workspace-name",
+            workspace,
+            "--resource-group",
+            resource_group,
+            "-o",
+            "json",
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode != 0:
         # Fallback to list command with more detailed query
         result = subprocess.run(
             [
-                "az", "ml", "compute", "list",
-                "--workspace-name", workspace,
-                "--resource-group", resource_group,
-                "-o", "json"
+                "az",
+                "ml",
+                "compute",
+                "list",
+                "--workspace-name",
+                workspace,
+                "--resource-group",
+                resource_group,
+                "-o",
+                "json",
             ],
             capture_output=True,
-            text=True
+            text=True,
         )
         if result.returncode != 0:
             return []
@@ -7036,15 +7856,23 @@ def get_compute_instance_creation_time(compute_name: str) -> Optional[datetime]:
 
     result = subprocess.run(
         [
-            "az", "ml", "compute", "show",
-            "--name", compute_name,
-            "--workspace-name", workspace,
-            "--resource-group", resource_group,
-            "--query", "created_on",
-            "-o", "tsv"
+            "az",
+            "ml",
+            "compute",
+            "show",
+            "--name",
+            compute_name,
+            "--workspace-name",
+            workspace,
+            "--resource-group",
+            resource_group,
+            "--query",
+            "created_on",
+            "-o",
+            "tsv",
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode != 0 or not result.stdout.strip():
@@ -7054,7 +7882,12 @@ def get_compute_instance_creation_time(compute_name: str) -> Optional[datetime]:
         # Parse ISO format timestamp
         created_str = result.stdout.strip()
         # Handle both formats: with and without microseconds
-        for fmt in ["%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"]:
+        for fmt in [
+            "%Y-%m-%dT%H:%M:%S.%f%z",
+            "%Y-%m-%dT%H:%M:%S%z",
+            "%Y-%m-%dT%H:%M:%S.%f",
+            "%Y-%m-%dT%H:%M:%S",
+        ]:
             try:
                 return datetime.strptime(created_str.replace("Z", "+00:00"), fmt)
             except ValueError:
@@ -7101,6 +7934,7 @@ def cmd_azure_ml_cost(args):
             if created_on.tzinfo:
                 # Make now timezone-aware for comparison
                 from datetime import timezone
+
                 now_tz = datetime.now(timezone.utc)
                 uptime_seconds = (now_tz - created_on).total_seconds()
             else:
@@ -7160,6 +7994,7 @@ def cmd_azure_ml_teardown(args):
         created_on = get_compute_instance_creation_time(name)
         if created_on and state.lower() in ["running", "starting"]:
             from datetime import timezone
+
             now_tz = datetime.now(timezone.utc)
             if created_on.tzinfo:
                 uptime_hours = (now_tz - created_on).total_seconds() / 3600
@@ -7171,20 +8006,34 @@ def cmd_azure_ml_teardown(args):
     log("TEARDOWN", "Finding running jobs...")
     result = subprocess.run(
         [
-            "az", "ml", "job", "list",
-            "-g", settings.azure_ml_resource_group,
-            "-w", settings.azure_ml_workspace_name,
-            "--query", "[?status=='Running'].name",
-            "-o", "tsv"
+            "az",
+            "ml",
+            "job",
+            "list",
+            "-g",
+            settings.azure_ml_resource_group,
+            "-w",
+            settings.azure_ml_workspace_name,
+            "--query",
+            "[?status=='Running'].name",
+            "-o",
+            "tsv",
         ],
         capture_output=True,
         text=True,
     )
-    running_jobs = result.stdout.strip().split("\n") if result.returncode == 0 and result.stdout.strip() else []
+    running_jobs = (
+        result.stdout.strip().split("\n")
+        if result.returncode == 0 and result.stdout.strip()
+        else []
+    )
     running_jobs = [j for j in running_jobs if j]  # Filter empty strings
 
     if running_jobs:
-        log("TEARDOWN", f"Found {len(running_jobs)} running job(s): {', '.join(running_jobs)}")
+        log(
+            "TEARDOWN",
+            f"Found {len(running_jobs)} running job(s): {', '.join(running_jobs)}",
+        )
     else:
         log("TEARDOWN", "No running jobs found")
 
@@ -7192,7 +8041,10 @@ def cmd_azure_ml_teardown(args):
     log("TEARDOWN", "")
     log("TEARDOWN", "Finding compute instances...")
     if instances:
-        log("TEARDOWN", f"Found {len(instances)} compute instance(s): {', '.join(i['name'] for i in instances)}")
+        log(
+            "TEARDOWN",
+            f"Found {len(instances)} compute instance(s): {', '.join(i['name'] for i in instances)}",
+        )
     else:
         log("TEARDOWN", "No compute instances found")
 
@@ -7205,12 +8057,15 @@ def cmd_azure_ml_teardown(args):
         if instances:
             log("TEARDOWN", f"  - Delete {len(instances)} compute instance(s)")
         if delete_rg:
-            log("TEARDOWN", f"  - Delete resource group: {settings.azure_ml_resource_group}")
+            log(
+                "TEARDOWN",
+                f"  - Delete resource group: {settings.azure_ml_resource_group}",
+            )
         log("TEARDOWN", "")
 
         try:
             confirm = input("Proceed? [y/N]: ").strip().lower()
-            if confirm != 'y':
+            if confirm != "y":
                 log("TEARDOWN", "Aborted")
                 return 1
         except (KeyboardInterrupt, EOFError):
@@ -7222,10 +8077,16 @@ def cmd_azure_ml_teardown(args):
         log("TEARDOWN", f"Canceling job {job_name}...")
         result = subprocess.run(
             [
-                "az", "ml", "job", "cancel",
-                "--name", job_name,
-                "-g", settings.azure_ml_resource_group,
-                "-w", settings.azure_ml_workspace_name,
+                "az",
+                "ml",
+                "job",
+                "cancel",
+                "--name",
+                job_name,
+                "-g",
+                settings.azure_ml_resource_group,
+                "-w",
+                settings.azure_ml_workspace_name,
             ],
             capture_output=True,
             text=True,
@@ -7248,13 +8109,19 @@ def cmd_azure_ml_teardown(args):
     # Delete resource group if requested
     if delete_rg:
         log("TEARDOWN", "")
-        log("TEARDOWN", f"Deleting resource group: {settings.azure_ml_resource_group}...")
+        log(
+            "TEARDOWN",
+            f"Deleting resource group: {settings.azure_ml_resource_group}...",
+        )
         result = subprocess.run(
             [
-                "az", "group", "delete",
-                "--name", settings.azure_ml_resource_group,
+                "az",
+                "group",
+                "delete",
+                "--name",
+                settings.azure_ml_resource_group,
                 "--yes",
-                "--no-wait"
+                "--no-wait",
             ],
             capture_output=True,
             text=True,
@@ -7281,7 +8148,9 @@ def cmd_tail_output(args):
 
     if args.list:
         # List recent task output files
-        output_files = sorted(task_dir.glob("*/output.txt"), key=lambda p: p.stat().st_mtime, reverse=True)
+        output_files = sorted(
+            task_dir.glob("*/output.txt"), key=lambda p: p.stat().st_mtime, reverse=True
+        )
         if not output_files:
             print("No task output files found")
             return 0
@@ -7290,7 +8159,9 @@ def cmd_tail_output(args):
         print("-" * 60)
         for f in output_files[:20]:  # Show last 20
             size = f.stat().st_size
-            mtime = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            mtime = datetime.fromtimestamp(f.stat().st_mtime).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
             task_id = f.parent.name
             print(f"  {task_id:40} {mtime}  {size:>10} bytes")
         return 0
@@ -7306,7 +8177,7 @@ def cmd_tail_output(args):
             lines = f.readlines()
 
         # Show last N lines
-        lines_to_show = lines[-args.lines:] if len(lines) > args.lines else lines
+        lines_to_show = lines[-args.lines :] if len(lines) > args.lines else lines
         print(f"Last {len(lines_to_show)} lines from {args.task}:")
         print("-" * 60)
         print("".join(lines_to_show), end="")
@@ -7367,7 +8238,9 @@ def cmd_resources(args):
         print("Virtual Machines:")
         for vm in status["vms"]:
             state = "RUNNING" if vm["is_running"] else vm["state"]
-            print(f"  {vm['name']}: {state} ({vm['size']}) - ${vm['hourly_rate']:.2f}/hr")
+            print(
+                f"  {vm['name']}: {state} ({vm['size']}) - ${vm['hourly_rate']:.2f}/hr"
+            )
             if vm.get("ip"):
                 print(f"    IP: {vm['ip']}")
         print()
@@ -7377,7 +8250,9 @@ def cmd_resources(args):
         print("Azure ML Compute Instances:")
         for ci in status["compute_instances"]:
             state = "RUNNING" if ci["is_running"] else ci["state"]
-            print(f"  {ci['name']}: {state} ({ci['size']}) - ${ci['hourly_rate']:.2f}/hr")
+            print(
+                f"  {ci['name']}: {state} ({ci['size']}) - ${ci['hourly_rate']:.2f}/hr"
+            )
         print()
 
     # Show commands
@@ -7468,16 +8343,20 @@ Examples:
         "pool-create", help="Create a pool of VMs for parallel WAA evaluation"
     )
     p_pool_create.add_argument(
-        "--workers", "-n", type=int, default=3,
-        help="Number of worker VMs to create (default: 3)"
+        "--workers",
+        "-n",
+        type=int,
+        default=3,
+        help="Number of worker VMs to create (default: 3)",
     )
     p_pool_create.add_argument(
-        "--fast", action="store_true", default=True,
-        help="Use D8 (8 vCPU) VMs for faster evaluation (default: True)"
+        "--fast",
+        action="store_true",
+        default=True,
+        help="Use D8 (8 vCPU) VMs for faster evaluation (default: True)",
     )
     p_pool_create.add_argument(
-        "--standard", action="store_true",
-        help="Use D4 (4 vCPU) VMs to save costs"
+        "--standard", action="store_true", help="Use D4 (4 vCPU) VMs to save costs"
     )
     p_pool_create.set_defaults(func=cmd_pool_create)
 
@@ -7486,12 +8365,12 @@ Examples:
         "pool-wait", help="Wait for all pool workers to have WAA ready"
     )
     p_pool_wait.add_argument(
-        "--timeout", "-t", type=int, default=30,
-        help="Timeout in minutes (default: 30)"
+        "--timeout", "-t", type=int, default=30, help="Timeout in minutes (default: 30)"
     )
     p_pool_wait.add_argument(
-        "--no-start", action="store_true",
-        help="Don't start containers, just wait for existing ones"
+        "--no-start",
+        action="store_true",
+        help="Don't start containers, just wait for existing ones",
     )
     p_pool_wait.set_defaults(func=cmd_pool_wait)
 
@@ -7500,21 +8379,19 @@ Examples:
         "pool-run", help="Run WAA benchmark tasks distributed across pool workers"
     )
     p_pool_run.add_argument(
-        "--tasks", "-n", type=int, default=10,
-        help="Number of tasks to run (default: 10, use 154 for full benchmark)"
+        "--tasks",
+        "-n",
+        type=int,
+        default=10,
+        help="Number of tasks to run (default: 10, use 154 for full benchmark)",
     )
     p_pool_run.add_argument(
-        "--agent", default="navi",
-        help="Agent type (default: navi)"
+        "--agent", default="navi", help="Agent type (default: navi)"
     )
     p_pool_run.add_argument(
-        "--model", default="gpt-4o-mini",
-        help="Model name (default: gpt-4o-mini)"
+        "--model", default="gpt-4o-mini", help="Model name (default: gpt-4o-mini)"
     )
-    p_pool_run.add_argument(
-        "--api-key",
-        help="OpenAI API key (default: from .env)"
-    )
+    p_pool_run.add_argument("--api-key", help="OpenAI API key (default: from .env)")
     p_pool_run.set_defaults(func=cmd_pool_run)
 
     # pool-cleanup
@@ -7522,14 +8399,14 @@ Examples:
         "pool-cleanup", help="Clean up orphaned pool resources (VMs, NICs, IPs, disks)"
     )
     p_pool_cleanup.add_argument(
-        "-y", "--yes", action="store_true",
-        help="Skip confirmation"
+        "-y", "--yes", action="store_true", help="Skip confirmation"
     )
     p_pool_cleanup.set_defaults(func=cmd_pool_cleanup)
 
     # pool-logs
     p_pool_logs = subparsers.add_parser(
-        "pool-logs", help="Stream logs from all pool workers (interleaved with prefixes)"
+        "pool-logs",
+        help="Stream logs from all pool workers (interleaved with prefixes)",
     )
     p_pool_logs.set_defaults(func=cmd_pool_logs)
 
@@ -7549,15 +8426,11 @@ Examples:
     p_pool_exec = subparsers.add_parser(
         "pool-exec", help="Execute command on pool workers"
     )
-    p_pool_exec.add_argument(
-        "--cmd", required=True, help="Command to run"
-    )
+    p_pool_exec.add_argument("--cmd", required=True, help="Command to run")
     p_pool_exec.add_argument(
         "--docker", action="store_true", help="Run inside Docker container"
     )
-    p_pool_exec.add_argument(
-        "--worker", help="Run on specific worker only"
-    )
+    p_pool_exec.add_argument("--worker", help="Run on specific worker only")
     p_pool_exec.set_defaults(func=cmd_pool_exec)
 
     # status
@@ -8293,7 +9166,8 @@ Examples:
         help="Delete all compute instances",
     )
     p_azure_delete_compute.add_argument(
-        "-y", "--yes",
+        "-y",
+        "--yes",
         action="store_true",
         help="Confirm deletion without prompting",
     )
@@ -8305,7 +9179,8 @@ Examples:
         help="Clean up Azure ML resources (cancel jobs + delete compute)",
     )
     p_azure_cleanup.add_argument(
-        "-y", "--yes",
+        "-y",
+        "--yes",
         action="store_true",
         help="Confirm cleanup without prompting",
     )

@@ -113,9 +113,7 @@ def _load_standard_model(config: TRLTrainingConfig):
     import torch
 
     # Check if this is a vision-language model
-    model_config = AutoConfig.from_pretrained(
-        config.model_name, trust_remote_code=True
-    )
+    model_config = AutoConfig.from_pretrained(config.model_name, trust_remote_code=True)
     is_vl_model = (
         "VL" in config.model_name.upper()
         or "vision" in config.model_name.lower()
