@@ -1,6 +1,44 @@
 # CHANGELOG
 
 
+## v0.3.1 (2026-02-05)
+
+### Bug Fixes
+
+- **cli**: Resolve ruff linter errors
+  ([`210a31f`](https://github.com/OpenAdaptAI/openadapt-ml/commit/210a31fcc054238a08e609520bdf57c312600d72))
+
+- Replace bare `except:` with `except Exception:` - Remove unused f-string prefixes - Remove unused
+  variable assignments - Remove unused imports
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+
+### Documentation
+
+- **readme**: Add parallel WAA evaluation, fix build badge
+  ([#19](https://github.com/OpenAdaptAI/openadapt-ml/pull/19),
+  [`fea0a10`](https://github.com/OpenAdaptAI/openadapt-ml/commit/fea0a10c514b87a8a73310a142acb73a6b31146e))
+
+* docs(readme): add parallel WAA evaluation section, fix build badge
+
+- Fix broken build badge (publish.yml → release.yml) - Add prominent "Parallel WAA Benchmark
+  Evaluation" section near top - Add detailed "WAA Benchmark Workflow" section (#14) with: - Single
+  VM and parallel pool workflows - VNC access instructions - Architecture diagram - Cost estimates -
+  Update section numbering (Limitations → 15, Roadmap → 16)
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+
+* fix(readme): address self-review feedback
+
+- Fix anchor placement (move before heading for proper navigation) - Correct pool-delete →
+  pool-cleanup (actual command name) - Add pool-status example for getting worker IPs - Add "prices
+  vary by region" caveat
+
+---------
+
+Co-authored-by: Claude Opus 4.5 <noreply@anthropic.com>
+
+
 ## v0.3.0 (2026-02-05)
 
 ### Bug Fixes
