@@ -813,48 +813,31 @@ uv run python -m openadapt_ml.cloud.local serve --port 8080 --open
 
 *View benchmark evaluation results with task-level filtering, success/failure status, and run comparison. Shows Claude achieving 30% on mock evaluation tasks (simulated environment for testing the pipeline - real WAA evaluation requires Windows VMs).*
 
-### 13.4 VM Monitoring Dashboard
+### 13.4 VM Pool Monitoring
 
-For managing Azure VMs used in benchmark evaluations, the `vm monitor` command provides a comprehensive dashboard:
+For managing Azure VMs used in benchmark evaluations:
 
 ```bash
-# Start VM monitoring dashboard (auto-opens browser)
-uv run python -m openadapt_ml.benchmarks.cli vm monitor
+# Check pool status (VM state, IPs, WAA readiness)
+uv run python -m openadapt_ml.benchmarks.cli pool-status
 
-# Show detailed information (evaluation history, daily/weekly costs)
-uv run python -m openadapt_ml.benchmarks.cli vm monitor --details
+# Open VNC to view Windows desktops (via SSH tunnels)
+uv run python -m openadapt_ml.benchmarks.cli pool-vnc
+
+# Stream logs from all workers
+uv run python -m openadapt_ml.benchmarks.cli pool-logs
 ```
-
-**VM Monitor Dashboard (Full View):**
-
-![VM Monitor Dashboard](docs/screenshots/vm_monitor_dashboard_full.png)
-
-*The VM monitor dashboard shows: (1) VM status (name, IP, size, state), (2) Current activity (idle/benchmark running), (3) Cost tracking (uptime, hourly rate, total cost), (4) Recent Azure ML jobs from last 7 days, and (6) Dashboard & access URLs.*
-
-**VM Monitor Dashboard (With --details Flag):**
-
-![VM Monitor Dashboard Details](docs/screenshots/vm_monitor_details.png)
-
-*The --details flag adds: (5) Evaluation history with success rates and agent types, plus extended cost information (daily/weekly projections).*
 
 **Features:**
 - **Real-time VM status** - Shows VM size, power state, and IP address
-- **Activity detection** - Identifies if VM is idle, running benchmarks, or in setup
-- **Cost tracking** - Displays uptime hours, hourly rate, and total cost for current session
-- **Azure ML jobs** - Lists recent jobs from last 7 days with status indicators
-- **Evaluation history** - Shows past benchmark runs with success rates (with --details flag)
-- **Dashboard & tunnels** - Auto-starts web dashboard and SSH/VNC tunnels for accessing Windows VM
+- **WAA readiness** - Shows if WAA server is ready on each worker
+- **VNC access** - Opens SSH tunnels to view Windows desktops
+- **Log streaming** - Interleaved logs from all pool workers
 
-**Mock mode for testing:**
+**Cleanup (important to stop billing):**
 ```bash
-# Generate screenshots or test dashboard without a VM running
-uv run python -m openadapt_ml.benchmarks.cli vm monitor --mock
-```
-
-**Auto-shutdown option:**
-```bash
-# Automatically deallocate VM after 2 hours to prevent runaway costs
-uv run python -m openadapt_ml.benchmarks.cli vm monitor --auto-shutdown-hours 2
+# Delete all pool VMs and resources
+uv run python -m openadapt_ml.benchmarks.cli pool-cleanup
 ```
 
 ### 13.5 Benchmark Execution Logs
@@ -1017,20 +1000,24 @@ Windows Agent Arena (WAA) is a benchmark of 154 tasks across 11 Windows domains.
 
 ### 14.2 Single VM Workflow
 
-For quick testing or small runs:
+For quick testing or small runs (use pool-create with --workers 1):
 
 ```bash
-# Setup VM with WAA
-uv run python -m openadapt_ml.benchmarks.cli vm setup-waa
+# 1. Create single-VM pool
+uv run python -m openadapt_ml.benchmarks.cli pool-create --workers 1
 
-# Start monitoring dashboard (auto-opens VNC, manages SSH tunnels)
-uv run python -m openadapt_ml.benchmarks.cli vm monitor
+# 2. Wait for WAA ready
+uv run python -m openadapt_ml.benchmarks.cli pool-wait
 
-# Run benchmark
-uv run python -m openadapt_ml.benchmarks.cli waa --num-tasks 10
+# 3. Run benchmark (e.g., 3 tasks for quick test)
+uv run python -m openadapt_ml.benchmarks.cli pool-run --tasks 3
 
-# Deallocate when done (stops billing)
-uv run python -m openadapt_ml.benchmarks.cli vm deallocate -y
+# 4. Check status / VNC
+uv run python -m openadapt_ml.benchmarks.cli pool-status
+uv run python -m openadapt_ml.benchmarks.cli pool-vnc
+
+# 5. Cleanup (stop billing)
+uv run python -m openadapt_ml.benchmarks.cli pool-cleanup
 ```
 
 ### 14.3 Parallel Pool Workflow (Recommended)
@@ -1102,8 +1089,7 @@ Azure (N VMs, Standard_D8ds_v5)
 
 **Tips:**
 - Always run `pool-cleanup` when done to delete VMs and stop billing
-- Use `vm deallocate` (not delete) to pause billing but keep disk
-- Set `--auto-shutdown-hours 2` on `vm monitor` for safety
+- Use `deallocate` (not `delete`) to pause billing but keep disk for single VM
 - Prices vary by Azure region
 
 ---
