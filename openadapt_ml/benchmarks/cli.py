@@ -783,7 +783,7 @@ def cmd_pool_create(args):
                 working_region = region
                 working_cost = cost
                 # Delete the test VM and wait for completion
-                log("POOL", f"  Found working combo, cleaning up test VM...")
+                log("POOL", "  Found working combo, cleaning up test VM...")
                 subprocess.run(
                     ["az", "vm", "delete", "-g", RESOURCE_GROUP, "-n", test_name, "--yes", "--force-deletion", "true"],
                     capture_output=True,
@@ -1089,7 +1089,7 @@ echo "STARTED"
                     workers_ready.append(worker)
                     del workers_pending[name]
                     registry.update_worker(name, waa_ready=True, status="ready")
-            except Exception as e:
+            except Exception:
                 pass  # Keep trying
 
         if workers_pending:
@@ -1494,7 +1494,6 @@ def cmd_pool_logs(args):
     Shows Docker container logs from each worker with [worker-name] prefix.
     Use Ctrl+C to stop.
     """
-    import sys
     import threading
     from queue import Queue, Empty
 
@@ -1516,7 +1515,7 @@ def cmd_pool_logs(args):
 
     pool_id = pool.get("pool_id", "unknown")
     print(f"[pool-logs] Streaming logs from {len(workers)} workers (pool: {pool_id})")
-    print(f"[pool-logs] Press Ctrl+C to stop\n", flush=True)
+    print("[pool-logs] Press Ctrl+C to stop\n", flush=True)
 
     # Queue for collecting output from all workers
     output_queue = Queue()
@@ -2041,10 +2040,10 @@ def cmd_start(args):
         log("START", "Starting container with VERSION=11e...")
 
     # Get agent and model from args (defaults match WAA defaults)
-    agent = getattr(args, "agent", "navi")
-    model = getattr(args, "model", "gpt-4o")
-    som_origin = getattr(args, "som_origin", "oss")
-    a11y_backend = getattr(args, "a11y_backend", "uia")
+    getattr(args, "agent", "navi")
+    getattr(args, "model", "gpt-4o")
+    getattr(args, "som_origin", "oss")
+    getattr(args, "a11y_backend", "uia")
 
     # The vanilla windowsarena/winarena:latest image uses --entrypoint /bin/bash
     # and requires entry.sh as the command argument
@@ -2210,8 +2209,8 @@ def cmd_test_golden_image(args):
 
         if "FAIL" not in result.stdout and result.stdout.strip():
             elapsed = time.time() - start_time
-            log("TEST", f"")
-            log("TEST", f"✅ GOLDEN IMAGE TEST PASSED")
+            log("TEST", "")
+            log("TEST", "✅ GOLDEN IMAGE TEST PASSED")
             log("TEST", f"  Boot time: {elapsed:.1f} seconds")
             log("TEST", f"  Image size: {image_size}")
             log("TEST", f"  Response: {result.stdout.strip()[:80]}")
@@ -2219,11 +2218,11 @@ def cmd_test_golden_image(args):
 
         elapsed = time.time() - start_time
         if elapsed > timeout:
-            log("TEST", f"")
-            log("TEST", f"❌ GOLDEN IMAGE TEST FAILED")
+            log("TEST", "")
+            log("TEST", "❌ GOLDEN IMAGE TEST FAILED")
             log("TEST", f"  WAA server did not respond after {timeout}s")
-            log("TEST", f"  This may indicate a corrupted golden image")
-            log("TEST", f"  Try: cli.py start --fresh  # to create new golden image")
+            log("TEST", "  This may indicate a corrupted golden image")
+            log("TEST", "  Try: cli.py start --fresh  # to create new golden image")
             return 1
 
         # Progress display
@@ -2289,7 +2288,7 @@ def cmd_test_blob_access(args):
     if "NOT_FOUND" in result.stdout:
         log("TEST-BLOB", f"❌ Storage account '{storage_account}' not found or not accessible")
         return 1
-    log("TEST-BLOB", f"   ✓ Storage account accessible")
+    log("TEST-BLOB", "   ✓ Storage account accessible")
 
     # Check container exists - try candidates in order
     log("TEST-BLOB", "3. Checking for usable container...")
@@ -2306,7 +2305,7 @@ def cmd_test_blob_access(args):
             break
 
     if not container_name:
-        log("TEST-BLOB", f"❌ No suitable container found")
+        log("TEST-BLOB", "❌ No suitable container found")
         log("TEST-BLOB", f"   Available: {available_containers}")
         log("TEST-BLOB", f"   Create one with: az storage container create --name waa-golden-images --account-name {storage_account}")
         return 1
@@ -2325,7 +2324,7 @@ def cmd_test_blob_access(args):
         if not blob_output or "Name" not in blob_output:
             log("TEST-BLOB", "   ⚠ Container is empty (no golden image uploaded yet)")
         else:
-            log("TEST-BLOB", f"   ✓ Blobs found:")
+            log("TEST-BLOB", "   ✓ Blobs found:")
             for line in blob_output.split("\n")[:10]:  # Show first 10
                 log("TEST-BLOB", f"     {line}")
 
@@ -2383,7 +2382,7 @@ def cmd_test_api_key(args):
 
         if response.status_code == 200:
             log("TEST-API", "✅ API KEY TEST PASSED")
-            log("TEST-API", f"   Model: gpt-4o-mini responded successfully")
+            log("TEST-API", "   Model: gpt-4o-mini responded successfully")
             return 0
         elif response.status_code == 401:
             log("TEST-API", "❌ API KEY INVALID (401 Unauthorized)")
@@ -2439,7 +2438,7 @@ def cmd_test_waa_tasks(args):
         if "NOT_FOUND" in result.stdout:
             log("TEST-TASKS", "❌ Task directory not found")
             return 1
-        log("TEST-TASKS", f"Task files found:")
+        log("TEST-TASKS", "Task files found:")
         for line in result.stdout.strip().split("\n")[:10]:
             log("TEST-TASKS", f"   {line}")
     else:
@@ -3819,7 +3818,6 @@ def check_golden_image_in_blob(storage_account: str, storage_key: str, blob_cont
     # Check for required files (only data.img is truly required, OVMF files come from Docker image)
     # windows.vars contains UEFI variables for the specific Windows install
     required_files = ["data.img"]
-    optional_files = ["windows.vars", "windows.ver", "windows.rom", "windows.mac", "windows.base"]
     found_files = [f["name"].replace("storage/", "") for f in files]
     has_required = all(rf in found_files for rf in required_files)
 
@@ -4527,7 +4525,7 @@ def show_azure_ml_resources() -> dict:
     code_share = get_azure_ml_file_share_name()
     if code_share:
         log("AZURE-ML", f"  Share: {code_share}")
-        log("AZURE-ML", f"  - Users/openadapt/compute-instance-startup.sh")
+        log("AZURE-ML", "  - Users/openadapt/compute-instance-startup.sh")
         result["file_share_files"].append("Users/openadapt/compute-instance-startup.sh")
     else:
         log("AZURE-ML", "  (not found)")
@@ -4599,7 +4597,7 @@ def teardown_azure_ml_resources(confirm: bool = False, keep_image: bool = False)
     log("AZURE-ML", "")
     log("AZURE-ML", "  File Share:")
     if code_share:
-        log("AZURE-ML", f"    - Users/openadapt/compute-instance-startup.sh")
+        log("AZURE-ML", "    - Users/openadapt/compute-instance-startup.sh")
     else:
         log("AZURE-ML", "    (none)")
 
@@ -4723,7 +4721,7 @@ def cmd_run_azure_ml_auto(args):
     skip_benchmark = getattr(args, "skip_benchmark", False)
     fast_vm = getattr(args, "fast", False)
 
-    log("AUTO", f"Configuration:")
+    log("AUTO", "Configuration:")
     log("AUTO", f"  Workers: {num_workers}")
     log("AUTO", f"  Setup timeout: {timeout_minutes} min")
     log("AUTO", f"  Probe timeout: {probe_timeout} sec")
@@ -4742,7 +4740,7 @@ def cmd_run_azure_ml_auto(args):
         if state and "running" in state.lower():
             log("AUTO", f"  VM already running at {ip}")
         elif state and "deallocated" in state.lower():
-            log("AUTO", f"  VM deallocated, starting...")
+            log("AUTO", "  VM deallocated, starting...")
             result = subprocess.run(
                 ["az", "vm", "start", "-g", RESOURCE_GROUP, "-n", VM_NAME],
                 capture_output=True,
@@ -4866,7 +4864,7 @@ def cmd_run_azure_ml_auto(args):
     # Step 3: Wait for WAA server to become ready
     # =========================================================================
     log("AUTO", "[Step 3/5] Waiting for WAA server...")
-    log("AUTO", f"  (This may take 15-20 minutes on first run)")
+    log("AUTO", "  (This may take 15-20 minutes on first run)")
     log("AUTO", f"  Timeout: {probe_timeout} seconds")
 
     probe_start = time.time()
@@ -5016,7 +5014,7 @@ def cmd_run_azure_ml_auto(args):
         result = subprocess.run(cmd, cwd=waa_scripts)
 
         if result.returncode != 0:
-            log("AUTO", f"  ERROR: run_azure.py failed")
+            log("AUTO", "  ERROR: run_azure.py failed")
             return 1
 
     # =========================================================================
@@ -5883,7 +5881,7 @@ def find_best_region_for_vm(vm_size: str, min_vcpus: int = 8, preferred_regions:
                     "warning": warning
                 }
 
-        except Exception as e:
+        except Exception:
             continue
 
     # No ideal region found - return best available
@@ -6196,7 +6194,6 @@ def cmd_azure_ml_monitor(args):
 
     # Set up VNC if requested
     vnc_port = 8007
-    tunnel_proc = None
 
     if auto_vnc:
         # Find compute instance for this job
@@ -6350,7 +6347,6 @@ def cmd_azure_ml_logs(args):
     log("AZURE-ML-LOGS", "=" * 60)
 
     last_size = 0
-    process = None
 
     try:
         while True:
@@ -6388,7 +6384,7 @@ def cmd_azure_ml_logs(args):
             # Clean up temp file
             try:
                 os.unlink(temp_file)
-            except:
+            except Exception:
                 pass
 
             if not follow:
@@ -6591,7 +6587,7 @@ def cmd_azure_ml_stream_logs(args):
                                 log("PROGRESS", f"Last: {progress['messages'][-1].get('text', '')}")
                             last_progress = progress.copy()
                             log("STREAM", "")
-                    except Exception as e:
+                    except Exception:
                         pass  # Progress file may be partially written
 
                 # Show events if requested
@@ -6604,10 +6600,10 @@ def cmd_azure_ml_stream_logs(args):
                             try:
                                 event = json.loads(line.strip())
                                 log("EVENT", f"{event['type']}: {json.dumps(event.get('data', {}))}")
-                            except:
+                            except Exception:
                                 pass
                         last_event_count = len(lines)
-                    except:
+                    except Exception:
                         pass
 
                 # Show log content (default)
@@ -6620,7 +6616,7 @@ def cmd_azure_ml_stream_logs(args):
                             new_content = content[last_log_size:]
                             print(new_content, end='', flush=True)
                             last_log_size = len(content)
-                    except:
+                    except Exception:
                         pass
 
                 # If no logs available yet
@@ -6631,7 +6627,7 @@ def cmd_azure_ml_stream_logs(args):
             try:
                 job = ml_client.jobs.get(job_name)
                 status = job.status
-            except:
+            except Exception:
                 status = "Unknown"
 
             if not follow:
@@ -6762,11 +6758,11 @@ def cmd_azure_ml_progress(args):
                             print(f"Last Update: {progress.get('last_update', 'N/A')}")
 
                             if progress.get('messages'):
-                                print(f"\nRecent Messages:")
+                                print("\nRecent Messages:")
                                 for msg in progress['messages'][-5:]:
                                     print(f"  {msg.get('time', '')} - {msg.get('text', '')}")
                             return
-                except Exception as e:
+                except Exception:
                     # If can't download, just show job status
                     pass
 
@@ -6778,7 +6774,7 @@ def cmd_azure_ml_progress(args):
 
     try:
         if watch:
-            log("PROGRESS", f"Watching progress (Ctrl+C to stop)")
+            log("PROGRESS", "Watching progress (Ctrl+C to stop)")
             while True:
                 show_progress()
 
@@ -6788,7 +6784,7 @@ def cmd_azure_ml_progress(args):
                     if job.status in ["Completed", "Failed", "Canceled"]:
                         print(f"\nJob {job.status}")
                         break
-                except:
+                except Exception:
                     pass
 
                 time.sleep(poll_interval)
@@ -6862,7 +6858,6 @@ def cmd_azure_ml_delete_compute(args):
         uv run python -m openadapt_ml.benchmarks.cli azure-ml-delete-compute --all  # Deletes all instances
     """
     init_logging()
-    from openadapt_ml.config import settings
 
     compute_name = getattr(args, "name", None)
     delete_all = getattr(args, "all", False)
@@ -7129,7 +7124,7 @@ def cmd_azure_ml_cost(args):
             log("COST", f"  {name}")
             log("COST", f"    Status: {state}")
             log("COST", f"    Size: {vm_size} (${hourly_rate:.2f}/hr)")
-            log("COST", f"    Created: (unknown)")
+            log("COST", "    Created: (unknown)")
 
     log("COST", "=" * 60)
     log("COST", f"Total Running Cost: ${total_cost:.2f}")
@@ -7265,7 +7260,7 @@ def cmd_azure_ml_teardown(args):
             text=True,
         )
         if result.returncode == 0:
-            log("TEARDOWN", f"Resource group deletion initiated (async)")
+            log("TEARDOWN", "Resource group deletion initiated (async)")
         else:
             log("TEARDOWN", f"Failed to delete resource group: {result.stderr}")
 
