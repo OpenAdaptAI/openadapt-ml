@@ -154,11 +154,14 @@ class VMMonitor:
     def check_waa_probe(self) -> tuple[bool, str | None]:
         """Check if WAA /probe endpoint responds.
 
+        The probe must run INSIDE the container to reach 172.30.0.2 (Docker internal network).
+
         Returns:
             Tuple of (ready, response_text).
         """
         try:
-            cmd = f"curl -s --connect-timeout {self.timeout} http://{self.config.internal_ip}:{self.config.waa_port}/probe"
+            # Run curl inside container to access Docker internal network
+            cmd = f"docker exec {self.config.docker_container} curl -s --max-time {self.timeout} http://{self.config.internal_ip}:{self.config.waa_port}/probe 2>/dev/null || echo FAIL"
             result = subprocess.run(
                 [
                     "ssh",
@@ -173,10 +176,10 @@ class VMMonitor:
                 ],
                 capture_output=True,
                 text=True,
-                timeout=self.timeout + 10,
+                timeout=self.timeout + 15,
             )
             response = result.stdout.strip()
-            if response and "error" not in response.lower():
+            if response and "FAIL" not in response and "error" not in response.lower():
                 return True, response
             return False, response or None
         except (subprocess.TimeoutExpired, Exception) as e:

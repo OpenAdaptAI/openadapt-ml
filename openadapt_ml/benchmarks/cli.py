@@ -910,8 +910,41 @@ sudo mkdir -p /mnt/docker
 sudo bash -c 'echo "{\\"data-root\\": \\"/mnt/docker\\"}" > /etc/docker/daemon.json'
 sudo systemctl start docker
 
-# Pull WAA image (use sudo since usermod hasn't taken effect yet)
+# Pull base images (use sudo since usermod hasn't taken effect yet)
+sudo docker pull dockurr/windows:latest
 sudo docker pull windowsarena/winarena:latest
+
+# Build waa-auto image that has working auto-download
+# The vanilla windowsarena/winarena uses outdated dockur/windows v0.00 without auto-download
+# Our waa-auto uses modern dockurr/windows with VERSION=11e support
+mkdir -p /tmp/waa-build
+cat > /tmp/waa-build/Dockerfile << 'DOCKERFILE_EOF'
+FROM dockurr/windows:latest
+COPY --from=windowsarena/winarena:latest /entry.sh /entry.sh
+COPY --from=windowsarena/winarena:latest /entry_setup.sh /entry_setup.sh
+COPY --from=windowsarena/winarena:latest /start_client.sh /start_client.sh
+COPY --from=windowsarena/winarena:latest /client /client
+COPY --from=windowsarena/winarena:latest /models /models
+COPY --from=windowsarena/winarena:latest /oem /oem
+COPY --from=windowsarena/winarena:latest /usr/local/bin/python* /usr/local/bin/
+COPY --from=windowsarena/winarena:latest /usr/local/bin/pip* /usr/local/bin/
+COPY --from=windowsarena/winarena:latest /usr/local/lib/python3.9 /usr/local/lib/python3.9
+COPY --from=windowsarena/winarena:latest /usr/local/lib/libpython3.9.so* /usr/local/lib/
+RUN ldconfig && \\
+    ln -sf /usr/local/bin/python3.9 /usr/local/bin/python && \\
+    ln -sf /usr/local/bin/python3.9 /usr/bin/python && \\
+    ln -sf /usr/local/bin/pip3.9 /usr/local/bin/pip
+RUN sed -i '/^return 0$/i cp -r /oem/* /tmp/smb/ 2>/dev/null || true' /run/samba.sh
+RUN printf '#!/bin/bash\\n/usr/bin/tini -s /run/entry.sh\\n' > /start_vm.sh && chmod +x /start_vm.sh
+RUN sed -i 's|20.20.20.21|172.30.0.2|g' /entry_setup.sh /entry.sh /start_client.sh
+RUN find /client -name "*.py" -exec sed -i 's|20.20.20.21|172.30.0.2|g' {} \\;
+RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr libgl1 libglib2.0-0 && rm -rf /var/lib/apt/lists/*
+ENV VERSION="11e" RAM_SIZE="8G" CPU_CORES="4"
+ENTRYPOINT ["/usr/bin/tini", "-s", "/run/entry.sh"]
+DOCKERFILE_EOF
+
+sudo docker build -t waa-auto:latest /tmp/waa-build/
+rm -rf /tmp/waa-build
 """
 
     def setup_docker(name_ip: tuple[str, str]) -> tuple[str, bool, str]:
@@ -981,30 +1014,58 @@ def cmd_pool_wait(args):
     no_start = getattr(args, "no_start", False)
     start_containers = not no_start
 
-    # Start WAA containers on each worker
+    # Start WAA containers on each worker (only if not already running)
     if start_containers:
-        log("POOL-WAIT", "Starting WAA containers on all workers...")
+        log("POOL-WAIT", "Checking WAA containers on all workers...")
 
+        # Check if container is running, only start if not
         start_cmd = """
+# Check if container already running
+if docker ps --format '{{.Names}}' | grep -q '^winarena$'; then
+    echo "ALREADY_RUNNING"
+    exit 0
+fi
+
+# Container not running, start it
 docker rm -f winarena 2>/dev/null || true
+sudo mkdir -p /mnt/waa-storage
+sudo chown azureuser:azureuser /mnt/waa-storage
+# Use vanilla windowsarena/winarena image which has proper QMP support (port 7200)
+# Image has ENTRYPOINT ["/bin/bash", "-c"] so we must pass the command as argument
 docker run -d --name winarena \\
-  --device /dev/kvm \\
+  --device=/dev/kvm \\
+  --cap-add NET_ADMIN \\
+  --stop-timeout 120 \\
   -p 5000:5000 \\
   -p 8006:8006 \\
+  -p 7200:7200 \\
+  -v /mnt/waa-storage:/storage \\
   -e VERSION=11e \\
-  -v /home/azureuser/waa-storage:/storage \\
-  windowsarena/winarena:latest
+  -e RAM_SIZE=8G \\
+  -e CPU_CORES=4 \\
+  -e DISK_SIZE=64G \\
+  windowsarena/winarena:latest \\
+  './entry.sh --prepare-image false --start-client false'
+echo "STARTED"
 """
 
-        def start_container(worker) -> tuple[str, bool]:
+        def start_container(worker) -> tuple[str, bool, str]:
             result = ssh_run(worker.ip, start_cmd, stream=False, step="START")
-            return (worker.name, result.returncode == 0)
+            output = result.stdout.strip() if result.stdout else ""
+            return (worker.name, result.returncode == 0, output)
 
         with ThreadPoolExecutor(max_workers=min(len(pool.workers), 5)) as executor:
             futures = {executor.submit(start_container, w): w.name for w in pool.workers}
             for future in as_completed(futures):
-                name, success = future.result()
-                status = "container started" if success else "FAILED"
+                name, success, output = future.result()
+                if "ALREADY_RUNNING" in output:
+                    status = "already running"
+                elif "STARTED" in output:
+                    status = "container started"
+                elif success:
+                    status = "ok"
+                else:
+                    status = "FAILED"
                 log("POOL-WAIT", f"  {name}: {status}")
 
     # Wait for WAA to be ready on all workers
@@ -1018,7 +1079,8 @@ docker run -d --name winarena \\
     while workers_pending and (time.time() - start_time) < timeout_seconds:
         for name, worker in list(workers_pending.items()):
             try:
-                config = VMConfig(name=name, ssh_host=worker.ip)
+                # Vanilla windowsarena/winarena uses 20.20.20.21 for Windows VM
+                config = VMConfig(name=name, ssh_host=worker.ip, internal_ip="20.20.20.21")
                 monitor = VMMonitor(config, timeout=5)
                 ready, response = monitor.check_waa_probe()
 
@@ -1099,18 +1161,13 @@ def cmd_pool_run(args):
     log("POOL-RUN", f"  Model: {model}")
     log("POOL-RUN", "=" * 60)
 
-    # Distribute tasks round-robin
-    tasks_per_worker = {}
-    for i in range(num_tasks):
-        worker_idx = i % len(ready_workers)
-        worker_name = ready_workers[worker_idx].name
-        if worker_name not in tasks_per_worker:
-            tasks_per_worker[worker_name] = []
-        tasks_per_worker[worker_name].append(i)
-
-    log("POOL-RUN", "Task distribution:")
-    for name, tasks in tasks_per_worker.items():
-        log("POOL-RUN", f"  {name}: {len(tasks)} tasks (indices {tasks[0]}-{tasks[-1] if len(tasks) > 1 else tasks[0]})")
+    # WAA handles task distribution internally via --worker_id and --num_workers
+    # Each worker gets every Nth task (round-robin)
+    log("POOL-RUN", "Task distribution (handled by WAA):")
+    for worker_idx, worker in enumerate(ready_workers):
+        # Estimate: worker_id=0 gets tasks 0, N, 2N, ...; worker_id=1 gets 1, N+1, 2N+1, ...
+        tasks_for_worker = (num_tasks + len(ready_workers) - 1 - worker_idx) // len(ready_workers)
+        log("POOL-RUN", f"  {worker.name}: worker_id={worker_idx}, ~{tasks_for_worker} tasks")
 
     # Update registry with assigned tasks
     pool.total_tasks = num_tasks
@@ -1119,43 +1176,32 @@ def cmd_pool_run(args):
     # Create experiment name
     exp_name = datetime.now().strftime("pool_%Y%m%d_%H%M%S")
 
-    def run_on_worker(worker, task_indices: list[int]) -> tuple[str, int, int, str]:
+    def run_on_worker(worker, worker_idx: int, num_workers: int) -> tuple[str, int, int, str]:
         """Run tasks on a single worker. Returns (name, completed, failed, error)."""
-        # Write config.json with API key
-        config_cmd = f"""
-cat > /home/azureuser/waa-config.json << 'EOF'
-{{
-    "OPENAI_API_KEY": "{api_key}"
-}}
-EOF
-docker cp /home/azureuser/waa-config.json winarena:/winarena/config.json
-"""
-        ssh_run(worker.ip, config_cmd, stream=False, step="CONFIG")
-
-        # Run benchmark for assigned tasks
-        # Using task indices to determine which tasks to run
-        start_idx = task_indices[0]
-        end_idx = task_indices[-1] + 1
-        num_worker_tasks = len(task_indices)
-
-        # Run the benchmark
+        # Run the benchmark using WAA's native worker distribution
+        # WAA splits tasks across workers using --worker_id and --num_workers
+        # Worker 0 gets tasks 0, num_workers, 2*num_workers, ...
+        # Worker 1 gets tasks 1, num_workers+1, 2*num_workers+1, ...
+        # WAA code is in /client directory, API key passed via env var
+        # Vanilla windowsarena/winarena uses 20.20.20.21 for Windows VM
         run_cmd = f"""
-docker exec winarena bash -c 'cd /winarena && python -m client.run \\
+docker exec -e OPENAI_API_KEY='{api_key}' winarena bash -c 'cd /client && python run.py \\
     --agent {agent} \\
     --model {model} \\
     --exp_name {exp_name}_{worker.name} \\
-    --num_tasks {num_worker_tasks} \\
-    --start_idx {start_idx} \\
-    --emulator_ip 172.30.0.2 2>&1' | tee /home/azureuser/benchmark.log
+    --worker_id {worker_idx} \\
+    --num_workers {num_workers} \\
+    --emulator_ip 20.20.20.21 2>&1' | tee /home/azureuser/benchmark.log
 """
-        result = ssh_run(worker.ip, run_cmd, stream=False, step="RUN")
+        result = ssh_run(worker.ip, run_cmd, stream=True, step="RUN")
 
         # Count results (simplified - would need to parse actual output)
+        # WAA distributes tasks evenly, so each worker gets ~total/num_workers tasks
         # For now, assume success if exit code is 0
         if result.returncode == 0:
-            return (worker.name, num_worker_tasks, 0, None)
+            return (worker.name, 1, 0, None)  # Simplified - would parse actual results
         else:
-            return (worker.name, 0, num_worker_tasks, "benchmark failed")
+            return (worker.name, 0, 1, "benchmark failed")
 
     # Run tasks in parallel on all workers
     log("POOL-RUN", "")
@@ -1163,12 +1209,12 @@ docker exec winarena bash -c 'cd /winarena && python -m client.run \\
     start_time = time.time()
 
     results = []
-    with ThreadPoolExecutor(max_workers=len(ready_workers)) as executor:
+    num_workers = len(ready_workers)
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
         futures = {}
-        for worker in ready_workers:
-            if worker.name in tasks_per_worker:
-                future = executor.submit(run_on_worker, worker, tasks_per_worker[worker.name])
-                futures[future] = worker.name
+        for worker_idx, worker in enumerate(ready_workers):
+            future = executor.submit(run_on_worker, worker, worker_idx, num_workers)
+            futures[future] = worker.name
 
         for future in as_completed(futures):
             name, completed, failed, error = future.result()
@@ -1297,6 +1343,311 @@ def cmd_pool_cleanup(args):
         )
 
     log("POOL-CLEANUP", "Cleanup complete.")
+    return 0
+
+
+def cmd_pool_vnc(args):
+    """Open VNC to a specific pool worker via SSH tunnel.
+
+    Each worker gets a unique local port: 8006 + worker_index.
+    E.g., waa-pool-00 -> localhost:8006, waa-pool-01 -> localhost:8007
+    """
+    init_logging()
+
+    # Load pool registry
+    registry_path = Path("benchmark_results/vm_pool_registry.json")
+    if not registry_path.exists():
+        log("POOL-VNC", "ERROR: No pool found. Run pool-create first.")
+        return 1
+
+    with open(registry_path) as f:
+        pool = json.load(f)
+
+    workers = pool.get("workers", [])
+    if not workers:
+        log("POOL-VNC", "ERROR: Pool has no workers.")
+        return 1
+
+    # Get worker to connect to
+    worker_name = getattr(args, "worker", None)
+    all_workers = getattr(args, "all", False)
+
+    if all_workers:
+        # Set up tunnels for all workers
+        log("POOL-VNC", f"Setting up VNC tunnels for {len(workers)} workers...")
+        tunnel_procs = []
+
+        for i, worker in enumerate(workers):
+            name = worker.get("name", f"worker-{i}")
+            ip = worker.get("ip")
+            if not ip:
+                log("POOL-VNC", f"  {name}: No IP address, skipping")
+                continue
+
+            local_port = 8006 + i
+
+            # Kill any existing tunnel on this port
+            subprocess.run(["pkill", "-f", f"ssh.*{local_port}:localhost:8006"], capture_output=True)
+
+            # Start SSH tunnel
+            tunnel_proc = subprocess.Popen(
+                ["ssh", *SSH_OPTS, "-N", "-L", f"{local_port}:localhost:8006", f"azureuser@{ip}"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            tunnel_procs.append((name, local_port, tunnel_proc))
+            log("POOL-VNC", f"  {name}: http://localhost:{local_port}")
+
+        time.sleep(2)
+
+        # Check tunnel status
+        log("POOL-VNC", "")
+        log("POOL-VNC", "VNC Access URLs:")
+        for name, port, proc in tunnel_procs:
+            if proc.poll() is None:
+                log("POOL-VNC", f"  {name}: http://localhost:{port}")
+            else:
+                log("POOL-VNC", f"  {name}: FAILED")
+
+        log("POOL-VNC", "")
+        log("POOL-VNC", "Press Ctrl+C to close all tunnels")
+
+        try:
+            # Keep tunnels alive
+            while any(p.poll() is None for _, _, p in tunnel_procs):
+                time.sleep(1)
+        except KeyboardInterrupt:
+            log("POOL-VNC", "Closing tunnels...")
+            for _, _, p in tunnel_procs:
+                p.terminate()
+
+    else:
+        # Connect to specific worker
+        if not worker_name:
+            # Show available workers
+            log("POOL-VNC", "Available workers:")
+            for i, worker in enumerate(workers):
+                name = worker.get("name", f"worker-{i}")
+                ip = worker.get("ip", "no IP")
+                status = worker.get("status", "unknown")
+                log("POOL-VNC", f"  {i}: {name} ({ip}) - {status}")
+            log("POOL-VNC", "")
+            log("POOL-VNC", "Usage: pool-vnc --worker <name>  OR  pool-vnc --all")
+            return 1
+
+        # Find the worker
+        target_worker = None
+        worker_idx = 0
+        for i, worker in enumerate(workers):
+            if worker.get("name") == worker_name:
+                target_worker = worker
+                worker_idx = i
+                break
+
+        if not target_worker:
+            log("POOL-VNC", f"ERROR: Worker '{worker_name}' not found")
+            return 1
+
+        ip = target_worker.get("ip")
+        if not ip:
+            log("POOL-VNC", f"ERROR: Worker '{worker_name}' has no IP address")
+            return 1
+
+        local_port = 8006 + worker_idx
+
+        # Kill any existing tunnel on this port
+        subprocess.run(["pkill", "-f", f"ssh.*{local_port}:localhost:8006"], capture_output=True)
+
+        # Start SSH tunnel
+        log("POOL-VNC", f"Setting up VNC tunnel to {worker_name} ({ip})...")
+        tunnel_proc = subprocess.Popen(
+            ["ssh", *SSH_OPTS, "-N", "-L", f"{local_port}:localhost:8006", f"azureuser@{ip}"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        time.sleep(2)
+
+        if tunnel_proc.poll() is not None:
+            log("POOL-VNC", "ERROR: SSH tunnel failed to start")
+            return 1
+
+        vnc_url = f"http://localhost:{local_port}"
+        log("POOL-VNC", f"VNC available at: {vnc_url}")
+
+        # Open browser
+        webbrowser.open(vnc_url)
+
+        log("POOL-VNC", "Press Ctrl+C to close tunnel")
+        try:
+            tunnel_proc.wait()
+        except KeyboardInterrupt:
+            log("POOL-VNC", "Closing tunnel...")
+            tunnel_proc.terminate()
+
+    return 0
+
+
+def cmd_pool_logs(args):
+    """Stream logs from all pool workers interleaved with prefixes.
+
+    Shows Docker container logs from each worker with [worker-name] prefix.
+    Use Ctrl+C to stop.
+    """
+    import sys
+    import threading
+    from queue import Queue, Empty
+
+    init_logging()
+
+    # Load pool registry
+    registry_path = Path("benchmark_results/vm_pool_registry.json")
+    if not registry_path.exists():
+        print("ERROR: No pool found. Run pool-create first.")
+        return 1
+
+    with open(registry_path) as f:
+        pool = json.load(f)
+
+    workers = pool.get("workers", [])
+    if not workers:
+        print("ERROR: Pool has no workers.")
+        return 1
+
+    pool_id = pool.get("pool_id", "unknown")
+    print(f"[pool-logs] Streaming logs from {len(workers)} workers (pool: {pool_id})")
+    print(f"[pool-logs] Press Ctrl+C to stop\n", flush=True)
+
+    # Queue for collecting output from all workers
+    output_queue = Queue()
+    stop_event = threading.Event()
+
+    def stream_worker_logs(worker_name: str, ip: str):
+        """Stream logs from a single worker."""
+        ssh_cmd = [
+            "ssh",
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "LogLevel=ERROR",
+            f"azureuser@{ip}",
+            "docker logs -f winarena"
+        ]
+        try:
+            proc = subprocess.Popen(
+                ssh_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+            for line in iter(proc.stdout.readline, ''):
+                if stop_event.is_set():
+                    break
+                output_queue.put((worker_name, line.rstrip()))
+            proc.terminate()
+        except Exception as e:
+            output_queue.put((worker_name, f"ERROR: {e}"))
+
+    # Start threads for each worker
+    threads = []
+    for worker in workers:
+        name = worker.get("name", "unknown")
+        ip = worker.get("ip")
+        if not ip:
+            print(f"[{name}] WARNING: No IP address", flush=True)
+            continue
+        t = threading.Thread(target=stream_worker_logs, args=(name, ip), daemon=True)
+        t.start()
+        threads.append(t)
+
+    # Print output with prefixes
+    try:
+        while True:
+            try:
+                worker_name, line = output_queue.get(timeout=0.1)
+                print(f"[{worker_name}] {line}", flush=True)
+            except Empty:
+                # Check if any threads are still alive
+                if not any(t.is_alive() for t in threads):
+                    print("[pool-logs] All workers disconnected", flush=True)
+                    break
+    except KeyboardInterrupt:
+        print("\n[pool-logs] Stopping...", flush=True)
+        stop_event.set()
+        for t in threads:
+            t.join(timeout=1)
+
+    return 0
+
+
+def cmd_pool_exec(args):
+    """Execute a command on all pool workers.
+
+    Runs the command on the VM host or inside the Docker container.
+    """
+    init_logging()
+
+    # Load pool registry
+    registry_path = Path("benchmark_results/vm_pool_registry.json")
+    if not registry_path.exists():
+        log("POOL-EXEC", "ERROR: No pool found. Run pool-create first.")
+        return 1
+
+    with open(registry_path) as f:
+        pool = json.load(f)
+
+    workers = pool.get("workers", [])
+    if not workers:
+        log("POOL-EXEC", "ERROR: Pool has no workers.")
+        return 1
+
+    cmd = getattr(args, "cmd", None)
+    docker = getattr(args, "docker", False)
+    worker_filter = getattr(args, "worker", None)
+
+    if not cmd:
+        log("POOL-EXEC", "ERROR: --cmd required")
+        return 1
+
+    # Filter workers if specified
+    if worker_filter:
+        workers = [w for w in workers if w.get("name") == worker_filter]
+        if not workers:
+            log("POOL-EXEC", f"ERROR: Worker '{worker_filter}' not found")
+            return 1
+
+    # Run command on each worker
+    for worker in workers:
+        name = worker.get("name", "unknown")
+        ip = worker.get("ip")
+        if not ip:
+            log("POOL-EXEC", f"[{name}] No IP address, skipping")
+            continue
+
+        if docker:
+            full_cmd = f"docker exec winarena {cmd}"
+        else:
+            full_cmd = cmd
+
+        log("POOL-EXEC", f"[{name}] Running: {full_cmd[:60]}...")
+
+        try:
+            result = subprocess.run(
+                ["ssh", *SSH_OPTS, f"azureuser@{ip}", full_cmd],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            output = result.stdout.strip() or result.stderr.strip()
+            for line in output.split("\n")[:20]:  # Limit output lines
+                log("POOL-EXEC", f"[{name}] {line}")
+            if len(output.split("\n")) > 20:
+                log("POOL-EXEC", f"[{name}] ... (truncated)")
+        except subprocess.TimeoutExpired:
+            log("POOL-EXEC", f"[{name}] TIMEOUT")
+        except Exception as e:
+            log("POOL-EXEC", f"[{name}] ERROR: {e}")
+
     return 0
 
 
@@ -7180,6 +7531,39 @@ Examples:
         help="Skip confirmation"
     )
     p_pool_cleanup.set_defaults(func=cmd_pool_cleanup)
+
+    # pool-logs
+    p_pool_logs = subparsers.add_parser(
+        "pool-logs", help="Stream logs from all pool workers (interleaved with prefixes)"
+    )
+    p_pool_logs.set_defaults(func=cmd_pool_logs)
+
+    # pool-vnc
+    p_pool_vnc = subparsers.add_parser(
+        "pool-vnc", help="Open VNC to pool workers (view Windows desktop)"
+    )
+    p_pool_vnc.add_argument(
+        "--worker", help="Worker name to connect to (e.g., waa-pool-00)"
+    )
+    p_pool_vnc.add_argument(
+        "--all", action="store_true", help="Set up tunnels to all workers"
+    )
+    p_pool_vnc.set_defaults(func=cmd_pool_vnc)
+
+    # pool-exec
+    p_pool_exec = subparsers.add_parser(
+        "pool-exec", help="Execute command on pool workers"
+    )
+    p_pool_exec.add_argument(
+        "--cmd", required=True, help="Command to run"
+    )
+    p_pool_exec.add_argument(
+        "--docker", action="store_true", help="Run inside Docker container"
+    )
+    p_pool_exec.add_argument(
+        "--worker", help="Run on specific worker only"
+    )
+    p_pool_exec.set_defaults(func=cmd_pool_exec)
 
     # status
     p_status = subparsers.add_parser("status", help="Show VM status")
