@@ -1,6 +1,6 @@
 # OpenAdapt-ML
 
-[![Build Status](https://github.com/OpenAdaptAI/openadapt-ml/actions/workflows/publish.yml/badge.svg)](https://github.com/OpenAdaptAI/openadapt-ml/actions/workflows/publish.yml)
+[![Build Status](https://github.com/OpenAdaptAI/openadapt-ml/actions/workflows/release.yml/badge.svg)](https://github.com/OpenAdaptAI/openadapt-ml/actions/workflows/release.yml)
 [![PyPI version](https://img.shields.io/pypi/v/openadapt-ml.svg)](https://pypi.org/project/openadapt-ml/)
 [![Downloads](https://img.shields.io/pypi/dm/openadapt-ml.svg)](https://pypi.org/project/openadapt-ml/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -27,6 +27,38 @@ It provides:
 - A simple **runtime policy** API that predicts the next GUI action.
 
 The design is described in detail in [`docs/design.md`](docs/design.md).
+
+---
+
+## Parallel WAA Benchmark Evaluation (New in v0.3.0)
+
+Run Windows Agent Arena benchmarks across multiple Azure VMs in parallel for faster evaluation:
+
+```bash
+# Create a pool of 5 workers
+uv run python -m openadapt_ml.benchmarks.cli pool-create --workers 5
+
+# Wait for all workers to be ready
+uv run python -m openadapt_ml.benchmarks.cli pool-wait
+
+# Run 154 tasks distributed across workers (~5x faster)
+uv run python -m openadapt_ml.benchmarks.cli pool-run --tasks 154
+```
+
+**Key features:**
+- **Parallel execution**: Distribute 154 WAA tasks across N workers
+- **Automatic task distribution**: Uses WAA's native `--worker_id`/`--num_workers` for round-robin assignment
+- **VNC access**: View each Windows VM via SSH tunnels (`localhost:8006`, `localhost:8007`, etc.)
+- **Cost tracking**: Monitor Azure VM costs in real-time
+
+**Performance:**
+| Workers | Estimated Time (154 tasks) |
+|---------|---------------------------|
+| 1       | ~50-80 hours              |
+| 5       | ~10-16 hours              |
+| 10      | ~5-8 hours                |
+
+See [WAA Benchmark Workflow](#waa-benchmark-workflow) for complete setup instructions.
 
 ---
 
@@ -971,7 +1003,108 @@ uv run python -m openadapt_ml.benchmarks.cli screenshot --target terminal --no-t
 
 ---
 
-## 14. Limitations & Notes
+## 14. WAA Benchmark Workflow
+
+<a id="waa-benchmark-workflow"></a>
+
+Windows Agent Arena (WAA) is a benchmark of 154 tasks across 11 Windows domains. OpenAdapt-ML provides infrastructure to run WAA evaluations on Azure VMs with parallel execution.
+
+### 14.1 Prerequisites
+
+1. **Azure CLI**: `brew install azure-cli && az login`
+2. **OpenAI API Key**: Set in `.env` file (`OPENAI_API_KEY=sk-...`)
+3. **Azure quota**: Ddsv5 family VMs (8+ vCPUs per worker)
+
+### 14.2 Single VM Workflow
+
+For quick testing or small runs:
+
+```bash
+# Setup VM with WAA
+uv run python -m openadapt_ml.benchmarks.cli vm setup-waa
+
+# Start monitoring dashboard (auto-opens VNC, manages SSH tunnels)
+uv run python -m openadapt_ml.benchmarks.cli vm monitor
+
+# Run benchmark
+uv run python -m openadapt_ml.benchmarks.cli waa --num-tasks 10
+
+# Deallocate when done (stops billing)
+uv run python -m openadapt_ml.benchmarks.cli vm deallocate -y
+```
+
+### 14.3 Parallel Pool Workflow (Recommended)
+
+For full 154-task evaluations, use multiple VMs:
+
+```bash
+# 1. Create pool (provisions N Azure VMs with Docker + WAA)
+uv run python -m openadapt_ml.benchmarks.cli pool-create --workers 5
+
+# 2. Wait for all workers to be ready (Windows boot + WAA server startup)
+uv run python -m openadapt_ml.benchmarks.cli pool-wait
+
+# 3. Run benchmark across all workers
+#    Tasks are distributed using WAA's native --worker_id/--num_workers
+uv run python -m openadapt_ml.benchmarks.cli pool-run --tasks 154
+
+# 4. Monitor progress
+uv run python -m openadapt_ml.benchmarks.cli pool-status
+uv run python -m openadapt_ml.benchmarks.cli pool-logs
+
+# 5. Cleanup (delete all VMs - IMPORTANT to stop billing!)
+uv run python -m openadapt_ml.benchmarks.cli pool-delete -y
+```
+
+### 14.4 VNC Access to Workers
+
+View what each Windows VM is doing:
+
+```bash
+# Set up SSH tunnels (tunnels are created automatically, but you can also do this manually)
+ssh -f -N -L 8006:localhost:8006 azureuser@<worker-0-ip>  # localhost:8006
+ssh -f -N -L 8007:localhost:8006 azureuser@<worker-1-ip>  # localhost:8007
+# etc.
+
+# Open in browser
+open http://localhost:8006  # Worker 0
+open http://localhost:8007  # Worker 1
+```
+
+### 14.5 Architecture
+
+```
+Local Machine
+├── openadapt-ml CLI (pool-create, pool-wait, pool-run)
+│   └── SSH tunnels to each worker
+│
+Azure (N VMs, Standard_D8ds_v5)
+├── waa-pool-00
+│   └── Docker
+│       └── windowsarena/winarena:latest
+│           └── QEMU (Windows 11)
+│               ├── WAA Flask server (port 5000)
+│               └── Navi agent (GPT-4o-mini)
+├── waa-pool-01
+│   └── ...
+└── waa-pool-N
+    └── ...
+```
+
+### 14.6 Cost Estimates
+
+| VM Size | vCPUs | RAM | Cost/hr | 5 VMs for 10hrs |
+|---------|-------|-----|---------|-----------------|
+| Standard_D8ds_v5 | 8 | 32GB | ~$0.38 | ~$19 |
+
+**Tips:**
+- Always run `pool-delete -y` when done
+- Use `vm deallocate` (not delete) to pause billing but keep disk
+- Set `--auto-shutdown-hours 2` on `vm monitor` for safety
+
+---
+
+## 15. Limitations & Notes
 
 - **Apple Silicon / bitsandbytes**:
   - Example configs are sized for CPU / Apple Silicon development runs; see
@@ -995,7 +1128,7 @@ For deeper architectural details, see [`docs/design.md`](docs/design.md).
 
 ---
 
-## 15. Roadmap
+## 16. Roadmap
 
 For the up-to-date, prioritized roadmap (including concrete implementation
 targets and agent-executable acceptance criteria), see
