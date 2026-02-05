@@ -1,6 +1,120 @@
 # CHANGELOG
 
 
+## v0.3.0 (2026-02-05)
+
+### Bug Fixes
+
+- **cli**: Improve pool-create reliability and error handling
+  ([`f23bd57`](https://github.com/OpenAdaptAI/openadapt-ml/commit/f23bd571a76c361d9e46d99820728ffdedb5cef5))
+
+- Properly clean up test VM and associated resources during quota check - Use sudo for docker pull
+  (usermod not effective in same session) - Add pool-cleanup command for orphaned resources - Show
+  full error messages in pool creation failures
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+
+- **pool**: Use WAA native task distribution with --worker_id/--num_workers
+  ([`ef0d8c7`](https://github.com/OpenAdaptAI/openadapt-ml/commit/ef0d8c7ecf60b1644dbc5a40ed0a05b1b4c2f597))
+
+- Fixed task distribution: WAA ignores --start_idx/--num_tasks, use native --worker_id and
+  --num_workers parameters instead - Worker 0 gets tasks 0, N, 2N... Worker 1 gets tasks 1, N+1,
+  2N+1... - Use vanilla windowsarena/winarena image with correct IP (20.20.20.21) - Add container
+  reuse check (skip restart if already running) - Pass API key via env var instead of config file -
+  Fix QMP port exposure (7200) for QEMU control - Store Windows disk on /mnt for 300GB temp storage
+  (D8ds_v5)
+
+Tested: 2-worker pool running 4 tasks in parallel successfully
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+
+- **waa**: Use D4ds_v4 VM size for quota compatibility
+  ([`2a51a97`](https://github.com/OpenAdaptAI/openadapt-ml/commit/2a51a976f10db135ed79971162f5605de944dd6e))
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+
+- **waa**: Use D8ds_v5 VM size for Azure ML workers
+  ([`71a0fdd`](https://github.com/OpenAdaptAI/openadapt-ml/commit/71a0fddfa4216a49b3a37c1ff1cc2d98d1f605a1))
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+
+### Documentation
+
+- Add Azure ML log streaming and cost tracking guides
+  ([`59c3a3e`](https://github.com/OpenAdaptAI/openadapt-ml/commit/59c3a3ef852d747599de53fe74f660aea6d5b033))
+
+Document the new CLI commands for: - Live log streaming from Azure ML jobs - Cost tracking for
+  compute instances - Teardown procedures
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+
+### Features
+
+- **cli**: Add Azure ML log streaming, cost tracking, and teardown
+  ([`59e3cf7`](https://github.com/OpenAdaptAI/openadapt-ml/commit/59e3cf7fbdb53f07866709efd60b05a1aa511ed5))
+
+Add comprehensive Azure ML management commands: - azure-ml-stream: Stream logs from running jobs
+  using Python SDK with account key auth (works around DefaultAzureCredential permission issues) -
+  azure-ml-cost: Track compute instance uptime and estimated costs - azure-ml-teardown: Cancel jobs
+  and delete compute instances
+
+Also improves: - azure-ml-quota: Shows both ML Dedicated quota (what Azure ML actually uses) and
+  regular VM quota - Better error handling and logging throughout
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+
+- **cli**: Add Azure ML status, VNC, and monitor commands
+  ([`7985cff`](https://github.com/OpenAdaptAI/openadapt-ml/commit/7985cff95cc50d0313b3f3cb8ff5a1a1de039a71))
+
+New commands for end-to-end Azure ML automation: - azure-ml-status: Show jobs and compute instances
+  - azure-ml-vnc: Set up VNC tunnel to compute instance - azure-ml-monitor: Monitor jobs with auto
+  VNC setup
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+
+- **cli**: Add azure-ml-quota command for quota management
+  ([`eecb3a4`](https://github.com/OpenAdaptAI/openadapt-ml/commit/eecb3a461c2b5f6882755dab52f2cfb0c9a9616a))
+
+Semi-automated quota increase workflow: - Checks current quota for WAA-compatible VM families -
+  Shows which families have sufficient quota - Opens Azure Portal quota page with instructions -
+  Guides user through the request process
+
+Usage: uv run python -m openadapt_ml.benchmarks.cli azure-ml-quota
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+
+- **cli**: Add multi-VM pool commands for parallel WAA evaluation
+  ([`005664a`](https://github.com/OpenAdaptAI/openadapt-ml/commit/005664ab0ec6c425ac9ebe1af19b23e552b9bf90))
+
+Add pool-create, pool-wait, and pool-run commands for running WAA benchmarks across multiple VMs in
+  parallel:
+
+- pool-create --workers N: Create N VMs with Docker and WAA image - Parallel VM creation using
+  ThreadPoolExecutor - Auto-selects available region and VM size - Configures Docker with /mnt
+  storage - Registers pool for tracking
+
+- pool-wait: Wait for WAA to be ready on all workers - Starts WAA containers on each worker - Polls
+  /probe endpoint until ready - Configurable timeout
+
+- pool-run --tasks N: Distribute tasks across pool - Round-robin task distribution - Parallel
+  execution on all workers - Progress tracking in registry
+
+This enables ~5x faster benchmark completion with 5 workers, or full 154-task evaluation in ~10min
+  with 10+ workers.
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+
+### Refactoring
+
+- **waa**: Update submodule with SDK v2 migration
+  ([`5080ad6`](https://github.com/OpenAdaptAI/openadapt-ml/commit/5080ad697e88ff297dfbb14f2c0756f53ebfd496))
+
+Updates WindowsAgentArena submodule to include Azure ML SDK v2 migration that enables job submission
+  from macOS ARM64.
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+
+
 ## v0.2.2 (2026-01-29)
 
 ### Bug Fixes
