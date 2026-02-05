@@ -80,6 +80,10 @@ SSH_OPTS = [
     "LogLevel=ERROR",
     "-o",
     "ConnectTimeout=10",
+    "-o",
+    "ServerAliveInterval=60",  # Send keepalive every 60s to prevent timeout
+    "-o",
+    "ServerAliveCountMax=10",  # Allow 10 missed keepalives (~10 min) before disconnect
 ]
 
 
@@ -329,6 +333,101 @@ def wait_for_ssh(ip: str, timeout: int = 120) -> bool:
     return False
 
 
+def set_vm_auto_shutdown(
+    vm_name: str,
+    resource_group: str = RESOURCE_GROUP,
+    shutdown_hours: int = 4,
+) -> bool:
+    """Set Azure auto-shutdown policy on a VM.
+
+    This is a safety net to prevent orphaned VMs from running indefinitely.
+    The VM will be automatically deallocated after the specified hours.
+
+    Args:
+        vm_name: Name of the VM
+        resource_group: Azure resource group
+        shutdown_hours: Hours from now when VM should auto-shutdown (default 4)
+
+    Returns:
+        True if auto-shutdown was set successfully
+    """
+    # Calculate shutdown time (hours from now)
+    from datetime import timedelta
+
+    shutdown_time = datetime.utcnow() + timedelta(hours=shutdown_hours)
+    # Format: HH:MM in UTC
+    shutdown_time_str = shutdown_time.strftime("%H:%M")
+
+    result = subprocess.run(
+        [
+            "az",
+            "vm",
+            "auto-shutdown",
+            "-g",
+            resource_group,
+            "-n",
+            vm_name,
+            "--time",
+            shutdown_time_str,
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    return result.returncode == 0
+
+
+def delete_test_vm_resources(test_name: str, resource_group: str = RESOURCE_GROUP):
+    """Delete a test VM and its associated resources.
+
+    Used for cleanup after quota checking or failed operations.
+    """
+    # Delete VM
+    subprocess.run(
+        [
+            "az",
+            "vm",
+            "delete",
+            "-g",
+            resource_group,
+            "-n",
+            test_name,
+            "--yes",
+            "--force-deletion",
+            "true",
+        ],
+        capture_output=True,
+    )
+    # Delete NIC
+    subprocess.run(
+        [
+            "az",
+            "network",
+            "nic",
+            "delete",
+            "-g",
+            resource_group,
+            "-n",
+            f"{test_name}VMNic",
+        ],
+        capture_output=True,
+    )
+    # Delete public IP
+    subprocess.run(
+        [
+            "az",
+            "network",
+            "public-ip",
+            "delete",
+            "-g",
+            resource_group,
+            "-n",
+            f"{test_name}PublicIP",
+        ],
+        capture_output=True,
+    )
+
+
 # =============================================================================
 # Commands
 # =============================================================================
@@ -419,6 +518,15 @@ def cmd_create(args):
         "CREATE",
         f"Successfully created {successful_size} (${successful_cost:.2f}/hr) in {region}",
     )
+
+    # Set auto-shutdown as safety net (prevents orphaned VMs)
+    auto_shutdown_hours = getattr(args, "auto_shutdown_hours", 4)
+    if auto_shutdown_hours > 0:
+        log("CREATE", f"Setting auto-shutdown in {auto_shutdown_hours} hours...")
+        if set_vm_auto_shutdown(VM_NAME, RESOURCE_GROUP, auto_shutdown_hours):
+            log("CREATE", "Auto-shutdown configured")
+        else:
+            log("CREATE", "Warning: Failed to set auto-shutdown (VM will stay running)")
 
     # Wait for SSH
     log("CREATE", "Waiting for SSH...")
@@ -789,88 +897,58 @@ def cmd_pool_create(args):
     working_size = None
     working_region = None
     working_cost = None
+    test_vm_to_cleanup = None  # Track test VM for cleanup
 
     log("POOL", "Finding available region and VM size...")
-    for vm_size, cost in sizes_to_try:
-        for region in VM_REGIONS:
-            # Quick check if this size/region combo works
-            test_name = f"waa-pool-test-{int(time.time())}"
-            result = subprocess.run(
-                [
-                    "az",
-                    "vm",
-                    "create",
-                    "--resource-group",
-                    RESOURCE_GROUP,
-                    "--name",
-                    test_name,
-                    "--location",
-                    region,
-                    "--image",
-                    "Ubuntu2204",
-                    "--size",
-                    vm_size,
-                    "--admin-username",
-                    "azureuser",
-                    "--generate-ssh-keys",
-                    "--public-ip-sku",
-                    "Standard",
-                    "--no-wait",  # Don't wait for completion
-                ],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                working_size = vm_size
-                working_region = region
-                working_cost = cost
-                # Delete the test VM and wait for completion
-                log("POOL", "  Found working combo, cleaning up test VM...")
-                subprocess.run(
+    try:
+        for vm_size, cost in sizes_to_try:
+            for region in VM_REGIONS:
+                # Quick check if this size/region combo works
+                test_name = f"waa-pool-test-{int(time.time())}"
+                test_vm_to_cleanup = test_name  # Track for cleanup
+                result = subprocess.run(
                     [
                         "az",
                         "vm",
-                        "delete",
-                        "-g",
+                        "create",
+                        "--resource-group",
                         RESOURCE_GROUP,
-                        "-n",
+                        "--name",
                         test_name,
-                        "--yes",
-                        "--force-deletion",
-                        "true",
+                        "--location",
+                        region,
+                        "--image",
+                        "Ubuntu2204",
+                        "--size",
+                        vm_size,
+                        "--admin-username",
+                        "azureuser",
+                        "--generate-ssh-keys",
+                        "--public-ip-sku",
+                        "Standard",
+                        "--no-wait",  # Don't wait for completion
                     ],
                     capture_output=True,
+                    text=True,
                 )
-                # Also clean up associated resources
-                subprocess.run(
-                    [
-                        "az",
-                        "network",
-                        "nic",
-                        "delete",
-                        "-g",
-                        RESOURCE_GROUP,
-                        "-n",
-                        f"{test_name}VMNic",
-                    ],
-                    capture_output=True,
-                )
-                subprocess.run(
-                    [
-                        "az",
-                        "network",
-                        "public-ip",
-                        "delete",
-                        "-g",
-                        RESOURCE_GROUP,
-                        "-n",
-                        f"{test_name}PublicIP",
-                    ],
-                    capture_output=True,
-                )
+                if result.returncode == 0:
+                    working_size = vm_size
+                    working_region = region
+                    working_cost = cost
+                    # Delete the test VM and wait for completion
+                    log("POOL", "  Found working combo, cleaning up test VM...")
+                    delete_test_vm_resources(test_name, RESOURCE_GROUP)
+                    test_vm_to_cleanup = None  # Cleanup done
+                    break
+                else:
+                    test_vm_to_cleanup = None  # Creation failed, nothing to cleanup
+            if working_size:
                 break
-        if working_size:
-            break
+    finally:
+        # Ensure test VM is cleaned up even if an exception occurred
+        if test_vm_to_cleanup:
+            log("POOL", f"Cleaning up test VM {test_vm_to_cleanup}...")
+            delete_test_vm_resources(test_vm_to_cleanup, RESOURCE_GROUP)
 
     if not working_size:
         log("POOL", "ERROR: No available VM size/region found")
@@ -881,6 +959,11 @@ def cmd_pool_create(args):
         return 1
 
     log("POOL", f"Using {working_size} (${working_cost:.2f}/hr) in {working_region}")
+
+    # Get auto-shutdown hours (default 4 hours as safety net)
+    auto_shutdown_hours = getattr(args, "auto_shutdown_hours", 4)
+    if auto_shutdown_hours > 0:
+        log("POOL", f"VMs will auto-shutdown in {auto_shutdown_hours} hours")
 
     def create_worker(worker_idx: int) -> tuple[str, str | None, str | None]:
         """Create a single worker VM. Returns (name, ip, error)."""
@@ -967,6 +1050,8 @@ def cmd_pool_create(args):
         try:
             vm_info = json.loads(result.stdout)
             ip = vm_info.get("publicIpAddress", "")
+            # Set auto-shutdown as safety net (prevents orphaned VMs)
+            set_vm_auto_shutdown(name, RESOURCE_GROUP, auto_shutdown_hours)
             return (name, ip, None)
         except json.JSONDecodeError:
             return (name, None, "Failed to parse VM creation output")
@@ -8138,6 +8223,60 @@ def cmd_azure_ml_teardown(args):
     return 0
 
 
+def cmd_view_pool(args):
+    """Generate HTML viewer for WAA pool benchmark results.
+
+    Parses log files from pool_run_* directories and generates an interactive
+    HTML viewer with summary stats, per-worker breakdown, and task list.
+    """
+    import webbrowser
+
+    from openadapt_ml.benchmarks.pool_viewer import generate_pool_results_viewer
+
+    results_dir = Path(args.results_dir) if args.results_dir else Path("benchmark_results")
+
+    # Find pool run directory
+    if args.run_name:
+        pool_dir = results_dir / args.run_name
+        if not pool_dir.exists():
+            # Try with pool_run_ prefix
+            pool_dir = results_dir / f"pool_run_{args.run_name}"
+    else:
+        # Find most recent pool_run_* directory
+        pool_dirs = sorted(results_dir.glob("pool_run_*"), reverse=True)
+        if not pool_dirs:
+            print("No pool_run_* directories found in benchmark_results/")
+            print("Run 'pool-run' to generate benchmark results")
+            return 1
+        pool_dir = pool_dirs[0]
+
+    if not pool_dir.exists():
+        print(f"Directory not found: {pool_dir}")
+        return 1
+
+    # Check for log files
+    log_files = list(pool_dir.glob("waa-pool-*.log"))
+    if not log_files:
+        print(f"No waa-pool-*.log files found in {pool_dir}")
+        return 1
+
+    print(f"Generating viewer for: {pool_dir}")
+    print(f"Found {len(log_files)} log file(s)")
+
+    # Generate viewer
+    output_path = pool_dir / "results.html"
+    generate_pool_results_viewer(pool_dir, output_path)
+
+    print(f"Generated: {output_path}")
+
+    # Open in browser
+    if not args.no_open:
+        print("Opening in browser...")
+        webbrowser.open(f"file://{output_path.absolute()}")
+
+    return 0
+
+
 def cmd_tail_output(args):
     """List or tail background task output files."""
     task_dir = Path("/private/tmp/claude-501/-Users-abrichr-oa-src-openadapt-ml/tasks/")
@@ -8312,6 +8451,12 @@ Examples:
         default=1,
         help="Number of worker VMs to create for parallel evaluation (default: 1)",
     )
+    p_create.add_argument(
+        "--auto-shutdown-hours",
+        type=int,
+        default=4,
+        help="Auto-shutdown VM after N hours (0 to disable, default: 4)",
+    )
     p_create.set_defaults(func=cmd_create)
 
     # delete
@@ -8357,6 +8502,12 @@ Examples:
     )
     p_pool_create.add_argument(
         "--standard", action="store_true", help="Use D4 (4 vCPU) VMs to save costs"
+    )
+    p_pool_create.add_argument(
+        "--auto-shutdown-hours",
+        type=int,
+        default=4,
+        help="Auto-shutdown VMs after N hours (0 to disable, default: 4)",
     )
     p_pool_create.set_defaults(func=cmd_pool_create)
 
@@ -9269,6 +9420,42 @@ Examples:
         help="Output as JSON",
     )
     p_resources.set_defaults(func=cmd_resources)
+
+    # view-pool - Generate HTML viewer for pool benchmark results
+    p_view_pool = subparsers.add_parser(
+        "view-pool",
+        help="Generate HTML viewer for WAA pool benchmark results",
+        description="""
+Generate an interactive HTML viewer for WAA pool benchmark results.
+
+Parses log files from pool_run_* directories to extract task results and
+generates a standalone HTML viewer with:
+  - Summary stats (total tasks, success rate, avg time per task)
+  - Per-worker breakdown
+  - Task list with pass/fail status
+  - Domain breakdown (success rate per domain)
+  - Filters for domain and status
+
+Examples:
+  view-pool                     # View most recent pool_run_* results
+  view-pool --run-name pool_run_20260204  # View specific run
+  view-pool --no-open           # Generate HTML without opening browser
+""",
+    )
+    p_view_pool.add_argument(
+        "--run-name",
+        help="Name of pool run directory (e.g., pool_run_20260204)",
+    )
+    p_view_pool.add_argument(
+        "--results-dir",
+        help="Base results directory (default: benchmark_results/)",
+    )
+    p_view_pool.add_argument(
+        "--no-open",
+        action="store_true",
+        help="Don't auto-open browser",
+    )
+    p_view_pool.set_defaults(func=cmd_view_pool)
 
     args = parser.parse_args()
     sys.exit(args.func(args))
