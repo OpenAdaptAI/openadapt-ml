@@ -11,8 +11,10 @@ wheels/
 .venv
 local_context_openadapt_ml_internal.md
 
-# Environment variables
+# Environment variables and secrets
 .env
+config.json
+vendor/WindowsAgentArena/config.json
 
 # Ephemeral synthetic assets (frames, debug sessions, etc.)
 synthetic/
