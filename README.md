@@ -1003,9 +1003,9 @@ uv run python -m openadapt_ml.benchmarks.cli screenshot --target terminal --no-t
 
 ---
 
-## 14. WAA Benchmark Workflow
-
 <a id="waa-benchmark-workflow"></a>
+
+## 14. WAA Benchmark Workflow
 
 Windows Agent Arena (WAA) is a benchmark of 154 tasks across 11 Windows domains. OpenAdapt-ML provides infrastructure to run WAA evaluations on Azure VMs with parallel execution.
 
@@ -1053,7 +1053,7 @@ uv run python -m openadapt_ml.benchmarks.cli pool-status
 uv run python -m openadapt_ml.benchmarks.cli pool-logs
 
 # 5. Cleanup (delete all VMs - IMPORTANT to stop billing!)
-uv run python -m openadapt_ml.benchmarks.cli pool-delete -y
+uv run python -m openadapt_ml.benchmarks.cli pool-cleanup
 ```
 
 ### 14.4 VNC Access to Workers
@@ -1061,6 +1061,9 @@ uv run python -m openadapt_ml.benchmarks.cli pool-delete -y
 View what each Windows VM is doing:
 
 ```bash
+# Get worker IPs
+uv run python -m openadapt_ml.benchmarks.cli pool-status
+
 # Set up SSH tunnels (tunnels are created automatically, but you can also do this manually)
 ssh -f -N -L 8006:localhost:8006 azureuser@<worker-0-ip>  # localhost:8006
 ssh -f -N -L 8007:localhost:8006 azureuser@<worker-1-ip>  # localhost:8007
@@ -1098,9 +1101,10 @@ Azure (N VMs, Standard_D8ds_v5)
 | Standard_D8ds_v5 | 8 | 32GB | ~$0.38 | ~$19 |
 
 **Tips:**
-- Always run `pool-delete -y` when done
+- Always run `pool-cleanup` when done to delete VMs and stop billing
 - Use `vm deallocate` (not delete) to pause billing but keep disk
 - Set `--auto-shutdown-hours 2` on `vm monitor` for safety
+- Prices vary by Azure region
 
 ---
 
