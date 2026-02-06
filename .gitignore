@@ -74,3 +74,10 @@ segmentation_output/
 # Internal documentation (not for public repo)
 docs/internal/
 docs/private/
+
+# Trash folder for session cruft
+_trash/
+
+# Auto-generated files
+RESOURCES.md
+azure_logs/
