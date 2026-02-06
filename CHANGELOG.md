@@ -1,6 +1,81 @@
 # CHANGELOG
 
 
+## v0.4.0 (2026-02-06)
+
+### Code Style
+
+- **cli**: Run ruff formatter
+  ([`84fb35a`](https://github.com/OpenAdaptAI/openadapt-ml/commit/84fb35a73c68bf7b0825cc2af6bbdf06f56e79ad))
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+
+### Features
+
+- **benchmarks**: Add pool viewer and auto-shutdown
+  ([#20](https://github.com/OpenAdaptAI/openadapt-ml/pull/20),
+  [`2aeb81c`](https://github.com/OpenAdaptAI/openadapt-ml/commit/2aeb81c7b732d6adb0daa5839933afca0cb5cf3e))
+
+* feat(benchmarks): add HTML viewer for WAA pool benchmark results
+
+Add pool_viewer.py module and CLI command for generating interactive HTML viewers from WAA parallel
+  benchmark runs.
+
+Features: - Parse waa-pool-*.log files to extract task results - Summary stats (total tasks, success
+  rate, avg time per task) - Per-worker breakdown showing tasks per worker - Task list with
+  pass/fail status and step counts - Domain breakdown with per-domain success rates - Interactive
+  filters for domain and status
+
+Usage: uv run python -m openadapt_ml.benchmarks.cli view-pool uv run python -m
+  openadapt_ml.benchmarks.cli view-pool --run-name pool_run_20260204 uv run python -m
+  openadapt_ml.benchmarks.cli view-pool --no-open
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+
+* docs(claude): document VM auto-shutdown and orphan prevention
+
+Add documentation for the auto-shutdown feature: - Explain auto-shutdown policy (default 4 hours) -
+  Document --auto-shutdown-hours flag for pool-create and create - Document -y flag for pool-cleanup
+  (skip confirmation) - Document test VM cleanup via try/finally
+
+* docs(readme): update CLI commands to use pool-* workflow
+
+Update documentation to reflect the current working CLI: - Replace outdated `vm monitor` with
+  `pool-status/pool-vnc/pool-logs` - Update single VM workflow to use `pool-create --workers 1` -
+  Add analyze_pool_logs.py script for parsing benchmark results
+
+* fix(cli): prevent orphaned test VMs during pool-create
+
+Remove --no-wait flag from test VM creation so the VM fully exists before we attempt to delete it.
+  Previously, the test VM would still be provisioning when delete was called, causing delete to fail
+  silently and leave orphaned VMs consuming quota.
+
+* fix(cli): use waa-auto image in pool-wait, wait for apt lock
+
+Critical fixes for end-to-end pool workflow:
+
+1. Use waa-auto:latest in pool-wait (not windowsarena/winarena) - pool-create builds waa-auto with
+  modern dockurr/windows v5.14 - pool-wait was incorrectly using vanilla windowsarena/winarena
+  (v0.00) - v0.00 doesn't support VERSION=11e auto-download - This caused "ISO file not found"
+  errors
+
+2. Wait for apt lock before Docker install - Fresh Azure VMs run unattended-upgrades - apt-get
+  install failed with "unable to locate package" - Added wait loop for /var/lib/apt/lists/lock
+
+* fix(pool): match working waa command parameters exactly
+
+- Use vanilla windowsarena/winarena:latest with --entrypoint /bin/bash - Add --prepare-image false
+  --start-client false flags (skips ISO download) - Use 172.30.0.2 for probe and emulator_ip
+  (matching working waa command)
+
+The pool-wait command was broken because it used waa-auto:latest without the proper entrypoint and
+  flags. The working 'waa' command (line 5404-5454) uses these exact parameters successfully.
+
+---------
+
+Co-authored-by: Claude Opus 4.5 <noreply@anthropic.com>
+
+
 ## v0.3.1 (2026-02-05)
 
 ### Bug Fixes
