@@ -926,7 +926,9 @@ def cmd_pool_create(args):
                         "--generate-ssh-keys",
                         "--public-ip-sku",
                         "Standard",
-                        "--no-wait",  # Don't wait for completion
+                        # Note: We removed --no-wait here because the test VM must
+                        # exist before we can delete it. With --no-wait, the delete
+                        # would fail silently leaving orphaned VMs.
                     ],
                     capture_output=True,
                     text=True,
