@@ -1096,6 +1096,14 @@ def cmd_pool_create(args):
     log("POOL", "Installing Docker on all VMs...")
     docker_setup = """
 set -e
+
+# Wait for apt lock (unattended upgrades on fresh VMs)
+echo "Waiting for apt lock..."
+while sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1 || sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+    sleep 5
+done
+echo "Apt lock released"
+
 sudo apt-get update -qq
 sudo apt-get install -y -qq docker.io
 sudo systemctl start docker
@@ -1228,8 +1236,8 @@ fi
 docker rm -f winarena 2>/dev/null || true
 sudo mkdir -p /mnt/waa-storage
 sudo chown azureuser:azureuser /mnt/waa-storage
-# Use vanilla windowsarena/winarena image which has proper QMP support (port 7200)
-# Image has ENTRYPOINT ["/bin/bash", "-c"] so we must pass the command as argument
+# Use waa-auto image built by pool-create (modern dockurr/windows + WAA scripts + fixed IPs)
+# waa-auto has ENTRYPOINT ["/usr/bin/tini", "-s", "/run/entry.sh"] which handles auto-download
 docker run -d --name winarena \\
   --device=/dev/kvm \\
   --cap-add NET_ADMIN \\
@@ -1242,8 +1250,7 @@ docker run -d --name winarena \\
   -e RAM_SIZE=8G \\
   -e CPU_CORES=4 \\
   -e DISK_SIZE=64G \\
-  windowsarena/winarena:latest \\
-  './entry.sh --prepare-image false --start-client false'
+  waa-auto:latest
 echo "STARTED"
 """
 
