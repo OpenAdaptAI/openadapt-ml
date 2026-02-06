@@ -1236,8 +1236,8 @@ fi
 docker rm -f winarena 2>/dev/null || true
 sudo mkdir -p /mnt/waa-storage
 sudo chown azureuser:azureuser /mnt/waa-storage
-# Use waa-auto image built by pool-create (modern dockurr/windows + WAA scripts + fixed IPs)
-# waa-auto has ENTRYPOINT ["/usr/bin/tini", "-s", "/run/entry.sh"] which handles auto-download
+# Use vanilla windowsarena/winarena with same parameters as working 'waa' command
+# --prepare-image false skips ISO requirement, --start-client false just boots Windows + Flask server
 docker run -d --name winarena \\
   --device=/dev/kvm \\
   --cap-add NET_ADMIN \\
@@ -1250,7 +1250,9 @@ docker run -d --name winarena \\
   -e RAM_SIZE=8G \\
   -e CPU_CORES=4 \\
   -e DISK_SIZE=64G \\
-  waa-auto:latest
+  --entrypoint /bin/bash \\
+  windowsarena/winarena:latest \\
+  -c './entry.sh --prepare-image false --start-client false'
 echo "STARTED"
 """
 
@@ -1289,9 +1291,9 @@ echo "STARTED"
     while workers_pending and (time.time() - start_time) < timeout_seconds:
         for name, worker in list(workers_pending.items()):
             try:
-                # Vanilla windowsarena/winarena uses 20.20.20.21 for Windows VM
+                # Use 172.30.0.2 - same as working 'waa' command probe (line 5454)
                 config = VMConfig(
-                    name=name, ssh_host=worker.ip, internal_ip="20.20.20.21"
+                    name=name, ssh_host=worker.ip, internal_ip="172.30.0.2"
                 )
                 monitor = VMMonitor(config, timeout=5)
                 ready, response = monitor.check_waa_probe()
@@ -1411,7 +1413,7 @@ def cmd_pool_run(args):
         # Worker 0 gets tasks 0, num_workers, 2*num_workers, ...
         # Worker 1 gets tasks 1, num_workers+1, 2*num_workers+1, ...
         # WAA code is in /client directory, API key passed via env var
-        # Vanilla windowsarena/winarena uses 20.20.20.21 for Windows VM
+        # Use 172.30.0.2 - same IP as working 'waa' command (line 5454)
         run_cmd = f"""
 docker exec -e OPENAI_API_KEY='{api_key}' winarena bash -c 'cd /client && python run.py \\
     --agent {agent} \\
@@ -1419,7 +1421,7 @@ docker exec -e OPENAI_API_KEY='{api_key}' winarena bash -c 'cd /client && python
     --exp_name {exp_name}_{worker.name} \\
     --worker_id {worker_idx} \\
     --num_workers {num_workers} \\
-    --emulator_ip 20.20.20.21 2>&1' | tee /home/azureuser/benchmark.log
+    --emulator_ip 172.30.0.2 2>&1' | tee /home/azureuser/benchmark.log
 """
         result = ssh_run(worker.ip, run_cmd, stream=True, step="RUN")
 
