@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     azure_ml_resource_group: str | None = None
     azure_ml_workspace_name: str | None = None
 
+    # Azure resource group for VM operations (used by benchmarks CLI)
+    azure_resource_group: str = "openadapt-agents"
+
     # Azure VM settings (optional overrides)
     # D2_v3 = 2 vCPUs, 8GB RAM (fits free trial with existing usage)
     # D4_v3 = 4 vCPUs, 16GB RAM (needs 4 free vCPUs)
