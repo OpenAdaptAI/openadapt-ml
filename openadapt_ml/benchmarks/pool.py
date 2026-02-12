@@ -195,9 +195,7 @@ class PoolManager:
 
         # Check for existing pool
         if self.registry.get_pool() is not None:
-            raise RuntimeError(
-                "Pool already exists. Delete it first with: delete-pool"
-            )
+            raise RuntimeError("Pool already exists. Delete it first with: delete-pool")
 
         # Find available size/region
         self._log("POOL", "Finding available region and VM size...")
@@ -207,9 +205,7 @@ class PoolManager:
         self._log("POOL", f"Using {vm_size} (${cost:.2f}/hr) in {region}")
 
         if auto_shutdown_hours > 0:
-            self._log(
-                "POOL", f"VMs will auto-shutdown in {auto_shutdown_hours} hours"
-            )
+            self._log("POOL", f"VMs will auto-shutdown in {auto_shutdown_hours} hours")
 
         # Create VMs in parallel
         self._log("POOL", f"Creating {workers} VMs in parallel...")
@@ -236,9 +232,7 @@ class PoolManager:
                 return (name, None, str(e))
 
         with ThreadPoolExecutor(max_workers=min(workers, 5)) as executor:
-            futures = {
-                executor.submit(create_worker, i): i for i in range(workers)
-            }
+            futures = {executor.submit(create_worker, i): i for i in range(workers)}
             for future in as_completed(futures):
                 name, ip, error = future.result()
                 if error:
@@ -276,25 +270,15 @@ class PoolManager:
             error = result.stderr[:200] if result.stderr else ""
             return (name, result.returncode == 0, error)
 
-        with ThreadPoolExecutor(
-            max_workers=min(len(workers_ready), 5)
-        ) as executor:
-            futures = {
-                executor.submit(setup_docker, w): w[0] for w in workers_ready
-            }
+        with ThreadPoolExecutor(max_workers=min(len(workers_ready), 5)) as executor:
+            futures = {executor.submit(setup_docker, w): w[0] for w in workers_ready}
             workers_docker_ok: list[tuple[str, str]] = []
             for future in as_completed(futures):
                 name, success, error = future.result()
-                status = (
-                    "Docker ready"
-                    if success
-                    else f"Docker FAILED: {error[:100]}"
-                )
+                status = "Docker ready" if success else f"Docker FAILED: {error[:100]}"
                 self._log("POOL", f"  {name}: {status}")
                 if success:
-                    workers_docker_ok.append(
-                        (name, dict(workers_ready)[name])
-                    )
+                    workers_docker_ok.append((name, dict(workers_ready)[name]))
 
         if not workers_docker_ok:
             raise RuntimeError("Docker setup failed on all VMs")
@@ -365,12 +349,9 @@ class PoolManager:
                 output = result.stdout.strip() if result.stdout else ""
                 return (worker.name, result.returncode == 0, output)
 
-            with ThreadPoolExecutor(
-                max_workers=min(len(pool.workers), 5)
-            ) as executor:
+            with ThreadPoolExecutor(max_workers=min(len(pool.workers), 5)) as executor:
                 futures = {
-                    executor.submit(start_container, w): w.name
-                    for w in pool.workers
+                    executor.submit(start_container, w): w.name for w in pool.workers
                 }
                 for future in as_completed(futures):
                     name, success, output = future.result()
@@ -491,6 +472,7 @@ class PoolManager:
         if not api_key:
             try:
                 from openadapt_ml.config import settings
+
                 api_key = settings.openai_api_key
             except Exception:
                 pass
@@ -501,9 +483,7 @@ class PoolManager:
             )
 
         # Get ready workers
-        ready_workers = [
-            w for w in pool.workers if w.waa_ready or w.status == "ready"
-        ]
+        ready_workers = [w for w in pool.workers if w.waa_ready or w.status == "ready"]
         if not ready_workers:
             raise RuntimeError("No workers ready. Run wait() first.")
 
@@ -564,9 +544,7 @@ docker exec -e OPENAI_API_KEY='{api_key}' winarena bash -c 'cd /client && python
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             futures = {}
             for worker_idx, worker in enumerate(ready_workers):
-                future = executor.submit(
-                    run_on_worker, worker, worker_idx, num_workers
-                )
+                future = executor.submit(run_on_worker, worker, worker_idx, num_workers)
                 futures[future] = worker.name
 
             for future in as_completed(futures):
@@ -574,13 +552,9 @@ docker exec -e OPENAI_API_KEY='{api_key}' winarena bash -c 'cd /client && python
                 if error:
                     self._log("POOL-RUN", f"  {name}: FAILED - {error}")
                 else:
-                    self._log(
-                        "POOL-RUN", f"  {name}: completed {completed} tasks"
-                    )
+                    self._log("POOL-RUN", f"  {name}: completed {completed} tasks")
                 results.append((name, completed, failed, error))
-                self.registry.update_pool_progress(
-                    completed=completed, failed=failed
-                )
+                self.registry.update_pool_progress(completed=completed, failed=failed)
 
         elapsed = time.time() - start_time
         total_completed = sum(r[1] for r in results)
@@ -691,28 +665,61 @@ docker exec -e OPENAI_API_KEY='{api_key}' winarena bash -c 'cd /client && python
         # Delete VMs first (releases NICs)
         for vm in vms:
             self._log("POOL-CLEANUP", f"  Deleting VM: {vm}")
-            self.vm_manager._az_run([
-                "vm", "delete", "-g", rg, "-n", vm,
-                "--yes", "--force-deletion", "true",
-            ])
+            self.vm_manager._az_run(
+                [
+                    "vm",
+                    "delete",
+                    "-g",
+                    rg,
+                    "-n",
+                    vm,
+                    "--yes",
+                    "--force-deletion",
+                    "true",
+                ]
+            )
 
         for nic in nics:
             self._log("POOL-CLEANUP", f"  Deleting NIC: {nic}")
-            self.vm_manager._az_run([
-                "network", "nic", "delete", "-g", rg, "-n", nic,
-            ])
+            self.vm_manager._az_run(
+                [
+                    "network",
+                    "nic",
+                    "delete",
+                    "-g",
+                    rg,
+                    "-n",
+                    nic,
+                ]
+            )
 
         for ip in ips:
             self._log("POOL-CLEANUP", f"  Deleting IP: {ip}")
-            self.vm_manager._az_run([
-                "network", "public-ip", "delete", "-g", rg, "-n", ip,
-            ])
+            self.vm_manager._az_run(
+                [
+                    "network",
+                    "public-ip",
+                    "delete",
+                    "-g",
+                    rg,
+                    "-n",
+                    ip,
+                ]
+            )
 
         for disk in disks:
             self._log("POOL-CLEANUP", f"  Deleting disk: {disk}")
-            self.vm_manager._az_run([
-                "disk", "delete", "-g", rg, "-n", disk, "--yes",
-            ])
+            self.vm_manager._az_run(
+                [
+                    "disk",
+                    "delete",
+                    "-g",
+                    rg,
+                    "-n",
+                    disk,
+                    "--yes",
+                ]
+            )
 
         # Delete registry
         self.registry.delete_pool()
@@ -729,16 +736,18 @@ docker exec -e OPENAI_API_KEY='{api_key}' winarena bash -c 'cd /client && python
         """List Azure resources matching 'waa-pool' in the resource group."""
         # Split resource type for compound types like "network nic"
         type_parts = resource_type.split()
-        result = self.vm_manager._az_run([
-            *type_parts, action,
-            "-g", resource_group,
-            "--query", "[?contains(name, 'waa-pool')].name",
-            "-o", "tsv",
-        ])
-        if result.returncode == 0 and result.stdout.strip():
-            return [
-                r.strip()
-                for r in result.stdout.strip().split("\n")
-                if r.strip()
+        result = self.vm_manager._az_run(
+            [
+                *type_parts,
+                action,
+                "-g",
+                resource_group,
+                "--query",
+                "[?contains(name, 'waa-pool')].name",
+                "-o",
+                "tsv",
             ]
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return [r.strip() for r in result.stdout.strip().split("\n") if r.strip()]
         return []

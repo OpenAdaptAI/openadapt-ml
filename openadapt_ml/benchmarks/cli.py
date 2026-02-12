@@ -66,10 +66,13 @@ VM_SIZE_FAST_FALLBACKS = [
 ]
 VM_REGIONS = ["centralus", "eastus", "westus2", "eastus2"]
 VM_NAME = "waa-eval-vm"
+
+
 def _get_resource_group() -> str:
     """Get resource group from config (supports AZURE_RESOURCE_GROUP env var)."""
     try:
         from openadapt_ml.config import settings
+
         return settings.azure_resource_group
     except Exception:
         return "openadapt-agents"
@@ -192,12 +195,14 @@ def log_stream(step: str, process: subprocess.Popen):
 def get_vm_ip() -> Optional[str]:
     """Get VM public IP if it exists."""
     from openadapt_ml.benchmarks.azure_vm import AzureVMManager
+
     return AzureVMManager(resource_group=RESOURCE_GROUP).get_vm_ip(VM_NAME)
 
 
 def get_vm_state() -> Optional[str]:
     """Get VM power state."""
     from openadapt_ml.benchmarks.azure_vm import AzureVMManager
+
     return AzureVMManager(resource_group=RESOURCE_GROUP).get_vm_state(VM_NAME)
 
 
@@ -206,12 +211,14 @@ def ssh_run(
 ) -> subprocess.CompletedProcess:
     """Run command on VM via SSH."""
     from openadapt_ml.benchmarks.azure_vm import ssh_run as _ssh_run
+
     return _ssh_run(ip, cmd, stream=stream, step=step, log_fn=log)
 
 
 def wait_for_ssh(ip: str, timeout: int = 120) -> bool:
     """Wait for SSH to become available."""
     from openadapt_ml.benchmarks.azure_vm import wait_for_ssh as _wait_for_ssh
+
     return _wait_for_ssh(ip, timeout=timeout)
 
 
@@ -222,6 +229,7 @@ def set_vm_auto_shutdown(
 ) -> bool:
     """Set Azure auto-shutdown policy on a VM."""
     from openadapt_ml.benchmarks.azure_vm import AzureVMManager
+
     return AzureVMManager(resource_group=resource_group).set_auto_shutdown(
         vm_name, hours=shutdown_hours
     )
@@ -230,6 +238,7 @@ def set_vm_auto_shutdown(
 def delete_test_vm_resources(test_name: str, resource_group: str = RESOURCE_GROUP):
     """Delete a test VM and its associated resources."""
     from openadapt_ml.benchmarks.azure_vm import AzureVMManager
+
     AzureVMManager(resource_group=resource_group).delete_vm(test_name)
 
 
@@ -7322,7 +7331,9 @@ def cmd_view_pool(args):
 
     from openadapt_ml.benchmarks.pool_viewer import generate_pool_results_viewer
 
-    results_dir = Path(args.results_dir) if args.results_dir else Path("benchmark_results")
+    results_dir = (
+        Path(args.results_dir) if args.results_dir else Path("benchmark_results")
+    )
 
     # Find pool run directory
     if args.run_name:

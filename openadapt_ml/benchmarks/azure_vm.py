@@ -42,12 +42,18 @@ logger = logging.getLogger(__name__)
 
 # SSH options used for all VM connections
 SSH_OPTS = [
-    "-o", "StrictHostKeyChecking=no",
-    "-o", "UserKnownHostsFile=/dev/null",
-    "-o", "LogLevel=ERROR",
-    "-o", "ConnectTimeout=10",
-    "-o", "ServerAliveInterval=60",
-    "-o", "ServerAliveCountMax=10",
+    "-o",
+    "StrictHostKeyChecking=no",
+    "-o",
+    "UserKnownHostsFile=/dev/null",
+    "-o",
+    "LogLevel=ERROR",
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "ServerAliveInterval=60",
+    "-o",
+    "ServerAliveCountMax=10",
 ]
 
 # VM size constants
@@ -74,6 +80,7 @@ def _default_resource_group() -> str:
     """Get default resource group from config."""
     try:
         from openadapt_ml.config import settings
+
         return settings.azure_resource_group
     except Exception:
         return "openadapt-agents"
@@ -83,6 +90,7 @@ def _default_subscription_id() -> str | None:
     """Get default subscription ID from config."""
     try:
         from openadapt_ml.config import settings
+
         return settings.azure_subscription_id
     except Exception:
         return None
@@ -105,11 +113,13 @@ def _get_credential():
     except ImportError:
         return None
 
-    if all([
-        settings.azure_client_id,
-        settings.azure_client_secret,
-        settings.azure_tenant_id,
-    ]):
+    if all(
+        [
+            settings.azure_client_id,
+            settings.azure_client_secret,
+            settings.azure_tenant_id,
+        ]
+    ):
         logger.info("Using service principal authentication for VM operations")
         return ClientSecretCredential(
             tenant_id=settings.azure_tenant_id,
@@ -126,6 +136,7 @@ def _sdk_available() -> bool:
     try:
         import azure.mgmt.compute  # noqa: F401
         import azure.mgmt.network  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -160,20 +171,18 @@ class AzureVMManager:
         """Lazy-load Azure ComputeManagementClient."""
         if self._compute_client is None:
             from azure.mgmt.compute import ComputeManagementClient
+
             cred = self.credential or _get_credential()
-            self._compute_client = ComputeManagementClient(
-                cred, self.subscription_id
-            )
+            self._compute_client = ComputeManagementClient(cred, self.subscription_id)
         return self._compute_client
 
     def _get_network_client(self):
         """Lazy-load Azure NetworkManagementClient."""
         if self._network_client is None:
             from azure.mgmt.network import NetworkManagementClient
+
             cred = self.credential or _get_credential()
-            self._network_client = NetworkManagementClient(
-                cred, self.subscription_id
-            )
+            self._network_client = NetworkManagementClient(cred, self.subscription_id)
         return self._network_client
 
     def _az_run(
@@ -281,12 +290,18 @@ class AzureVMManager:
         shutdown_time = datetime.utcnow() + timedelta(hours=hours)
         shutdown_time_str = shutdown_time.strftime("%H:%M")
 
-        result = self._az_run([
-            "vm", "auto-shutdown",
-            "-g", self.resource_group,
-            "-n", name,
-            "--time", shutdown_time_str,
-        ])
+        result = self._az_run(
+            [
+                "vm",
+                "auto-shutdown",
+                "-g",
+                self.resource_group,
+                "-n",
+                name,
+                "--time",
+                shutdown_time_str,
+            ]
+        )
         return result.returncode == 0
 
     def find_available_size_and_region(
@@ -350,13 +365,11 @@ class AzureVMManager:
                 self.resource_group, name, expand="instanceView"
             )
             # Walk NIC -> IP config -> public IP
-            for nic_ref in (vm.network_profile.network_interfaces or []):
+            for nic_ref in vm.network_profile.network_interfaces or []:
                 nic_name = nic_ref.id.split("/")[-1]
                 network = self._get_network_client()
-                nic = network.network_interfaces.get(
-                    self.resource_group, nic_name
-                )
-                for ip_config in (nic.ip_configurations or []):
+                nic = network.network_interfaces.get(self.resource_group, nic_name)
+                for ip_config in nic.ip_configurations or []:
                     if ip_config.public_ip_address:
                         pip_name = ip_config.public_ip_address.id.split("/")[-1]
                         pip = network.public_ip_addresses.get(
@@ -372,10 +385,8 @@ class AzureVMManager:
         """Get VM power state via Azure SDK."""
         try:
             compute = self._get_compute_client()
-            vm = compute.virtual_machines.instance_view(
-                self.resource_group, name
-            )
-            for status in (vm.statuses or []):
+            vm = compute.virtual_machines.instance_view(self.resource_group, name)
+            for status in vm.statuses or []:
                 if status.code and status.code.startswith("PowerState/"):
                     return status.display_status
         except Exception as e:
@@ -429,9 +440,7 @@ class AzureVMManager:
             {
                 "location": region,
                 "address_space": {"address_prefixes": ["10.0.0.0/16"]},
-                "subnets": [
-                    {"name": subnet_name, "address_prefix": "10.0.0.0/24"}
-                ],
+                "subnets": [{"name": subnet_name, "address_prefix": "10.0.0.0/24"}],
             },
         )
         vnet = vnet_poller.result()
@@ -514,9 +523,7 @@ class AzureVMManager:
 
         try:
             # Delete VM (blocking)
-            compute.virtual_machines.begin_delete(
-                self.resource_group, name
-            ).result()
+            compute.virtual_machines.begin_delete(self.resource_group, name).result()
         except Exception as e:
             logger.debug(f"SDK VM delete failed for {name}: {e}")
             return False
@@ -540,26 +547,41 @@ class AzureVMManager:
 
     def _cli_get_vm_ip(self, name: str) -> Optional[str]:
         """Get VM public IP via az CLI."""
-        result = self._az_run([
-            "vm", "show", "-d",
-            "-g", self.resource_group,
-            "-n", name,
-            "--query", "publicIps",
-            "-o", "tsv",
-        ])
+        result = self._az_run(
+            [
+                "vm",
+                "show",
+                "-d",
+                "-g",
+                self.resource_group,
+                "-n",
+                name,
+                "--query",
+                "publicIps",
+                "-o",
+                "tsv",
+            ]
+        )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
         return None
 
     def _cli_get_vm_state(self, name: str) -> Optional[str]:
         """Get VM power state via az CLI."""
-        result = self._az_run([
-            "vm", "get-instance-view",
-            "-g", self.resource_group,
-            "-n", name,
-            "--query", "instanceView.statuses[1].displayStatus",
-            "-o", "tsv",
-        ])
+        result = self._az_run(
+            [
+                "vm",
+                "get-instance-view",
+                "-g",
+                self.resource_group,
+                "-n",
+                name,
+                "--query",
+                "instanceView.statuses[1].displayStatus",
+                "-o",
+                "tsv",
+            ]
+        )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
         return None
@@ -573,17 +595,27 @@ class AzureVMManager:
         admin_username: str,
     ) -> dict[str, Any]:
         """Create VM via az CLI."""
-        result = self._az_run([
-            "vm", "create",
-            "--resource-group", self.resource_group,
-            "--name", name,
-            "--location", region,
-            "--image", image,
-            "--size", size,
-            "--admin-username", admin_username,
-            "--generate-ssh-keys",
-            "--public-ip-sku", "Standard",
-        ])
+        result = self._az_run(
+            [
+                "vm",
+                "create",
+                "--resource-group",
+                self.resource_group,
+                "--name",
+                name,
+                "--location",
+                region,
+                "--image",
+                image,
+                "--size",
+                size,
+                "--admin-username",
+                admin_username,
+                "--generate-ssh-keys",
+                "--public-ip-sku",
+                "Standard",
+            ]
+        )
 
         if result.returncode != 0:
             error_msg = result.stderr or "unknown error"
@@ -599,22 +631,41 @@ class AzureVMManager:
 
     def _cli_delete_vm(self, name: str) -> bool:
         """Delete VM and associated resources via az CLI."""
-        result = self._az_run([
-            "vm", "delete",
-            "-g", self.resource_group,
-            "-n", name,
-            "--yes", "--force-deletion", "true",
-        ])
-        self._az_run([
-            "network", "nic", "delete",
-            "-g", self.resource_group,
-            "-n", f"{name}VMNic",
-        ])
-        self._az_run([
-            "network", "public-ip", "delete",
-            "-g", self.resource_group,
-            "-n", f"{name}PublicIP",
-        ])
+        result = self._az_run(
+            [
+                "vm",
+                "delete",
+                "-g",
+                self.resource_group,
+                "-n",
+                name,
+                "--yes",
+                "--force-deletion",
+                "true",
+            ]
+        )
+        self._az_run(
+            [
+                "network",
+                "nic",
+                "delete",
+                "-g",
+                self.resource_group,
+                "-n",
+                f"{name}VMNic",
+            ]
+        )
+        self._az_run(
+            [
+                "network",
+                "public-ip",
+                "delete",
+                "-g",
+                self.resource_group,
+                "-n",
+                f"{name}PublicIP",
+            ]
+        )
         return result.returncode == 0
 
 
@@ -646,6 +697,7 @@ def ssh_run(
     Returns:
         CompletedProcess with return code and output.
     """
+
     def _log(step: str, message: str, end: str = "\n"):
         if log_fn:
             log_fn(step, message, end=end)
@@ -698,16 +750,16 @@ set -o pipefail
             return subprocess.CompletedProcess(cmd, 130, "", "")
 
         result = subprocess.run(
-            ["ssh", *SSH_OPTS, f"azureuser@{ip}",
-             f"cat {remote_log}.exit 2>/dev/null || echo 1"],
+            [
+                "ssh",
+                *SSH_OPTS,
+                f"azureuser@{ip}",
+                f"cat {remote_log}.exit 2>/dev/null || echo 1",
+            ],
             capture_output=True,
             text=True,
         )
-        exit_code = (
-            int(result.stdout.strip())
-            if result.stdout.strip().isdigit()
-            else 1
-        )
+        exit_code = int(result.stdout.strip()) if result.stdout.strip().isdigit() else 1
 
         if exit_code != 0:
             _log(step, f"Command failed (exit {exit_code})")

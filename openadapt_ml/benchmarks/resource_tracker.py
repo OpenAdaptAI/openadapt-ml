@@ -38,15 +38,10 @@ def get_azure_vms() -> list[dict]:
     """Get all VMs in the resource group."""
     try:
         result = subprocess.run(
-            [
-                "az", "vm", "list",
-                "-g", RESOURCE_GROUP,
-                "--show-details",
-                "-o", "json"
-            ],
+            ["az", "vm", "list", "-g", RESOURCE_GROUP, "--show-details", "-o", "json"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
         if result.returncode == 0 and result.stdout.strip():
             return json.loads(result.stdout)
@@ -62,6 +57,7 @@ def get_azure_ml_compute() -> list[dict]:
     # Try to get workspaces from settings, fall back to known defaults
     try:
         from openadapt_ml.config import settings
+
         workspaces = [
             (settings.azure_ml_resource_group, settings.azure_ml_workspace_name),
         ]
@@ -81,14 +77,20 @@ def get_azure_ml_compute() -> list[dict]:
         try:
             result = subprocess.run(
                 [
-                    "az", "ml", "compute", "list",
-                    "-g", resource_group,
-                    "-w", workspace_name,
-                    "-o", "json"
+                    "az",
+                    "ml",
+                    "compute",
+                    "list",
+                    "-g",
+                    resource_group,
+                    "-w",
+                    workspace_name,
+                    "-o",
+                    "json",
                 ],
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
             if result.returncode == 0 and result.stdout.strip():
                 compute_list = json.loads(result.stdout)
@@ -180,23 +182,27 @@ def update_resources_file(status: dict) -> None:
     ]
 
     if status["has_running_resources"]:
-        lines.extend([
-            "## WARNING: Running Resources Detected!",
-            "",
-            f"**Estimated Cost**: ${status['total_running_cost_per_hour']:.2f}/hour",
-            "",
-        ])
+        lines.extend(
+            [
+                "## WARNING: Running Resources Detected!",
+                "",
+                f"**Estimated Cost**: ${status['total_running_cost_per_hour']:.2f}/hour",
+                "",
+            ]
+        )
 
         for warning in status["warnings"]:
             lines.append(f"- {warning}")
         lines.append("")
     else:
-        lines.extend([
-            "## No Running Resources",
-            "",
-            "All Azure resources are deallocated or stopped.",
-            "",
-        ])
+        lines.extend(
+            [
+                "## No Running Resources",
+                "",
+                "All Azure resources are deallocated or stopped.",
+                "",
+            ]
+        )
 
     # VMs section
     if status["vms"]:
@@ -223,24 +229,26 @@ def update_resources_file(status: dict) -> None:
         lines.append("")
 
     # Commands reference
-    lines.extend([
-        "## Quick Commands",
-        "",
-        "```bash",
-        "# Check VM status",
-        "uv run python -m openadapt_ml.benchmarks.cli status",
-        "",
-        "# Deallocate VM (stops billing)",
-        "uv run python -m openadapt_ml.benchmarks.cli deallocate",
-        "",
-        "# Delete VM and all resources",
-        "uv run python -m openadapt_ml.benchmarks.cli delete -y",
-        "",
-        "# Start monitoring dashboard",
-        "uv run python -m openadapt_ml.benchmarks.cli vm monitor",
-        "```",
-        "",
-    ])
+    lines.extend(
+        [
+            "## Quick Commands",
+            "",
+            "```bash",
+            "# Check VM status",
+            "uv run python -m openadapt_ml.benchmarks.cli status",
+            "",
+            "# Deallocate VM (stops billing)",
+            "uv run python -m openadapt_ml.benchmarks.cli deallocate",
+            "",
+            "# Delete VM and all resources",
+            "uv run python -m openadapt_ml.benchmarks.cli delete -y",
+            "",
+            "# Start monitoring dashboard",
+            "uv run python -m openadapt_ml.benchmarks.cli vm monitor",
+            "```",
+            "",
+        ]
+    )
 
     RESOURCES_FILE.write_text("\n".join(lines))
 
@@ -264,16 +272,18 @@ def format_for_hook(status: dict) -> str:
     for warning in status["warnings"]:
         lines.append(f"  {warning}")
 
-    lines.extend([
-        "",
-        f"  Estimated cost: ${status['total_running_cost_per_hour']:.2f}/hour",
-        "",
-        "  To stop billing, run:",
-        "    uv run python -m openadapt_ml.benchmarks.cli deallocate",
-        "",
-        "=" * 60,
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            f"  Estimated cost: ${status['total_running_cost_per_hour']:.2f}/hour",
+            "",
+            "  To stop billing, run:",
+            "    uv run python -m openadapt_ml.benchmarks.cli deallocate",
+            "",
+            "=" * 60,
+            "",
+        ]
+    )
 
     return "\n".join(lines)
 
