@@ -49,15 +49,15 @@ def parse_pool_logs(pool_dir: Path) -> dict[str, Any]:
     }
 
     # Regex patterns
-    timestamp_re = re.compile(r'\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})')
-    domain_re = re.compile(r'\[Domain\]: (\S+)')
-    example_re = re.compile(r'\[Example ID\]: (\S+)')
-    instruction_re = re.compile(r'\[Instruction\]: (.+)')
-    finished_re = re.compile(r'Finished (\S+)/(\S+)')
-    result_re = re.compile(r'Result: ([0-9.]+)')
+    timestamp_re = re.compile(r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
+    domain_re = re.compile(r"\[Domain\]: (\S+)")
+    example_re = re.compile(r"\[Example ID\]: (\S+)")
+    instruction_re = re.compile(r"\[Instruction\]: (.+)")
+    finished_re = re.compile(r"Finished (\S+)/(\S+)")
+    result_re = re.compile(r"Result: ([0-9.]+)")
     model_re = re.compile(r"model='([^']+)'")
-    num_workers_re = re.compile(r'num_workers=(\d+)')
-    step_re = re.compile(r'Step (\d+):')
+    num_workers_re = re.compile(r"num_workers=(\d+)")
+    step_re = re.compile(r"Step (\d+):")
 
     for log_file in log_files:
         worker_id = log_file.stem.replace("waa-pool-", "")
@@ -69,7 +69,7 @@ def parse_pool_logs(pool_dir: Path) -> dict[str, Any]:
         with open(log_file, "r", errors="ignore") as f:
             for line in f:
                 # Strip ANSI codes
-                clean = re.sub(r'\x1b\[[0-9;]*m', '', line)
+                clean = re.sub(r"\x1b\[[0-9;]*m", "", line)
 
                 # Extract timestamp
                 ts_match = timestamp_re.search(clean)
@@ -133,8 +133,12 @@ def parse_pool_logs(pool_dir: Path) -> dict[str, Any]:
 
                     current_task["domain"] = domain
                     current_task["task_id"] = task_id
-                    current_task["result"] = last_result if last_result is not None else 0.0
-                    current_task["success"] = last_result is not None and last_result > 0
+                    current_task["result"] = (
+                        last_result if last_result is not None else 0.0
+                    )
+                    current_task["success"] = (
+                        last_result is not None and last_result > 0
+                    )
                     current_task["timestamp"] = metadata["last_timestamp"]
 
                     # Update worker stats
@@ -225,7 +229,11 @@ def generate_pool_results_viewer(
 
     # Avg time per task
     avg_time_str = "N/A"
-    if num_tasks > 0 and metadata.get("first_timestamp") and metadata.get("last_timestamp"):
+    if (
+        num_tasks > 0
+        and metadata.get("first_timestamp")
+        and metadata.get("last_timestamp")
+    ):
         try:
             fmt = "%Y-%m-%d %H:%M:%S"
             start = datetime.strptime(metadata["first_timestamp"], fmt)
@@ -306,13 +314,13 @@ def _generate_pool_viewer_html(
         status_text = "PASS" if task.get("success") else "FAIL"
         result = task.get("result", 0)
         task_rows += f"""
-            <tr class="task-row" data-domain="{task.get('domain', 'unknown')}" data-status="{status_class}">
-                <td class="task-id">{task.get('task_id', 'N/A')}</td>
-                <td><span class="domain-badge">{task.get('domain', 'unknown')}</span></td>
+            <tr class="task-row" data-domain="{task.get("domain", "unknown")}" data-status="{status_class}">
+                <td class="task-id">{task.get("task_id", "N/A")}</td>
+                <td><span class="domain-badge">{task.get("domain", "unknown")}</span></td>
                 <td><span class="status-badge {status_class}">{status_text}</span></td>
                 <td>{result:.2f}</td>
-                <td>{task.get('steps', 0)}</td>
-                <td>Worker {task.get('worker_id', '?')}</td>
+                <td>{task.get("steps", 0)}</td>
+                <td>Worker {task.get("worker_id", "?")}</td>
             </tr>
         """
 
@@ -576,7 +584,7 @@ def _generate_pool_viewer_html(
                     <div class="stat-label">Failed</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-value {'success' if success_rate >= 50 else 'error'}">{success_rate:.1f}%</div>
+                    <div class="stat-value {"success" if success_rate >= 50 else "error"}">{success_rate:.1f}%</div>
                     <div class="stat-label">Success Rate</div>
                 </div>
                 <div class="stat-card">
