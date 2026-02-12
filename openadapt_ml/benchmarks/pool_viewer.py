@@ -15,7 +15,6 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import re
 from datetime import datetime
 from pathlib import Path
@@ -56,7 +55,6 @@ def parse_pool_logs(pool_dir: Path) -> dict[str, Any]:
     instruction_re = re.compile(r'\[Instruction\]: (.+)')
     finished_re = re.compile(r'Finished (\S+)/(\S+)')
     result_re = re.compile(r'Result: ([0-9.]+)')
-    worker_re = re.compile(r'worker_id=(\d+)')
     model_re = re.compile(r"model='([^']+)'")
     num_workers_re = re.compile(r'num_workers=(\d+)')
     step_re = re.compile(r'Step (\d+):')
