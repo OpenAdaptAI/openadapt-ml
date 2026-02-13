@@ -1,6 +1,71 @@
 # CHANGELOG
 
 
+## v0.4.1 (2026-02-13)
+
+### Bug Fixes
+
+- Remove broken WAA submodule, embed startup script
+  ([#22](https://github.com/OpenAdaptAI/openadapt-ml/pull/22),
+  [`075592b`](https://github.com/OpenAdaptAI/openadapt-ml/commit/075592b5217ea836514ead062f3875e444f0deff))
+
+The vendor/WindowsAgentArena submodule pointed to unpushed local commits (a956c5b) that don't exist
+  upstream, breaking git-based pip installs.
+
+- Remove submodule entirely (not a runtime dependency) - Embed the 9-line
+  compute-instance-startup.sh as a constant in cli.py - Update path references in Azure ML commands
+  to not depend on vendor/
+
+Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
+
+- **ci**: Use ADMIN_TOKEN for release automation on protected branches
+  ([#23](https://github.com/OpenAdaptAI/openadapt-ml/pull/23),
+  [`177c1e4`](https://github.com/OpenAdaptAI/openadapt-ml/commit/177c1e4a95984dfd6743af152acc1041a5ae8618))
+
+GITHUB_TOKEN cannot push version-bump commits to branches with PR protection. Use org-level
+  ADMIN_TOKEN instead, with skip-check to prevent infinite loops on release commits.
+
+Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
+
+### Refactoring
+
+- **benchmarks**: Extract library API from CLI
+  ([#21](https://github.com/OpenAdaptAI/openadapt-ml/pull/21),
+  [`f4be903`](https://github.com/OpenAdaptAI/openadapt-ml/commit/f4be903d74a97267ac68d7efd292dcc85ab36ff6))
+
+* refactor(benchmarks): extract library API from CLI for programmatic usage
+
+Extract core VM management and pool lifecycle logic from cli.py into importable modules
+  (azure_vm.py, pool.py) with clean Python APIs.
+
+- Add AzureVMManager class with Azure SDK primary path + az CLI fallback - Add PoolManager class for
+  pool create/wait/run/cleanup lifecycle - Add configurable resource_group via Settings, env var, or
+  --resource-group flag - Support DefaultAzureCredential for enterprise SSO/service principals - CLI
+  handlers become thin wrappers delegating to library classes - Add agent_factory parameter stub on
+  PoolManager.run() for pluggable agents
+
+All 327 tests pass, CLI surface unchanged.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+* style: fix pre-existing ruff lint errors in pool_viewer and resource_tracker
+
+Remove unused import `json` and unused variable `worker_re` in pool_viewer.py, and unused import
+  `Optional` in resource_tracker.py.
+
+* style: run ruff formatter on benchmarks modules
+
+* fix(azure_vm): add SDK path for set_auto_shutdown via generic resource API
+
+Auto-shutdown schedules are Microsoft.DevTestLab/schedules resources. Use azure-mgmt-resource
+  (already a dependency) to create them via the generic resource client, with az CLI fallback if SDK
+  fails.
+
+---------
+
+Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.4.0 (2026-02-06)
 
 ### Code Style
