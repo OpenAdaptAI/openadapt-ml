@@ -2136,12 +2136,22 @@ def cmd_run(args):
         log("RUN", f"Parallel mode: worker {worker_id}/{num_workers}")
 
     # If specific task requested, create custom test config
+    # test_all.json is a dict {domain: [task_ids...]} — run.py indexes by domain key,
+    # so we must look up which domain contains this task and write that format
     if task:
-        create_custom_test_cmd = f'''
-cat > /client/evaluation_examples_windows/test_custom.json << 'CUSTOMEOF'
-["{task}"]
-CUSTOMEOF
-'''
+        create_custom_test_cmd = f"""cat > /tmp/find_task.py << 'FINDEOF'
+import json, sys
+d = json.load(open("/client/evaluation_examples_windows/test_all.json"))
+task_id = "{task}"
+for domain, tasks in d.items():
+    if task_id in tasks:
+        json.dump({{domain: [task_id]}}, open("/client/evaluation_examples_windows/test_custom.json", "w"))
+        print(f"Task {{task_id}} found in domain {{domain}}")
+        sys.exit(0)
+print(f"ERROR: Task {{task_id}} not found in test_all.json")
+sys.exit(1)
+FINDEOF
+python3 /tmp/find_task.py"""
         run_args.append(
             "--test_all_meta_path evaluation_examples_windows/test_custom.json"
         )
