@@ -1,30 +1,27 @@
-"""Benchmark integration for openadapt-ml.
+"""ML-specific agents for benchmark evaluation.
 
-This module provides:
+This module provides agents that wrap openadapt-ml ML components
+(VLM adapters, policies, baselines) for benchmark evaluation.
 
-1. ML-specific agents for benchmark evaluation (PolicyAgent, APIBenchmarkAgent, etc.)
-2. Azure VM management with clean Python API (AzureVMManager)
-3. Pool management for parallel WAA evaluation (PoolManager)
-
-For benchmark infrastructure (adapters, runners, viewers), use openadapt-evals:
+For evaluation infrastructure (VM management, pool orchestration, CLI,
+adapters, runners, viewers), use openadapt-evals:
     ```python
     from openadapt_evals import (
         WAAMockAdapter,
         WAALiveAdapter,
         evaluate_agent_on_benchmark,
     )
+    # VM/pool management CLI:
+    #   oa-vm pool-create --workers 4
+    #   oa-vm pool-run --tasks 10
     ```
 
-Library usage (programmatic, no CLI):
+ML agent usage:
     ```python
-    from openadapt_ml.benchmarks import PoolManager, AzureVMManager
+    from openadapt_ml.benchmarks import PolicyAgent, APIBenchmarkAgent
 
-    vm = AzureVMManager(resource_group="my-rg")
-    manager = PoolManager(vm_manager=vm)
-    pool = manager.create(workers=4)
-    manager.wait()
-    result = manager.run(tasks=10)
-    manager.cleanup(confirm=False)
+    agent = APIBenchmarkAgent(provider="anthropic")
+    agent = PolicyAgent(policy)
     ```
 """
 
@@ -33,14 +30,9 @@ from openadapt_ml.benchmarks.agent import (
     PolicyAgent,
     UnifiedBaselineAgent,
 )
-from openadapt_ml.benchmarks.azure_vm import AzureVMManager
-from openadapt_ml.benchmarks.pool import PoolManager, PoolRunResult
 
 __all__ = [
     "PolicyAgent",
     "APIBenchmarkAgent",
     "UnifiedBaselineAgent",
-    "AzureVMManager",
-    "PoolManager",
-    "PoolRunResult",
 ]

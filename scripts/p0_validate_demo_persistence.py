@@ -129,7 +129,7 @@ class P0Validator:
         logger.info("Running mock validation (no API calls)")
 
         # Import the agent
-        from openadapt_ml.benchmarks.waa_deploy.api_agent import ApiAgent
+        from openadapt_evals.waa_deploy.api_agent import ApiAgent
 
         # Create agent with demo - use mock provider to avoid API calls
         # We'll manually inspect the prompt generation
@@ -197,7 +197,7 @@ class P0Validator:
             return self.results
 
         # Import the agent
-        from openadapt_ml.benchmarks.waa_deploy.api_agent import ApiAgent
+        from openadapt_evals.waa_deploy.api_agent import ApiAgent
 
         # Create agent with demo
         agent = ApiAgent(

@@ -17,6 +17,6 @@
 cd "$(dirname "$0")/.." || exit 0
 
 # Run the Python resource tracker, suppress errors
-uv run python -m openadapt_ml.benchmarks.resource_tracker 2>/dev/null || true
+uv run python -m openadapt_evals.infrastructure.resource_tracker 2>/dev/null || true
 
 exit 0

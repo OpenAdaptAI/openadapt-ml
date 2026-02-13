@@ -1781,7 +1781,7 @@ def _get_azure_jobs_panel_html() -> str:
                 document.getElementById('azure-jobs-list').innerHTML =
                     '<div class="no-jobs">' +
                     '<div style="font-size: 2rem; margin-bottom: 12px; opacity: 0.5;">&#9729;</div>' +
-                    'No Azure jobs found<code>uv run python -m openadapt_ml.benchmarks.cli run-azure</code>' +
+                    'No Azure jobs found<code>uv run python -m openadapt_evals.benchmarks.vm_cli run-azure</code>' +
                     '</div>';
             }
         }
@@ -1794,7 +1794,7 @@ def _get_azure_jobs_panel_html() -> str:
                 document.getElementById('azure-jobs-list').innerHTML =
                     '<div class="no-jobs">' +
                     '<div style="font-size: 2rem; margin-bottom: 12px; opacity: 0.5;">&#9729;</div>' +
-                    'No Azure jobs found<code>uv run python -m openadapt_ml.benchmarks.cli run-azure</code>' +
+                    'No Azure jobs found<code>uv run python -m openadapt_evals.benchmarks.vm_cli run-azure</code>' +
                     '</div>';
                 return;
             }
@@ -3326,7 +3326,7 @@ def generate_empty_benchmark_viewer(output_path: Path | str) -> Path:
 git clone https://github.com/anthropics/WindowsAgentArena
 
 # Run evaluation
-uv run python -m openadapt_ml.benchmarks.cli run-local \\
+uv run python -m openadapt_evals.benchmarks.vm_cli run-local \\
   --waa-path /path/to/WindowsAgentArena</code>
             <p>Requires Windows environment. See <a href="https://github.com/anthropics/WindowsAgentArena" style="color: var(--accent);">WAA repo</a> for setup.</p>
         </div>
@@ -3337,7 +3337,7 @@ uv run python -m openadapt_ml.benchmarks.cli run-local \\
 python scripts/setup_azure.py
 
 # Run evaluation on Azure VMs
-uv run python -m openadapt_ml.benchmarks.cli run-azure --workers 4</code>
+uv run python -m openadapt_evals.benchmarks.vm_cli run-azure --workers 4</code>
             <p>Runs WAA tasks in parallel on Azure Windows VMs. See docs/azure_waa_setup.md</p>
         </div>
     </div>
@@ -3735,7 +3735,7 @@ def _generate_benchmark_viewer_html(
                 <div class="mock-banner-text">
                     This benchmark run uses simulated mock data for pipeline testing and development.
                     These results do NOT represent actual Windows Agent Arena evaluation performance.
-                    To run real WAA evaluation, use: <code>uv run python -m openadapt_ml.benchmarks.cli run-local</code> or <code>run-azure</code>
+                    To run real WAA evaluation, use: <code>uv run python -m openadapt_evals.benchmarks.vm_cli run-local</code> or <code>run-azure</code>
                 </div>
             </div>
         </div>
@@ -4462,7 +4462,7 @@ def _generate_multi_run_benchmark_viewer_html(
                 <div class="mock-banner-text">
                     This benchmark run uses simulated mock data for pipeline testing and development.
                     These results do NOT represent actual Windows Agent Arena evaluation performance.
-                    To run real WAA evaluation, use: <code>uv run python -m openadapt_ml.benchmarks.cli run-local</code> or <code>run-azure</code>
+                    To run real WAA evaluation, use: <code>uv run python -m openadapt_evals.benchmarks.vm_cli run-local</code> or <code>run-azure</code>
                 </div>
             </div>
         </div>

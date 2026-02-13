@@ -15,7 +15,7 @@ Usage:
 
 Integration with benchmarks runner:
     # Via benchmarks CLI
-    python -m openadapt_ml.benchmarks.cli waa-demo --condition demo --tasks 5
+    python -m openadapt_evals.benchmarks.vm_cli waa-demo --condition demo --tasks 5
 """
 
 from __future__ import annotations
@@ -562,8 +562,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("Note: Real WAA integration requires a running Windows VM")
         print()
         print("To set up WAA:")
-        print("  uv run python -m openadapt_ml.benchmarks.cli vm setup-waa")
-        print("  uv run python -m openadapt_ml.benchmarks.cli vm prepare-windows")
+        print("  uv run python -m openadapt_evals.benchmarks.vm_cli vm setup-waa")
+        print("  uv run python -m openadapt_evals.benchmarks.vm_cli vm prepare-windows")
         print()
         # For now, fall back to mock since we can't connect to real WAA without VM
         print("Falling back to mock adapter for demonstration...")

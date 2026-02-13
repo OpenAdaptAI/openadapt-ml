@@ -631,7 +631,7 @@ class P1Validator:
         Returns:
             EpisodeResult with all metrics.
         """
-        from openadapt_ml.benchmarks.waa_deploy.api_agent import ApiAgent
+        from openadapt_evals.waa_deploy.api_agent import ApiAgent
 
         task_id = task["id"]
         instruction = task["instruction"]
