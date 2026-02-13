@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.4.2 (2026-02-13)
+
+### Bug Fixes
+
+- **cli**: Write correct dict format for --task in run command
+  ([#24](https://github.com/OpenAdaptAI/openadapt-ml/pull/24),
+  [`e2bba55`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e2bba555bf04941a2bf50fa4ca95847868e66369))
+
+WAA's run.py expects test config as {domain: [task_ids...]} dict, but --task wrote a bare JSON array
+  [task_id] causing TypeError when run.py indexes by domain string key.
+
+Now looks up the task's domain from test_all.json inside the container and writes the correct
+  {domain: [task_id]} format.
+
+Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.4.1 (2026-02-13)
 
 ### Bug Fixes
