@@ -3004,14 +3004,29 @@ def cmd_logs(args):
     return 0
 
 
-def upload_startup_script_to_datastore(script_path: str, file_path: str) -> bool:
+# Minimal startup script for Azure ML compute instances.
+# Previously lived at vendor/WindowsAgentArena/scripts/azure_files/compute-instance-startup.sh
+COMPUTE_INSTANCE_STARTUP_SH = """\
+#!/bin/bash
+
+# Minimal startup script - completes quickly to avoid Azure ML timeout
+# The actual work (Docker pull, Windows boot) happens in the job itself
+
+echo "$(date): Compute instance startup script - minimal version"
+
+# Just exit successfully - the job will handle Docker setup
+exit 0
+"""
+
+
+def upload_startup_script_to_datastore(script_content: str, file_path: str) -> bool:
     """Upload startup script to Azure ML workspace code file share.
 
     Azure ML mounts the 'code-*' file share at:
     /mnt/batch/tasks/shared/LS_root/mounts/clusters/<instance>/code/
 
     Args:
-        script_path: Local path to the startup script
+        script_content: Content of the startup script
         file_path: Destination path in file share (e.g., 'Users/openadapt/compute-instance-startup.sh')
 
     Returns:
@@ -3145,28 +3160,35 @@ def upload_startup_script_to_datastore(script_path: str, file_path: str) -> bool
             )
             # Ignore errors - directory may already exist
 
-    # Upload the script to file share
-    log("AZURE-ML", f"Uploading {script_path} to {file_path}...")
-    result = subprocess.run(
-        [
-            "az",
-            "storage",
-            "file",
-            "upload",
-            "--account-name",
-            storage_account,
-            "--account-key",
-            storage_key,
-            "--share-name",
-            code_share,
-            "--source",
-            script_path,
-            "--path",
-            file_path,
-        ],
-        capture_output=True,
-        text=True,
-    )
+    # Write content to a temp file for az storage upload
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as tmp:
+        tmp.write(script_content)
+        tmp_path = tmp.name
+
+    try:
+        log("AZURE-ML", f"Uploading startup script to {file_path}...")
+        result = subprocess.run(
+            [
+                "az",
+                "storage",
+                "file",
+                "upload",
+                "--account-name",
+                storage_account,
+                "--account-key",
+                storage_key,
+                "--share-name",
+                code_share,
+                "--source",
+                tmp_path,
+                "--path",
+                file_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        os.unlink(tmp_path)
 
     if result.returncode != 0:
         log("AZURE-ML", f"ERROR: Failed to upload: {result.stderr}")
@@ -3354,9 +3376,11 @@ def upload_golden_image_to_blob(source_path: str) -> bool:
     if not source_dir.exists():
         log("AZURE-ML", f"ERROR: Source directory not found: {source_dir}")
         log("AZURE-ML", "")
-        log("AZURE-ML", "You need to prepare the golden image first:")
-        log("AZURE-ML", "  cd vendor/WindowsAgentArena")
-        log("AZURE-ML", "  ./scripts/run.sh --prepare-image true")
+        log("AZURE-ML", "You need to prepare the golden image first.")
+        log(
+            "AZURE-ML",
+            "See https://github.com/microsoft/WindowsAgentArena for setup instructions.",
+        )
         return False
 
     # Check for required files (only data.img is truly required, OVMF files come from Docker image)
@@ -4634,74 +4658,22 @@ def cmd_run_azure_ml_auto(args):
     if skip_benchmark:
         log("AUTO", "  Skipping benchmark (--skip-benchmark specified)")
     else:
-        # Ensure startup script is uploaded
-        waa_scripts = (
-            Path(__file__).parent.parent.parent
-            / "vendor"
-            / "WindowsAgentArena"
-            / "scripts"
-        )
-        startup_script_local = (
-            waa_scripts / "azure_files" / "compute-instance-startup.sh"
-        )
+        # Upload embedded startup script
         startup_script_datastore_path = "Users/openadapt/compute-instance-startup.sh"
-
-        if startup_script_local.exists():
-            log("AUTO", "  Ensuring startup script is uploaded...")
-            success = upload_startup_script_to_datastore(
-                str(startup_script_local), startup_script_datastore_path
-            )
-            if not success:
-                log("AUTO", "  WARNING: Failed to upload startup script")
-                # Continue anyway - it might already be there
-
-        # Update config.json
-        config_path = waa_scripts.parent / "config.json"
-        config = {
-            "OPENAI_API_KEY": settings.openai_api_key,
-            "AZURE_SUBSCRIPTION_ID": settings.azure_subscription_id,
-            "AZURE_ML_RESOURCE_GROUP": settings.azure_ml_resource_group,
-            "AZURE_ML_WORKSPACE_NAME": settings.azure_ml_workspace_name,
-        }
-        with open(config_path, "w") as f:
-            json.dump(config, f, indent=4)
-        log("AUTO", f"  Updated {config_path}")
-
-        # Build run_azure.py command
-        exp_name = (
-            getattr(args, "exp_name", None) or f"e{datetime.now().strftime('%m%d%H%M')}"
+        log("AUTO", "  Ensuring startup script is uploaded...")
+        success = upload_startup_script_to_datastore(
+            COMPUTE_INSTANCE_STARTUP_SH, startup_script_datastore_path
         )
-        docker_image = getattr(args, "image", None) or "windowsarena/winarena:latest"
-        model = getattr(args, "model", None) or "gpt-4o-mini"
-        agent = getattr(args, "agent", None) or "navi"
+        if not success:
+            log("AUTO", "  WARNING: Failed to upload startup script")
+            # Continue anyway - it might already be there
 
-        cmd = [
-            "python",
-            str(waa_scripts / "run_azure.py"),
-            "--docker_img_name",
-            docker_image,
-            "--num_workers",
-            str(num_workers),
-            "--exp_name",
-            exp_name,
-            "--model_name",
-            model,
-            "--agent",
-            agent,
-            "--ci_startup_script_path",
-            startup_script_datastore_path,
-        ]
-
-        log("AUTO", f"  Running: {' '.join(cmd)}")
-        log("AUTO", f"  Workers: {num_workers}, Model: {model}")
-        log("AUTO", "")
-
-        # Run the command
-        result = subprocess.run(cmd, cwd=waa_scripts)
-
-        if result.returncode != 0:
-            log("AUTO", "  ERROR: run_azure.py failed")
-            return 1
+        log(
+            "AUTO",
+            "  ERROR: run-azure-ml-auto requires vendor/WindowsAgentArena submodule "
+            "(removed). Use pool-create + pool-run instead.",
+        )
+        return 1
 
     # =========================================================================
     # Complete
@@ -4733,7 +4705,6 @@ def cmd_run_azure_ml(args):
     Uses --setup to upload the required startup script to Azure datastore.
     """
     init_logging()
-    start_time = time.time()
 
     from openadapt_ml.config import settings
 
@@ -4769,17 +4740,7 @@ def cmd_run_azure_ml(args):
         )
         return 1
 
-    # Paths
-    waa_scripts = (
-        Path(__file__).parent.parent.parent / "vendor" / "WindowsAgentArena" / "scripts"
-    )
-    if not waa_scripts.exists():
-        log("AZURE-ML", f"ERROR: WAA scripts not found at {waa_scripts}")
-        return 1
-
-    # Startup script configuration
-    startup_script_local = waa_scripts / "azure_files" / "compute-instance-startup.sh"
-    # Use custom path or default to Users/openadapt/...
+    # Startup script datastore path
     startup_script_datastore_path = (
         getattr(args, "ci_startup_script_path", None)
         or "Users/openadapt/compute-instance-startup.sh"
@@ -4792,14 +4753,8 @@ def cmd_run_azure_ml(args):
             "=== SETUP MODE: Uploading startup script to Azure ML datastore ===",
         )
 
-        if not startup_script_local.exists():
-            log(
-                "AZURE-ML", f"ERROR: Startup script not found at {startup_script_local}"
-            )
-            return 1
-
         success = upload_startup_script_to_datastore(
-            str(startup_script_local), startup_script_datastore_path
+            COMPUTE_INSTANCE_STARTUP_SH, startup_script_datastore_path
         )
 
         if success:
@@ -4861,7 +4816,7 @@ def cmd_run_azure_ml(args):
                 log("AZURE-ML", "To upload golden image:")
                 log(
                     "AZURE-ML",
-                    "  1. Prepare locally: cd vendor/WindowsAgentArena && ./scripts/run.sh --prepare-image true",
+                    "  1. Prepare locally: clone WindowsAgentArena and run ./scripts/run.sh --prepare-image true",
                 )
                 log(
                     "AZURE-ML",
@@ -4882,11 +4837,11 @@ def cmd_run_azure_ml(args):
     if getattr(args, "upload_image", False):
         log("AZURE-ML", "=== UPLOAD IMAGE: Uploading golden image to blob storage ===")
 
-        # Determine source path
-        default_source = (
-            waa_scripts.parent / "src" / "win-arena-container" / "vm" / "storage"
-        )
-        source_path = getattr(args, "image_source", None) or str(default_source)
+        # Determine source path (--image-source required since submodule was removed)
+        source_path = getattr(args, "image_source", None)
+        if not source_path:
+            log("AZURE-ML", "ERROR: --image-source is required (no default path)")
+            return 1
 
         success = upload_golden_image_to_blob(source_path)
         if success:
@@ -4954,59 +4909,20 @@ def cmd_run_azure_ml(args):
         teardown_azure_ml_resources(confirm=confirm, keep_image=keep_image)
         return 0
 
-    # Update config.json with our settings
-    config_path = waa_scripts.parent / "config.json"
-    config = {
-        "OPENAI_API_KEY": settings.openai_api_key,
-        "AZURE_SUBSCRIPTION_ID": settings.azure_subscription_id,
-        "AZURE_ML_RESOURCE_GROUP": settings.azure_ml_resource_group,
-        "AZURE_ML_WORKSPACE_NAME": settings.azure_ml_workspace_name,
-    }
-    with open(config_path, "w") as f:
-        json.dump(config, f, indent=4)
-    log("AZURE-ML", f"Updated {config_path}")
-
-    # Build run_azure.py command
-    num_workers = getattr(args, "workers", None) or 1
-    # Keep exp_name short - compute instance name is "w{worker_id}Exp{exp_name}" and max 24 chars
-    exp_name = (
-        getattr(args, "exp_name", None) or f"e{datetime.now().strftime('%m%d%H%M')}"
+    # Direct benchmark execution via run_azure.py is no longer available
+    # (vendor/WindowsAgentArena submodule was removed). Use pool commands instead.
+    log(
+        "AZURE-ML", "ERROR: Direct Azure ML benchmark execution is no longer available."
     )
-    docker_image = getattr(args, "image", None) or "windowsarena/winarena:latest"
-    model = getattr(args, "model", None) or "gpt-4o-mini"
-    agent = getattr(args, "agent", None) or "navi"
-
-    cmd = [
-        "python",
-        str(waa_scripts / "run_azure.py"),
-        "--docker_img_name",
-        docker_image,
-        "--num_workers",
-        str(num_workers),
-        "--exp_name",
-        exp_name,
-        "--model_name",
-        model,
-        "--agent",
-        agent,
-        "--ci_startup_script_path",
-        startup_script_datastore_path,
-    ]
-
-    log("AZURE-ML", f"Running: {' '.join(cmd)}")
-    log("AZURE-ML", f"Workers: {num_workers}, Model: {model}, Image: {docker_image}")
-    log("AZURE-ML", f"Startup script: {startup_script_datastore_path}")
-
-    # Run the command
-    result = subprocess.run(cmd, cwd=waa_scripts)
-
-    elapsed = time.time() - start_time
-    if result.returncode != 0:
-        log("AZURE-ML", f"ERROR: run_azure.py failed after {elapsed:.1f}s")
-        return 1
-
-    log("AZURE-ML", f"Completed in {elapsed:.1f}s")
-    return 0
+    log("AZURE-ML", "The vendor/WindowsAgentArena submodule has been removed.")
+    log("AZURE-ML", "")
+    log("AZURE-ML", "Use pool-based execution instead:")
+    log(
+        "AZURE-ML",
+        "  uv run python -m openadapt_ml.benchmarks.cli pool-create --workers N",
+    )
+    log("AZURE-ML", "  uv run python -m openadapt_ml.benchmarks.cli pool-run --tasks N")
+    return 1
 
 
 def get_azure_ml_dedicated_quota(subscription_id: str, location: str) -> dict:
@@ -7956,7 +7872,7 @@ Examples:
     )
     p_azure_ml.add_argument(
         "--image-source",
-        help="Custom source path for golden image upload (default: vendor/WindowsAgentArena/src/win-arena-container/vm/storage)",
+        help="Source path for golden image upload (required for --upload-image)",
     )
     p_azure_ml.add_argument(
         "--upload-placeholder",
