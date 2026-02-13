@@ -16,7 +16,7 @@ Expected output:
 
 CLI alternative:
     This test is also available as a CLI command:
-    uv run python -m openadapt_ml.benchmarks.cli test-collection --tasks 5
+    uv run python -m openadapt_evals.benchmarks.vm_cli test-collection --tasks 5
 
 What's tested:
     ✓ ExecutionTraceCollector creates directory structure
