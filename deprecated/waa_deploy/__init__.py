@@ -5,6 +5,6 @@ This module contains files that are deployed into the WAA Docker container:
 - Dockerfile: Custom waa-auto Docker image
 """
 
-from openadapt_ml.benchmarks.waa_deploy.api_agent import ApiAgent
+from openadapt_evals.waa_deploy.api_agent import ApiAgent
 
 __all__ = ["ApiAgent"]

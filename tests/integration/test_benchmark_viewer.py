@@ -18,7 +18,7 @@ def main():
     if not benchmark_dir.exists():
         print(f"Error: Test data not found at {benchmark_dir}")
         print("Please run the data collection test first:")
-        print("  python -m openadapt_ml.benchmarks.cli test-collection --tasks 5")
+        print("  python -m openadapt_evals.benchmarks.vm_cli test-collection --tasks 5")
         return 1
 
     print("=" * 60)

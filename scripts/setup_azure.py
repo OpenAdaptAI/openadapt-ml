@@ -1143,14 +1143,14 @@ Next steps:
      Select: Standard NCSv3 Family → Request increase to 6+ vCPUs
 
   3. Test the setup:
-     python -m openadapt_ml.benchmarks.cli estimate --workers 1
+     python -m openadapt_evals.benchmarks.vm_cli estimate --workers 1
 
   4. Run GPU training (once quota approved):
      python -m openadapt_ml.scripts.train --config configs/qwen3vl_capture.yaml \\
        --capture /path/to/capture --azure
 
   5. Run WAA evaluation:
-     python -m openadapt_ml.benchmarks.cli run-azure --workers 1
+     python -m openadapt_evals.benchmarks.vm_cli run-azure --workers 1
 """)
 
 

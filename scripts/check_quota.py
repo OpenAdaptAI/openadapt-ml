@@ -183,8 +183,8 @@ def main():
     print("2. Wait for approval (usually 24-48 hours)")
     print("3. Verify new quota with check command above")
     print("4. Start parallel benchmarks:")
-    print("   uv run python -m openadapt_ml.benchmarks.cli vm monitor")
-    print("   uv run python -m openadapt_ml.benchmarks.cli waa --api-key $OPENAI_API_KEY --setup-only\n")
+    print("   uv run python -m openadapt_evals.benchmarks.vm_cli vm monitor")
+    print("   uv run python -m openadapt_evals.benchmarks.vm_cli waa --api-key $OPENAI_API_KEY --setup-only\n")
 
     print("📖 For detailed documentation:")
     print("   docs/QUOTA_INCREASE_GUIDE.md\n")

@@ -599,7 +599,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
                             "run",
                             "python",
                             "-m",
-                            "openadapt_ml.benchmarks.cli",
+                            "openadapt_evals.benchmarks.vm_cli",
                             "run-api",
                             "--provider",
                             provider,
@@ -1034,8 +1034,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 # Session tracker provides elapsed_seconds and cost_usd for
                 # persistence across page refreshes
                 try:
-                    from openadapt_ml.benchmarks.azure_ops_tracker import read_status
-                    from openadapt_ml.benchmarks.session_tracker import (
+                    from openadapt_evals.infrastructure.azure_ops_tracker import read_status
+                    from openadapt_evals.infrastructure.session_tracker import (
                         get_session,
                         update_session_vm_state,
                     )
@@ -1509,7 +1509,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
             """
             import subprocess
 
-            from openadapt_ml.benchmarks.session_tracker import get_session
+            from openadapt_evals.infrastructure.session_tracker import get_session
 
             diagnostics = {
                 "vm_online": False,
@@ -3170,11 +3170,11 @@ def cmd_serve(args: argparse.Namespace) -> int:
                     return False
 
             # Status file path
-            from openadapt_ml.benchmarks.azure_ops_tracker import (
+            from openadapt_evals.infrastructure.azure_ops_tracker import (
                 DEFAULT_OUTPUT_FILE,
                 read_status,
             )
-            from openadapt_ml.benchmarks.session_tracker import (
+            from openadapt_evals.infrastructure.session_tracker import (
                 get_session,
                 update_session_vm_state,
                 DEFAULT_SESSION_FILE,
@@ -3494,7 +3494,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 "run",
                 "python",
                 "-m",
-                "openadapt_ml.benchmarks.cli",
+                "openadapt_evals.benchmarks.vm_cli",
                 "vm",
                 "run-waa",
                 "--num-tasks",
