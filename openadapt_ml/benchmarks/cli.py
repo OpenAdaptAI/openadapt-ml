@@ -66,7 +66,19 @@ VM_SIZE_FAST_FALLBACKS = [
 ]
 VM_REGIONS = ["centralus", "eastus", "westus2", "eastus2"]
 VM_NAME = "waa-eval-vm"
-RESOURCE_GROUP = "openadapt-agents"
+
+
+def _get_resource_group() -> str:
+    """Get resource group from config (supports AZURE_RESOURCE_GROUP env var)."""
+    try:
+        from openadapt_ml.config import settings
+
+        return settings.azure_resource_group
+    except Exception:
+        return "openadapt-agents"
+
+
+RESOURCE_GROUP = _get_resource_group()
 # Custom WAA image built from waa_deploy/Dockerfile
 # Uses dockurr/windows:latest as base (with proper ISO download) + WAA components
 DOCKER_IMAGE = "waa-auto:latest"
@@ -182,155 +194,32 @@ def log_stream(step: str, process: subprocess.Popen):
 
 def get_vm_ip() -> Optional[str]:
     """Get VM public IP if it exists."""
-    result = subprocess.run(
-        [
-            "az",
-            "vm",
-            "show",
-            "-d",
-            "-g",
-            RESOURCE_GROUP,
-            "-n",
-            VM_NAME,
-            "--query",
-            "publicIps",
-            "-o",
-            "tsv",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode == 0 and result.stdout.strip():
-        return result.stdout.strip()
-    return None
+    from openadapt_ml.benchmarks.azure_vm import AzureVMManager
+
+    return AzureVMManager(resource_group=RESOURCE_GROUP).get_vm_ip(VM_NAME)
 
 
 def get_vm_state() -> Optional[str]:
     """Get VM power state."""
-    result = subprocess.run(
-        [
-            "az",
-            "vm",
-            "get-instance-view",
-            "-g",
-            RESOURCE_GROUP,
-            "-n",
-            VM_NAME,
-            "--query",
-            "instanceView.statuses[1].displayStatus",
-            "-o",
-            "tsv",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode == 0 and result.stdout.strip():
-        return result.stdout.strip()
-    return None
+    from openadapt_ml.benchmarks.azure_vm import AzureVMManager
+
+    return AzureVMManager(resource_group=RESOURCE_GROUP).get_vm_state(VM_NAME)
 
 
 def ssh_run(
     ip: str, cmd: str, stream: bool = False, step: str = "SSH"
 ) -> subprocess.CompletedProcess:
-    """Run command on VM via SSH.
+    """Run command on VM via SSH."""
+    from openadapt_ml.benchmarks.azure_vm import ssh_run as _ssh_run
 
-    When stream=True:
-    1. Runs command on VM with output redirected to a persistent log file
-    2. Streams that log file locally in real-time
-    3. Log file persists on VM even if connection breaks
-
-    Remote logs are stored at: /home/azureuser/cli_logs/{step}.log
-    """
-    if stream:
-        # Remote log directory and file (persistent across sessions)
-        remote_log_dir = "/home/azureuser/cli_logs"
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        remote_log = f"{remote_log_dir}/{step.lower()}_{timestamp}.log"
-
-        # Ensure log directory exists
-        subprocess.run(
-            ["ssh", *SSH_OPTS, f"azureuser@{ip}", f"mkdir -p {remote_log_dir}"],
-            capture_output=True,
-        )
-
-        log(step, f"Remote log: {remote_log}")
-
-        # Run command with output to log file, capturing exit code
-        # Using script to capture terminal output including \r progress updates
-        # The command runs in foreground but output goes to file AND stdout
-        wrapped_cmd = f"""
-set -o pipefail
-{{
-  {cmd}
-  echo $? > {remote_log}.exit
-}} 2>&1 | tee {remote_log}
-"""
-        full_cmd = ["ssh", *SSH_OPTS, f"azureuser@{ip}", wrapped_cmd]
-
-        process = subprocess.Popen(
-            full_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-        )
-
-        # Stream output to local log
-        try:
-            for line in iter(process.stdout.readline, ""):
-                if line:
-                    # Handle carriage returns (Docker progress)
-                    clean_line = line.rstrip()
-                    if "\r" in clean_line:
-                        # Take the last part after \r
-                        parts = clean_line.split("\r")
-                        clean_line = parts[-1].strip()
-                    if clean_line:
-                        log(step, clean_line)
-            process.wait()
-        except KeyboardInterrupt:
-            log(step, "Interrupted - command continues on VM")
-            log(step, f"View full log: ssh azureuser@{ip} 'cat {remote_log}'")
-            process.terminate()
-            return subprocess.CompletedProcess(cmd, 130, "", "")
-
-        # Get exit code
-        result = subprocess.run(
-            [
-                "ssh",
-                *SSH_OPTS,
-                f"azureuser@{ip}",
-                f"cat {remote_log}.exit 2>/dev/null || echo 1",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        exit_code = int(result.stdout.strip()) if result.stdout.strip().isdigit() else 1
-
-        if exit_code != 0:
-            log(step, f"Command failed (exit {exit_code})")
-            log(step, f"Full log: ssh azureuser@{ip} 'cat {remote_log}'")
-
-        return subprocess.CompletedProcess(cmd, exit_code, "", "")
-    else:
-        full_cmd = ["ssh", *SSH_OPTS, f"azureuser@{ip}", cmd]
-        return subprocess.run(full_cmd, capture_output=True, text=True)
+    return _ssh_run(ip, cmd, stream=stream, step=step, log_fn=log)
 
 
 def wait_for_ssh(ip: str, timeout: int = 120) -> bool:
     """Wait for SSH to become available."""
-    start = time.time()
-    while time.time() - start < timeout:
-        result = subprocess.run(
-            ["ssh", *SSH_OPTS, f"azureuser@{ip}", "echo ok"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        if result.returncode == 0:
-            return True
-        time.sleep(5)
-    return False
+    from openadapt_ml.benchmarks.azure_vm import wait_for_ssh as _wait_for_ssh
+
+    return _wait_for_ssh(ip, timeout=timeout)
 
 
 def set_vm_auto_shutdown(
@@ -338,94 +227,19 @@ def set_vm_auto_shutdown(
     resource_group: str = RESOURCE_GROUP,
     shutdown_hours: int = 4,
 ) -> bool:
-    """Set Azure auto-shutdown policy on a VM.
+    """Set Azure auto-shutdown policy on a VM."""
+    from openadapt_ml.benchmarks.azure_vm import AzureVMManager
 
-    This is a safety net to prevent orphaned VMs from running indefinitely.
-    The VM will be automatically deallocated after the specified hours.
-
-    Args:
-        vm_name: Name of the VM
-        resource_group: Azure resource group
-        shutdown_hours: Hours from now when VM should auto-shutdown (default 4)
-
-    Returns:
-        True if auto-shutdown was set successfully
-    """
-    # Calculate shutdown time (hours from now)
-    from datetime import timedelta
-
-    shutdown_time = datetime.utcnow() + timedelta(hours=shutdown_hours)
-    # Format: HH:MM in UTC
-    shutdown_time_str = shutdown_time.strftime("%H:%M")
-
-    result = subprocess.run(
-        [
-            "az",
-            "vm",
-            "auto-shutdown",
-            "-g",
-            resource_group,
-            "-n",
-            vm_name,
-            "--time",
-            shutdown_time_str,
-        ],
-        capture_output=True,
-        text=True,
+    return AzureVMManager(resource_group=resource_group).set_auto_shutdown(
+        vm_name, hours=shutdown_hours
     )
-
-    return result.returncode == 0
 
 
 def delete_test_vm_resources(test_name: str, resource_group: str = RESOURCE_GROUP):
-    """Delete a test VM and its associated resources.
+    """Delete a test VM and its associated resources."""
+    from openadapt_ml.benchmarks.azure_vm import AzureVMManager
 
-    Used for cleanup after quota checking or failed operations.
-    """
-    # Delete VM
-    subprocess.run(
-        [
-            "az",
-            "vm",
-            "delete",
-            "-g",
-            resource_group,
-            "-n",
-            test_name,
-            "--yes",
-            "--force-deletion",
-            "true",
-        ],
-        capture_output=True,
-    )
-    # Delete NIC
-    subprocess.run(
-        [
-            "az",
-            "network",
-            "nic",
-            "delete",
-            "-g",
-            resource_group,
-            "-n",
-            f"{test_name}VMNic",
-        ],
-        capture_output=True,
-    )
-    # Delete public IP
-    subprocess.run(
-        [
-            "az",
-            "network",
-            "public-ip",
-            "delete",
-            "-g",
-            resource_group,
-            "-n",
-            f"{test_name}PublicIP",
-        ],
-        capture_output=True,
-    )
+    AzureVMManager(resource_group=resource_group).delete_vm(test_name)
 
 
 # =============================================================================
@@ -712,10 +526,13 @@ def cmd_pool_status(args):
     """Show status of all VMs in the current pool."""
     init_logging()
 
-    from openadapt_ml.benchmarks.vm_monitor import VMPoolRegistry, VMMonitor, VMConfig
+    from openadapt_ml.benchmarks.azure_vm import AzureVMManager
+    from openadapt_ml.benchmarks.pool import PoolManager
+    from openadapt_ml.benchmarks.vm_monitor import VMMonitor, VMConfig
 
-    registry = VMPoolRegistry()
-    pool = registry.get_pool()
+    vm_manager = AzureVMManager(resource_group=RESOURCE_GROUP)
+    manager = PoolManager(vm_manager=vm_manager, log_fn=log)
+    pool = manager.status()
 
     if pool is None:
         print("No active VM pool. Create one with: create --workers N")
@@ -758,10 +575,12 @@ def cmd_delete_pool(args):
     init_logging()
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    from openadapt_ml.benchmarks.vm_monitor import VMPoolRegistry
+    from openadapt_ml.benchmarks.azure_vm import AzureVMManager
+    from openadapt_ml.benchmarks.pool import PoolManager
 
-    registry = VMPoolRegistry()
-    pool = registry.get_pool()
+    vm_manager = AzureVMManager(resource_group=RESOURCE_GROUP)
+    manager = PoolManager(vm_manager=vm_manager, log_fn=log)
+    pool = manager.status()
 
     if pool is None:
         print("No active VM pool.")
@@ -779,30 +598,11 @@ def cmd_delete_pool(args):
             return 0
 
     def delete_vm(name: str) -> tuple[str, bool, str]:
-        result = subprocess.run(
-            [
-                "az",
-                "vm",
-                "delete",
-                "-g",
-                pool.resource_group,
-                "-n",
-                name,
-                "--yes",
-                "--force-deletion",
-                "true",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode == 0:
+        success = vm_manager.delete_vm(name)
+        if success:
             return (name, True, "deleted")
         else:
-            return (
-                name,
-                False,
-                result.stderr[:100] if result.stderr else "unknown error",
-            )
+            return (name, False, "deletion failed")
 
     print("\nDeleting VMs...")
     with ThreadPoolExecutor(max_workers=5) as executor:
@@ -812,54 +612,8 @@ def cmd_delete_pool(args):
             status = "deleted" if success else f"FAILED: {msg}"
             print(f"  {name}: {status}")
 
-    # Delete associated resources (NICs, IPs, disks)
-    print("\nCleaning up associated resources...")
-    for w in pool.workers:
-        # Delete NIC
-        subprocess.run(
-            [
-                "az",
-                "network",
-                "nic",
-                "delete",
-                "-g",
-                pool.resource_group,
-                "-n",
-                f"{w.name}VMNic",
-            ],
-            capture_output=True,
-        )
-        # Delete public IP
-        subprocess.run(
-            [
-                "az",
-                "network",
-                "public-ip",
-                "delete",
-                "-g",
-                pool.resource_group,
-                "-n",
-                f"{w.name}PublicIP",
-            ],
-            capture_output=True,
-        )
-        # Delete disk
-        subprocess.run(
-            [
-                "az",
-                "disk",
-                "delete",
-                "-g",
-                pool.resource_group,
-                "-n",
-                f"{w.name}_disk1_*",
-                "--yes",
-            ],
-            capture_output=True,
-        )
-
     # Delete registry
-    registry.delete_pool()
+    manager.registry.delete_pool()
     print("\nPool deleted.")
     return 0
 
@@ -871,330 +625,26 @@ def cmd_pool_create(args):
     Uses ThreadPoolExecutor for concurrent VM creation.
     """
     init_logging()
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    from openadapt_ml.benchmarks.vm_monitor import VMPoolRegistry
+    from openadapt_ml.benchmarks.azure_vm import AzureVMManager
+    from openadapt_ml.benchmarks.pool import PoolManager
 
     num_workers = getattr(args, "workers", 3)
-    # --standard flag overrides --fast
     use_standard = getattr(args, "standard", False)
-    use_fast = not use_standard  # Default to fast (D8) for WAA unless --standard
-
-    log("POOL", f"Creating pool with {num_workers} workers...")
-
-    # Check for existing pool
-    registry = VMPoolRegistry()
-    if registry.get_pool() is not None:
-        log("POOL", "ERROR: Pool already exists. Delete it first with: delete-pool")
-        return 1
-
-    # Determine VM size
-    if use_fast:
-        sizes_to_try = VM_SIZE_FAST_FALLBACKS
-    else:
-        sizes_to_try = [(VM_SIZE_STANDARD, 0.19)]
-
-    # Find a working region/size combination first
-    working_size = None
-    working_region = None
-    working_cost = None
-    test_vm_to_cleanup = None  # Track test VM for cleanup
-
-    log("POOL", "Finding available region and VM size...")
-    try:
-        for vm_size, cost in sizes_to_try:
-            for region in VM_REGIONS:
-                # Quick check if this size/region combo works
-                test_name = f"waa-pool-test-{int(time.time())}"
-                test_vm_to_cleanup = test_name  # Track for cleanup
-                result = subprocess.run(
-                    [
-                        "az",
-                        "vm",
-                        "create",
-                        "--resource-group",
-                        RESOURCE_GROUP,
-                        "--name",
-                        test_name,
-                        "--location",
-                        region,
-                        "--image",
-                        "Ubuntu2204",
-                        "--size",
-                        vm_size,
-                        "--admin-username",
-                        "azureuser",
-                        "--generate-ssh-keys",
-                        "--public-ip-sku",
-                        "Standard",
-                        # Note: We removed --no-wait here because the test VM must
-                        # exist before we can delete it. With --no-wait, the delete
-                        # would fail silently leaving orphaned VMs.
-                    ],
-                    capture_output=True,
-                    text=True,
-                )
-                if result.returncode == 0:
-                    working_size = vm_size
-                    working_region = region
-                    working_cost = cost
-                    # Delete the test VM and wait for completion
-                    log("POOL", "  Found working combo, cleaning up test VM...")
-                    delete_test_vm_resources(test_name, RESOURCE_GROUP)
-                    test_vm_to_cleanup = None  # Cleanup done
-                    break
-                else:
-                    test_vm_to_cleanup = None  # Creation failed, nothing to cleanup
-            if working_size:
-                break
-    finally:
-        # Ensure test VM is cleaned up even if an exception occurred
-        if test_vm_to_cleanup:
-            log("POOL", f"Cleaning up test VM {test_vm_to_cleanup}...")
-            delete_test_vm_resources(test_vm_to_cleanup, RESOURCE_GROUP)
-
-    if not working_size:
-        log("POOL", "ERROR: No available VM size/region found")
-        log(
-            "POOL",
-            "Check quota: uv run python -m openadapt_ml.benchmarks.cli azure-ml-quota",
-        )
-        return 1
-
-    log("POOL", f"Using {working_size} (${working_cost:.2f}/hr) in {working_region}")
-
-    # Get auto-shutdown hours (default 4 hours as safety net)
     auto_shutdown_hours = getattr(args, "auto_shutdown_hours", 4)
-    if auto_shutdown_hours > 0:
-        log("POOL", f"VMs will auto-shutdown in {auto_shutdown_hours} hours")
 
-    def create_worker(worker_idx: int) -> tuple[str, str | None, str | None]:
-        """Create a single worker VM. Returns (name, ip, error)."""
-        name = f"waa-pool-{worker_idx:02d}"
+    vm_manager = AzureVMManager(resource_group=RESOURCE_GROUP)
+    manager = PoolManager(vm_manager=vm_manager, log_fn=log)
 
-        # Check if VM already exists
-        check = subprocess.run(
-            [
-                "az",
-                "vm",
-                "show",
-                "-g",
-                RESOURCE_GROUP,
-                "-n",
-                name,
-                "--query",
-                "id",
-                "-o",
-                "tsv",
-            ],
-            capture_output=True,
-            text=True,
+    try:
+        manager.create(
+            workers=num_workers,
+            fast=not use_standard,
+            auto_shutdown_hours=auto_shutdown_hours,
         )
-        if check.returncode == 0 and check.stdout.strip():
-            # Get existing IP
-            ip_result = subprocess.run(
-                [
-                    "az",
-                    "vm",
-                    "show",
-                    "-d",
-                    "-g",
-                    RESOURCE_GROUP,
-                    "-n",
-                    name,
-                    "--query",
-                    "publicIps",
-                    "-o",
-                    "tsv",
-                ],
-                capture_output=True,
-                text=True,
-            )
-            if ip_result.returncode == 0 and ip_result.stdout.strip():
-                return (name, ip_result.stdout.strip(), None)
-
-        # Create VM
-        result = subprocess.run(
-            [
-                "az",
-                "vm",
-                "create",
-                "--resource-group",
-                RESOURCE_GROUP,
-                "--name",
-                name,
-                "--location",
-                working_region,
-                "--image",
-                "Ubuntu2204",
-                "--size",
-                working_size,
-                "--admin-username",
-                "azureuser",
-                "--generate-ssh-keys",
-                "--public-ip-sku",
-                "Standard",
-            ],
-            capture_output=True,
-            text=True,
-        )
-
-        if result.returncode != 0:
-            # Parse error for better message
-            error_msg = result.stderr or "unknown error"
-            try:
-                error_json = json.loads(error_msg)
-                if "error" in error_json:
-                    error_msg = error_json["error"].get("message", error_msg)[:500]
-            except json.JSONDecodeError:
-                error_msg = error_msg[:500]
-            return (name, None, error_msg)
-
-        try:
-            vm_info = json.loads(result.stdout)
-            ip = vm_info.get("publicIpAddress", "")
-            # Set auto-shutdown as safety net (prevents orphaned VMs)
-            set_vm_auto_shutdown(name, RESOURCE_GROUP, auto_shutdown_hours)
-            return (name, ip, None)
-        except json.JSONDecodeError:
-            return (name, None, "Failed to parse VM creation output")
-
-    # Create VMs in parallel
-    log("POOL", f"Creating {num_workers} VMs in parallel...")
-    workers_created = []
-
-    with ThreadPoolExecutor(max_workers=min(num_workers, 5)) as executor:
-        futures = {executor.submit(create_worker, i): i for i in range(num_workers)}
-        for future in as_completed(futures):
-            name, ip, error = future.result()
-            if error:
-                log("POOL", f"  {name}: FAILED - {error}")
-            else:
-                log("POOL", f"  {name}: {ip}")
-                workers_created.append((name, ip))
-
-    if not workers_created:
-        log("POOL", "ERROR: No VMs created successfully")
+        return 0
+    except RuntimeError as e:
+        log("POOL", f"ERROR: {e}")
         return 1
-
-    log("POOL", f"\nCreated {len(workers_created)}/{num_workers} VMs")
-
-    # Wait for SSH on all VMs
-    log("POOL", "Waiting for SSH access...")
-    workers_ready = []
-    for name, ip in workers_created:
-        if wait_for_ssh(ip, timeout=120):
-            log("POOL", f"  {name}: SSH ready")
-            workers_ready.append((name, ip))
-        else:
-            log("POOL", f"  {name}: SSH timeout")
-
-    if not workers_ready:
-        log("POOL", "ERROR: No VMs have SSH access")
-        return 1
-
-    # Install Docker on all VMs in parallel
-    log("POOL", "Installing Docker on all VMs...")
-    docker_setup = """
-set -e
-
-# Wait for apt lock (unattended upgrades on fresh VMs)
-echo "Waiting for apt lock..."
-while sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1 || sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
-    sleep 5
-done
-echo "Apt lock released"
-
-sudo apt-get update -qq
-sudo apt-get install -y -qq docker.io
-sudo systemctl start docker
-sudo systemctl enable docker
-sudo usermod -aG docker $USER
-
-# Configure Docker to use /mnt (larger temp disk)
-sudo systemctl stop docker
-sudo mkdir -p /mnt/docker
-sudo bash -c 'echo "{\\"data-root\\": \\"/mnt/docker\\"}" > /etc/docker/daemon.json'
-sudo systemctl start docker
-
-# Pull base images (use sudo since usermod hasn't taken effect yet)
-sudo docker pull dockurr/windows:latest
-sudo docker pull windowsarena/winarena:latest
-
-# Build waa-auto image that has working auto-download
-# The vanilla windowsarena/winarena uses outdated dockur/windows v0.00 without auto-download
-# Our waa-auto uses modern dockurr/windows with VERSION=11e support
-mkdir -p /tmp/waa-build
-cat > /tmp/waa-build/Dockerfile << 'DOCKERFILE_EOF'
-FROM dockurr/windows:latest
-COPY --from=windowsarena/winarena:latest /entry.sh /entry.sh
-COPY --from=windowsarena/winarena:latest /entry_setup.sh /entry_setup.sh
-COPY --from=windowsarena/winarena:latest /start_client.sh /start_client.sh
-COPY --from=windowsarena/winarena:latest /client /client
-COPY --from=windowsarena/winarena:latest /models /models
-COPY --from=windowsarena/winarena:latest /oem /oem
-COPY --from=windowsarena/winarena:latest /usr/local/bin/python* /usr/local/bin/
-COPY --from=windowsarena/winarena:latest /usr/local/bin/pip* /usr/local/bin/
-COPY --from=windowsarena/winarena:latest /usr/local/lib/python3.9 /usr/local/lib/python3.9
-COPY --from=windowsarena/winarena:latest /usr/local/lib/libpython3.9.so* /usr/local/lib/
-RUN ldconfig && \\
-    ln -sf /usr/local/bin/python3.9 /usr/local/bin/python && \\
-    ln -sf /usr/local/bin/python3.9 /usr/bin/python && \\
-    ln -sf /usr/local/bin/pip3.9 /usr/local/bin/pip
-RUN sed -i '/^return 0$/i cp -r /oem/* /tmp/smb/ 2>/dev/null || true' /run/samba.sh
-RUN printf '#!/bin/bash\\n/usr/bin/tini -s /run/entry.sh\\n' > /start_vm.sh && chmod +x /start_vm.sh
-RUN sed -i 's|20.20.20.21|172.30.0.2|g' /entry_setup.sh /entry.sh /start_client.sh
-RUN find /client -name "*.py" -exec sed -i 's|20.20.20.21|172.30.0.2|g' {} \\;
-RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr libgl1 libglib2.0-0 && rm -rf /var/lib/apt/lists/*
-ENV VERSION="11e" RAM_SIZE="8G" CPU_CORES="4"
-ENTRYPOINT ["/usr/bin/tini", "-s", "/run/entry.sh"]
-DOCKERFILE_EOF
-
-sudo docker build -t waa-auto:latest /tmp/waa-build/
-rm -rf /tmp/waa-build
-"""
-
-    def setup_docker(name_ip: tuple[str, str]) -> tuple[str, bool, str]:
-        name, ip = name_ip
-        result = ssh_run(ip, docker_setup, stream=False, step="DOCKER")
-        error = result.stderr[:200] if result.stderr else ""
-        return (name, result.returncode == 0, error)
-
-    with ThreadPoolExecutor(max_workers=min(len(workers_ready), 5)) as executor:
-        futures = {executor.submit(setup_docker, w): w[0] for w in workers_ready}
-        workers_docker_ok = []
-        for future in as_completed(futures):
-            name, success, error = future.result()
-            status = "Docker ready" if success else f"Docker FAILED: {error[:100]}"
-            log("POOL", f"  {name}: {status}")
-            if success:
-                workers_docker_ok.append((name, dict(workers_ready)[name]))
-
-    if not workers_docker_ok:
-        log("POOL", "ERROR: Docker setup failed on all VMs")
-        return 1
-
-    # Register pool
-    pool = registry.create_pool(
-        workers=[(name, ip) for name, ip in workers_docker_ok],
-        resource_group=RESOURCE_GROUP,
-        location=working_region,
-        vm_size=working_size,
-    )
-
-    log("POOL", "=" * 60)
-    log("POOL", f"Pool created: {pool.pool_id}")
-    log("POOL", f"  Workers: {len(workers_docker_ok)}")
-    log("POOL", f"  Region: {working_region}")
-    log("POOL", f"  Size: {working_size} (${working_cost:.2f}/hr)")
-    log("POOL", f"  Est. hourly cost: ${working_cost * len(workers_docker_ok):.2f}/hr")
-    log("POOL", "")
-    log("POOL", "Next steps:")
-    log("POOL", "  1. Wait for WAA ready: pool-wait")
-    log("POOL", "  2. Run benchmark:      pool-run --tasks 154")
-    log("POOL", "  3. Delete pool:        delete-pool")
-    log("POOL", "=" * 60)
-
-    return 0
 
 
 def cmd_pool_wait(args):
@@ -1204,135 +654,24 @@ def cmd_pool_wait(args):
     and the WAA server to respond.
     """
     init_logging()
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    from openadapt_ml.benchmarks.vm_monitor import VMPoolRegistry, VMMonitor, VMConfig
-
-    registry = VMPoolRegistry()
-    pool = registry.get_pool()
-
-    if pool is None:
-        log("POOL-WAIT", "No active pool. Create one with: pool-create --workers N")
-        return 1
-
-    log("POOL-WAIT", f"Pool: {pool.pool_id} ({len(pool.workers)} workers)")
+    from openadapt_ml.benchmarks.azure_vm import AzureVMManager
+    from openadapt_ml.benchmarks.pool import PoolManager
 
     timeout_minutes = getattr(args, "timeout", 30)
     no_start = getattr(args, "no_start", False)
-    start_containers = not no_start
 
-    # Start WAA containers on each worker (only if not already running)
-    if start_containers:
-        log("POOL-WAIT", "Checking WAA containers on all workers...")
+    vm_manager = AzureVMManager(resource_group=RESOURCE_GROUP)
+    manager = PoolManager(vm_manager=vm_manager, log_fn=log)
 
-        # Check if container is running, only start if not
-        start_cmd = """
-# Check if container already running
-if docker ps --format '{{.Names}}' | grep -q '^winarena$'; then
-    echo "ALREADY_RUNNING"
-    exit 0
-fi
-
-# Container not running, start it
-docker rm -f winarena 2>/dev/null || true
-sudo mkdir -p /mnt/waa-storage
-sudo chown azureuser:azureuser /mnt/waa-storage
-# Use vanilla windowsarena/winarena with same parameters as working 'waa' command
-# --prepare-image false skips ISO requirement, --start-client false just boots Windows + Flask server
-docker run -d --name winarena \\
-  --device=/dev/kvm \\
-  --cap-add NET_ADMIN \\
-  --stop-timeout 120 \\
-  -p 5000:5000 \\
-  -p 8006:8006 \\
-  -p 7200:7200 \\
-  -v /mnt/waa-storage:/storage \\
-  -e VERSION=11e \\
-  -e RAM_SIZE=8G \\
-  -e CPU_CORES=4 \\
-  -e DISK_SIZE=64G \\
-  --entrypoint /bin/bash \\
-  windowsarena/winarena:latest \\
-  -c './entry.sh --prepare-image false --start-client false'
-echo "STARTED"
-"""
-
-        def start_container(worker) -> tuple[str, bool, str]:
-            result = ssh_run(worker.ip, start_cmd, stream=False, step="START")
-            output = result.stdout.strip() if result.stdout else ""
-            return (worker.name, result.returncode == 0, output)
-
-        with ThreadPoolExecutor(max_workers=min(len(pool.workers), 5)) as executor:
-            futures = {
-                executor.submit(start_container, w): w.name for w in pool.workers
-            }
-            for future in as_completed(futures):
-                name, success, output = future.result()
-                if "ALREADY_RUNNING" in output:
-                    status = "already running"
-                elif "STARTED" in output:
-                    status = "container started"
-                elif success:
-                    status = "ok"
-                else:
-                    status = "FAILED"
-                log("POOL-WAIT", f"  {name}: {status}")
-
-    # Wait for WAA to be ready on all workers
-    log(
-        "POOL-WAIT",
-        f"Waiting for WAA server on all workers (timeout: {timeout_minutes}m)...",
-    )
-    start_time = time.time()
-    timeout_seconds = timeout_minutes * 60
-
-    workers_pending = {w.name: w for w in pool.workers}
-    workers_ready = []
-
-    while workers_pending and (time.time() - start_time) < timeout_seconds:
-        for name, worker in list(workers_pending.items()):
-            try:
-                # Use 172.30.0.2 - same as working 'waa' command probe (line 5454)
-                config = VMConfig(
-                    name=name, ssh_host=worker.ip, internal_ip="172.30.0.2"
-                )
-                monitor = VMMonitor(config, timeout=5)
-                ready, response = monitor.check_waa_probe()
-
-                if ready:
-                    log("POOL-WAIT", f"  {name}: READY")
-                    workers_ready.append(worker)
-                    del workers_pending[name]
-                    registry.update_worker(name, waa_ready=True, status="ready")
-            except Exception:
-                pass  # Keep trying
-
-        if workers_pending:
-            elapsed = int(time.time() - start_time)
-            pending_names = ", ".join(workers_pending.keys())
-            print(
-                f"\r  [{elapsed}s] Waiting for: {pending_names}...", end="", flush=True
-            )
-            time.sleep(10)
-
-    print()  # New line after progress
-
-    if workers_pending:
-        log("POOL-WAIT", f"TIMEOUT: {len(workers_pending)} workers not ready")
-        for name in workers_pending:
-            log(
-                "POOL-WAIT",
-                f"  {name}: not ready (check with: ssh azureuser@{workers_pending[name].ip})",
-            )
-
-    log("POOL-WAIT", "=" * 60)
-    log("POOL-WAIT", f"Workers ready: {len(workers_ready)}/{len(pool.workers)}")
-
-    if workers_ready:
-        log("POOL-WAIT", "")
-        log("POOL-WAIT", "Ready to run benchmark:")
-        log("POOL-WAIT", "  pool-run --tasks 154")
-
-    return 0 if workers_ready else 1
+    try:
+        workers_ready = manager.wait(
+            timeout_minutes=timeout_minutes,
+            start_containers=not no_start,
+        )
+        return 0 if workers_ready else 1
+    except RuntimeError as e:
+        log("POOL-WAIT", f"ERROR: {e}")
+        return 1
 
 
 def cmd_pool_run(args):
@@ -1342,145 +681,28 @@ def cmd_pool_run(args):
     in parallel. Collects results from all workers.
     """
     init_logging()
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    from openadapt_ml.benchmarks.vm_monitor import VMPoolRegistry
+    from openadapt_ml.benchmarks.azure_vm import AzureVMManager
+    from openadapt_ml.benchmarks.pool import PoolManager
 
-    registry = VMPoolRegistry()
-    pool = registry.get_pool()
-
-    if pool is None:
-        log("POOL-RUN", "No active pool. Create one with: pool-create --workers N")
-        return 1
-
-    # Get task configuration
     num_tasks = getattr(args, "tasks", 10)
     agent = getattr(args, "agent", "navi")
     model = getattr(args, "model", "gpt-4o-mini")
     api_key = getattr(args, "api_key", None)
 
-    # Load API key from config if not provided
-    if not api_key:
-        try:
-            from openadapt_ml.config import settings
+    vm_manager = AzureVMManager(resource_group=RESOURCE_GROUP)
+    manager = PoolManager(vm_manager=vm_manager, log_fn=log)
 
-            api_key = settings.openai_api_key
-        except Exception:
-            log(
-                "POOL-RUN",
-                "ERROR: No API key provided. Use --api-key or set OPENAI_API_KEY in .env",
-            )
-            return 1
-
-    # Get ready workers
-    ready_workers = [w for w in pool.workers if w.waa_ready or w.status == "ready"]
-    if not ready_workers:
-        log("POOL-RUN", "No workers ready. Run: pool-wait")
+    try:
+        result = manager.run(
+            tasks=num_tasks,
+            agent=agent,
+            model=model,
+            api_key=api_key,
+        )
+        return 0 if result.failed == 0 else 1
+    except RuntimeError as e:
+        log("POOL-RUN", f"ERROR: {e}")
         return 1
-
-    log("POOL-RUN", "=" * 60)
-    log("POOL-RUN", f"Running WAA benchmark across {len(ready_workers)} workers")
-    log("POOL-RUN", f"  Tasks: {num_tasks}")
-    log("POOL-RUN", f"  Agent: {agent}")
-    log("POOL-RUN", f"  Model: {model}")
-    log("POOL-RUN", "=" * 60)
-
-    # WAA handles task distribution internally via --worker_id and --num_workers
-    # Each worker gets every Nth task (round-robin)
-    log("POOL-RUN", "Task distribution (handled by WAA):")
-    for worker_idx, worker in enumerate(ready_workers):
-        # Estimate: worker_id=0 gets tasks 0, N, 2N, ...; worker_id=1 gets 1, N+1, 2N+1, ...
-        tasks_for_worker = (num_tasks + len(ready_workers) - 1 - worker_idx) // len(
-            ready_workers
-        )
-        log(
-            "POOL-RUN",
-            f"  {worker.name}: worker_id={worker_idx}, ~{tasks_for_worker} tasks",
-        )
-
-    # Update registry with assigned tasks
-    pool.total_tasks = num_tasks
-    registry.save()
-
-    # Create experiment name
-    exp_name = datetime.now().strftime("pool_%Y%m%d_%H%M%S")
-
-    def run_on_worker(
-        worker, worker_idx: int, num_workers: int
-    ) -> tuple[str, int, int, str]:
-        """Run tasks on a single worker. Returns (name, completed, failed, error)."""
-        # Run the benchmark using WAA's native worker distribution
-        # WAA splits tasks across workers using --worker_id and --num_workers
-        # Worker 0 gets tasks 0, num_workers, 2*num_workers, ...
-        # Worker 1 gets tasks 1, num_workers+1, 2*num_workers+1, ...
-        # WAA code is in /client directory, API key passed via env var
-        # Use 172.30.0.2 - same IP as working 'waa' command (line 5454)
-        run_cmd = f"""
-docker exec -e OPENAI_API_KEY='{api_key}' winarena bash -c 'cd /client && python run.py \\
-    --agent {agent} \\
-    --model {model} \\
-    --exp_name {exp_name}_{worker.name} \\
-    --worker_id {worker_idx} \\
-    --num_workers {num_workers} \\
-    --emulator_ip 172.30.0.2 2>&1' | tee /home/azureuser/benchmark.log
-"""
-        result = ssh_run(worker.ip, run_cmd, stream=True, step="RUN")
-
-        # Count results (simplified - would need to parse actual output)
-        # WAA distributes tasks evenly, so each worker gets ~total/num_workers tasks
-        # For now, assume success if exit code is 0
-        if result.returncode == 0:
-            return (worker.name, 1, 0, None)  # Simplified - would parse actual results
-        else:
-            return (worker.name, 0, 1, "benchmark failed")
-
-    # Run tasks in parallel on all workers
-    log("POOL-RUN", "")
-    log("POOL-RUN", "Starting benchmark on all workers...")
-    start_time = time.time()
-
-    results = []
-    num_workers = len(ready_workers)
-    with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        futures = {}
-        for worker_idx, worker in enumerate(ready_workers):
-            future = executor.submit(run_on_worker, worker, worker_idx, num_workers)
-            futures[future] = worker.name
-
-        for future in as_completed(futures):
-            name, completed, failed, error = future.result()
-            if error:
-                log("POOL-RUN", f"  {name}: FAILED - {error}")
-            else:
-                log("POOL-RUN", f"  {name}: completed {completed} tasks")
-            results.append((name, completed, failed, error))
-
-            # Update registry
-            registry.update_pool_progress(completed=completed, failed=failed)
-
-    # Summary
-    elapsed = time.time() - start_time
-    total_completed = sum(r[1] for r in results)
-    total_failed = sum(r[2] for r in results)
-
-    log("POOL-RUN", "")
-    log("POOL-RUN", "=" * 60)
-    log("POOL-RUN", "BENCHMARK COMPLETE")
-    log("POOL-RUN", f"  Time: {elapsed / 60:.1f} minutes")
-    log("POOL-RUN", f"  Completed: {total_completed}/{num_tasks}")
-    log("POOL-RUN", f"  Failed: {total_failed}")
-    log("POOL-RUN", "=" * 60)
-
-    # Collect results from workers
-    log("POOL-RUN", "")
-    log("POOL-RUN", "Results saved on each worker at /home/azureuser/benchmark.log")
-    log("POOL-RUN", "To collect results:")
-    for worker in ready_workers:
-        log(
-            "POOL-RUN",
-            f"  scp azureuser@{worker.ip}:/home/azureuser/benchmark.log ./{worker.name}.log",
-        )
-
-    return 0 if total_failed == 0 else 1
 
 
 def cmd_pool_cleanup(args):
@@ -1490,149 +712,14 @@ def cmd_pool_cleanup(args):
     weren't properly deleted.
     """
     init_logging()
+    from openadapt_ml.benchmarks.azure_vm import AzureVMManager
+    from openadapt_ml.benchmarks.pool import PoolManager
 
-    log("POOL-CLEANUP", "Searching for orphaned pool resources...")
+    vm_manager = AzureVMManager(resource_group=RESOURCE_GROUP)
+    manager = PoolManager(vm_manager=vm_manager, log_fn=log)
 
-    # Find pool VMs
-    result = subprocess.run(
-        [
-            "az",
-            "vm",
-            "list",
-            "-g",
-            RESOURCE_GROUP,
-            "--query",
-            "[?contains(name, 'waa-pool')].name",
-            "-o",
-            "tsv",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    vms = [v.strip() for v in result.stdout.strip().split("\n") if v.strip()]
-
-    # Find NICs
-    result = subprocess.run(
-        [
-            "az",
-            "network",
-            "nic",
-            "list",
-            "-g",
-            RESOURCE_GROUP,
-            "--query",
-            "[?contains(name, 'waa-pool')].name",
-            "-o",
-            "tsv",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    nics = [n.strip() for n in result.stdout.strip().split("\n") if n.strip()]
-
-    # Find public IPs
-    result = subprocess.run(
-        [
-            "az",
-            "network",
-            "public-ip",
-            "list",
-            "-g",
-            RESOURCE_GROUP,
-            "--query",
-            "[?contains(name, 'waa-pool')].name",
-            "-o",
-            "tsv",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    ips = [i.strip() for i in result.stdout.strip().split("\n") if i.strip()]
-
-    # Find disks
-    result = subprocess.run(
-        [
-            "az",
-            "disk",
-            "list",
-            "-g",
-            RESOURCE_GROUP,
-            "--query",
-            "[?contains(name, 'waa-pool')].name",
-            "-o",
-            "tsv",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    disks = [d.strip() for d in result.stdout.strip().split("\n") if d.strip()]
-
-    total = len(vms) + len(nics) + len(ips) + len(disks)
-
-    if total == 0:
-        log("POOL-CLEANUP", "No orphaned resources found.")
-        return 0
-
-    log("POOL-CLEANUP", f"Found {total} orphaned resources:")
-    if vms:
-        log("POOL-CLEANUP", f"  VMs: {len(vms)}")
-    if nics:
-        log("POOL-CLEANUP", f"  NICs: {len(nics)}")
-    if ips:
-        log("POOL-CLEANUP", f"  Public IPs: {len(ips)}")
-    if disks:
-        log("POOL-CLEANUP", f"  Disks: {len(disks)}")
-
-    if not getattr(args, "yes", False):
-        confirm = input("\nDelete these resources? [y/N]: ")
-        if confirm.lower() != "y":
-            log("POOL-CLEANUP", "Aborted.")
-            return 0
-
-    # Delete VMs first (releases NICs)
-    for vm in vms:
-        log("POOL-CLEANUP", f"  Deleting VM: {vm}")
-        subprocess.run(
-            [
-                "az",
-                "vm",
-                "delete",
-                "-g",
-                RESOURCE_GROUP,
-                "-n",
-                vm,
-                "--yes",
-                "--force-deletion",
-                "true",
-            ],
-            capture_output=True,
-        )
-
-    # Delete NICs
-    for nic in nics:
-        log("POOL-CLEANUP", f"  Deleting NIC: {nic}")
-        subprocess.run(
-            ["az", "network", "nic", "delete", "-g", RESOURCE_GROUP, "-n", nic],
-            capture_output=True,
-        )
-
-    # Delete public IPs
-    for ip in ips:
-        log("POOL-CLEANUP", f"  Deleting IP: {ip}")
-        subprocess.run(
-            ["az", "network", "public-ip", "delete", "-g", RESOURCE_GROUP, "-n", ip],
-            capture_output=True,
-        )
-
-    # Delete disks
-    for disk in disks:
-        log("POOL-CLEANUP", f"  Deleting disk: {disk}")
-        subprocess.run(
-            ["az", "disk", "delete", "-g", RESOURCE_GROUP, "-n", disk, "--yes"],
-            capture_output=True,
-        )
-
-    log("POOL-CLEANUP", "Cleanup complete.")
+    confirm = not getattr(args, "yes", False)
+    manager.cleanup(confirm=confirm)
     return 0
 
 
@@ -8244,7 +7331,9 @@ def cmd_view_pool(args):
 
     from openadapt_ml.benchmarks.pool_viewer import generate_pool_results_viewer
 
-    results_dir = Path(args.results_dir) if args.results_dir else Path("benchmark_results")
+    results_dir = (
+        Path(args.results_dir) if args.results_dir else Path("benchmark_results")
+    )
 
     # Find pool run directory
     if args.run_name:
@@ -8445,6 +7534,12 @@ Examples:
   # Cleanup
   %(prog)s delete
 """,
+    )
+
+    parser.add_argument(
+        "--resource-group",
+        default=None,
+        help="Azure resource group (default: from AZURE_RESOURCE_GROUP env var or 'openadapt-agents')",
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -9469,6 +8564,12 @@ Examples:
     p_view_pool.set_defaults(func=cmd_view_pool)
 
     args = parser.parse_args()
+
+    # Allow --resource-group to override the module-level constant
+    global RESOURCE_GROUP
+    if args.resource_group is not None:
+        RESOURCE_GROUP = args.resource_group
+
     sys.exit(args.func(args))
 
 
