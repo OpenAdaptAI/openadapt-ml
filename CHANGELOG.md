@@ -1,6 +1,48 @@
 # CHANGELOG
 
 
+## v0.5.0 (2026-02-13)
+
+### Features
+
+- Remove evaluation infrastructure (moved to openadapt-evals)
+  ([#25](https://github.com/OpenAdaptAI/openadapt-ml/pull/25),
+  [`2d57d02`](https://github.com/OpenAdaptAI/openadapt-ml/commit/2d57d028411cc591eb9459ef25fc91b8c00839ca))
+
+* feat: remove evaluation infrastructure (moved to openadapt-evals)
+
+All evaluation infrastructure (~13,000 lines) has been migrated to openadapt-evals (PR #29). This PR
+  removes the now-redundant code from openadapt-ml, making it a pure ML package.
+
+Deleted files: - benchmarks/cli.py (8,503 lines - VM/pool CLI) - benchmarks/azure_vm.py
+  (AzureVMManager) - benchmarks/pool.py (PoolManager) - benchmarks/vm_monitor.py,
+  azure_ops_tracker.py, resource_tracker.py - benchmarks/azure.py, viewer.py, pool_viewer.py,
+  trace_export.py - benchmarks/waa_deploy/ (Docker agent deployment) -
+  tests/test_quota_auto_detection.py, test_demo_persistence.py - tests/benchmarks/test_api_agent.py,
+  test_waa.py
+
+Updated: - benchmarks/__init__.py: Only exports ML agents (PolicyAgent, etc.) - pyproject.toml:
+  Removed azure-ai-ml, azureml-core, azure-mgmt-* - CLAUDE.md: Removed CLI/VM/pool docs, added
+  migration guide
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+* fix: update stale references to migrated benchmark modules
+
+Update all remaining references to deleted benchmark modules across source code, scripts, and tests:
+
+- cloud/local.py: azure_ops_tracker, session_tracker, CLI subprocess calls - scripts/: p0/p1
+  validation scripts, screenshot generators, quota checker - training/benchmark_viewer.py: HTML
+  template CLI references - experiments/waa_demo/runner.py: docstring and print references -
+  deprecated/waa_deploy/__init__.py: import path
+
+All now point to openadapt_evals equivalents.
+
+---------
+
+Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.4.2 (2026-02-13)
 
 ### Bug Fixes
