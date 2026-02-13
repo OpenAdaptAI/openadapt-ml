@@ -22,9 +22,6 @@ classifiers = [
 ]
 
 dependencies = [
-    "azure-ai-ml>=1.30.0",
-    "azure-identity>=1.25.1",
-    "azureml-core>=1.61.0.post1",
     "bitsandbytes>=0.41.0", # For 4-bit quantization
     "click>=8.1.0", # CLI framework
     "google-generativeai>=0.8.5",
@@ -48,11 +45,9 @@ api = [
     "pydantic-settings>=2.0.0",
 ]
 azure = [
+    # Azure ML for distributed training
     "azure-ai-ml>=1.0.0",
     "azure-identity>=1.0.0",
-    "azure-mgmt-compute>=33.0.0",
-    "azure-mgmt-network>=27.0.0",
-    "azure-mgmt-resource>=23.2.0",
 ]
 lambda-labs = [
     "requests>=2.28.0",
