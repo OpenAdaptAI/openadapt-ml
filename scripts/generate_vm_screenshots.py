@@ -142,7 +142,7 @@ def main():
 
     # Screenshot 1: Full monitor dashboard (default)
     success = record_and_convert(
-        ["uv", "run", "python", "-m", "openadapt_ml.benchmarks.cli", "vm", "monitor", "--mock"],
+        ["uv", "run", "python", "-m", "openadapt_evals.benchmarks.vm_cli", "vm", "monitor", "--mock"],
         "vm_monitor_dashboard_full",
         width=120,
         height=50,
@@ -156,7 +156,7 @@ def main():
 
     # Screenshot 2: Monitor with --details flag
     success = record_and_convert(
-        ["uv", "run", "python", "-m", "openadapt_ml.benchmarks.cli", "vm", "monitor", "--mock", "--details"],
+        ["uv", "run", "python", "-m", "openadapt_evals.benchmarks.vm_cli", "vm", "monitor", "--mock", "--details"],
         "vm_monitor_details",
         width=120,
         height=55,

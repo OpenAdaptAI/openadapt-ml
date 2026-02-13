@@ -157,14 +157,14 @@ def main():
 
     # Screenshot 1: Full monitor dashboard (default)
     generate_screenshot(
-        ["uv", "run", "python", "-m", "openadapt_ml.benchmarks.cli", "vm", "monitor", "--mock"],
+        ["uv", "run", "python", "-m", "openadapt_evals.benchmarks.vm_cli", "vm", "monitor", "--mock"],
         "vm_monitor_dashboard_full",
         title="Full Dashboard",
     )
 
     # Screenshot 2: Monitor with --details flag
     generate_screenshot(
-        ["uv", "run", "python", "-m", "openadapt_ml.benchmarks.cli", "vm", "monitor", "--mock", "--details"],
+        ["uv", "run", "python", "-m", "openadapt_evals.benchmarks.vm_cli", "vm", "monitor", "--mock", "--details"],
         "vm_monitor_details",
         title="With Details",
     )
