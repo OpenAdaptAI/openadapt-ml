@@ -32,17 +32,19 @@ The design is described in detail in [`docs/design.md`](docs/design.md).
 
 ## Parallel WAA Benchmark Evaluation (New in v0.3.0)
 
-Run Windows Agent Arena benchmarks across multiple Azure VMs in parallel for faster evaluation:
+Run Windows Agent Arena benchmarks across multiple Azure VMs in parallel for faster evaluation.
+
+> **Note:** The `oa-vm` CLI lives in the [openadapt-evals](https://github.com/OpenAdaptAI/openadapt-evals) package. Install it with `uv add openadapt-evals` or run from that repo.
 
 ```bash
 # Create a pool of 5 workers
-uv run python -m openadapt_ml.benchmarks.cli pool-create --workers 5
+oa-vm pool-create --workers 5
 
 # Wait for all workers to be ready
-uv run python -m openadapt_ml.benchmarks.cli pool-wait
+oa-vm pool-wait
 
 # Run 154 tasks distributed across workers (~5x faster)
-uv run python -m openadapt_ml.benchmarks.cli pool-run --tasks 154
+oa-vm pool-run --tasks 154
 ```
 
 **Key features:**
@@ -819,13 +821,13 @@ For managing Azure VMs used in benchmark evaluations:
 
 ```bash
 # Check pool status (VM state, IPs, WAA readiness)
-uv run python -m openadapt_ml.benchmarks.cli pool-status
+oa-vm pool-status
 
 # Open VNC to view Windows desktops (via SSH tunnels)
-uv run python -m openadapt_ml.benchmarks.cli pool-vnc
+oa-vm pool-vnc
 
 # Stream logs from all workers
-uv run python -m openadapt_ml.benchmarks.cli pool-logs
+oa-vm pool-logs
 ```
 
 **Features:**
@@ -837,7 +839,7 @@ uv run python -m openadapt_ml.benchmarks.cli pool-logs
 **Cleanup (important to stop billing):**
 ```bash
 # Delete all pool VMs and resources
-uv run python -m openadapt_ml.benchmarks.cli pool-cleanup
+oa-vm pool-cleanup
 ```
 
 ### 13.5 Benchmark Execution Logs
@@ -846,19 +848,19 @@ View benchmark execution progress and logs:
 
 ```bash
 # View WAA container status and Docker logs
-uv run python -m openadapt_ml.benchmarks.cli logs
+oa-vm logs
 
 # View WAA benchmark execution logs (task progress, agent actions)
-uv run python -m openadapt_ml.benchmarks.cli logs --run
+oa-vm logs --run
 
 # Stream execution logs live
-uv run python -m openadapt_ml.benchmarks.cli logs --run -f
+oa-vm logs --run -f
 
 # Show last N lines of execution logs
-uv run python -m openadapt_ml.benchmarks.cli logs --run --tail 100
+oa-vm logs --run --tail 100
 
 # Show benchmark progress and ETA
-uv run python -m openadapt_ml.benchmarks.cli logs --progress
+oa-vm logs --progress
 ```
 
 **Example: Container status (`logs`)**
@@ -919,28 +921,28 @@ Progress: 0% [1/154]
 **Other useful commands:**
 ```bash
 # Check WAA server status (probe endpoint)
-uv run python -m openadapt_ml.benchmarks.cli probe
+oa-vm probe
 
 # Check VM/Azure status
-uv run python -m openadapt_ml.benchmarks.cli status
+oa-vm status
 
 # Download benchmark results from VM
-uv run python -m openadapt_ml.benchmarks.cli download
+oa-vm download
 
 # Analyze downloaded results
-uv run python -m openadapt_ml.benchmarks.cli analyze
+oa-vm analyze
 ```
 
 **Running benchmarks:**
 ```bash
 # Run full benchmark (154 tasks)
-uv run python -m openadapt_ml.benchmarks.cli run --num-tasks 154
+oa-vm run --num-tasks 154
 
 # Run specific domain
-uv run python -m openadapt_ml.benchmarks.cli run --domain notepad --num-tasks 5
+oa-vm run --domain notepad --num-tasks 5
 
 # Run single task
-uv run python -m openadapt_ml.benchmarks.cli run --task notepad_1
+oa-vm run --task notepad_1
 ```
 
 For complete VM management commands and Azure setup instructions, see [`CLAUDE.md`](CLAUDE.md) and [`docs/azure_waa_setup.md`](docs/azure_waa_setup.md).
@@ -951,20 +953,20 @@ Capture screenshots of dashboards and VMs for documentation and PR purposes:
 
 ```bash
 # Capture all available targets
-uv run python -m openadapt_ml.benchmarks.cli screenshot
+oa-vm screenshot
 
 # List available targets
-uv run python -m openadapt_ml.benchmarks.cli screenshot --list
+oa-vm screenshot --list
 
 # Capture specific targets
-uv run python -m openadapt_ml.benchmarks.cli screenshot --target terminal
-uv run python -m openadapt_ml.benchmarks.cli screenshot --target azure-ops --target vnc
+oa-vm screenshot --target terminal
+oa-vm screenshot --target azure-ops --target vnc
 
 # Custom output directory
-uv run python -m openadapt_ml.benchmarks.cli screenshot --output /path/to/screenshots
+oa-vm screenshot --output /path/to/screenshots
 
 # Without timestamp in filename
-uv run python -m openadapt_ml.benchmarks.cli screenshot --target terminal --no-timestamp
+oa-vm screenshot --target terminal --no-timestamp
 ```
 
 **Available targets:**
@@ -990,13 +992,14 @@ uv run python -m openadapt_ml.benchmarks.cli screenshot --target terminal --no-t
 
 ## 14. WAA Benchmark Workflow
 
-Windows Agent Arena (WAA) is a benchmark of 154 tasks across 11 Windows domains. OpenAdapt-ML provides infrastructure to run WAA evaluations on Azure VMs with parallel execution.
+Windows Agent Arena (WAA) is a benchmark of 154 tasks across 11 Windows domains. The [openadapt-evals](https://github.com/OpenAdaptAI/openadapt-evals) package provides the `oa-vm` CLI to run WAA evaluations on Azure VMs with parallel execution.
 
 ### 14.1 Prerequisites
 
-1. **Azure CLI**: `brew install azure-cli && az login`
-2. **OpenAI API Key**: Set in `.env` file (`OPENAI_API_KEY=sk-...`)
-3. **Azure quota**: Ddsv5 family VMs (8+ vCPUs per worker)
+1. **openadapt-evals**: `uv add openadapt-evals` (provides the `oa-vm` CLI)
+2. **Azure CLI**: `brew install azure-cli && az login`
+3. **OpenAI API Key**: Set in `.env` file (`OPENAI_API_KEY=sk-...`)
+4. **Azure quota**: Ddsv5 family VMs (8+ vCPUs per worker)
 
 ### 14.2 Single VM Workflow
 
@@ -1004,20 +1007,20 @@ For quick testing or small runs (use pool-create with --workers 1):
 
 ```bash
 # 1. Create single-VM pool
-uv run python -m openadapt_ml.benchmarks.cli pool-create --workers 1
+oa-vm pool-create --workers 1
 
 # 2. Wait for WAA ready
-uv run python -m openadapt_ml.benchmarks.cli pool-wait
+oa-vm pool-wait
 
 # 3. Run benchmark (e.g., 3 tasks for quick test)
-uv run python -m openadapt_ml.benchmarks.cli pool-run --tasks 3
+oa-vm pool-run --tasks 3
 
 # 4. Check status / VNC
-uv run python -m openadapt_ml.benchmarks.cli pool-status
-uv run python -m openadapt_ml.benchmarks.cli pool-vnc
+oa-vm pool-status
+oa-vm pool-vnc
 
 # 5. Cleanup (stop billing)
-uv run python -m openadapt_ml.benchmarks.cli pool-cleanup
+oa-vm pool-cleanup
 ```
 
 ### 14.3 Parallel Pool Workflow (Recommended)
@@ -1026,21 +1029,21 @@ For full 154-task evaluations, use multiple VMs:
 
 ```bash
 # 1. Create pool (provisions N Azure VMs with Docker + WAA)
-uv run python -m openadapt_ml.benchmarks.cli pool-create --workers 5
+oa-vm pool-create --workers 5
 
 # 2. Wait for all workers to be ready (Windows boot + WAA server startup)
-uv run python -m openadapt_ml.benchmarks.cli pool-wait
+oa-vm pool-wait
 
 # 3. Run benchmark across all workers
 #    Tasks are distributed using WAA's native --worker_id/--num_workers
-uv run python -m openadapt_ml.benchmarks.cli pool-run --tasks 154
+oa-vm pool-run --tasks 154
 
 # 4. Monitor progress
-uv run python -m openadapt_ml.benchmarks.cli pool-status
-uv run python -m openadapt_ml.benchmarks.cli pool-logs
+oa-vm pool-status
+oa-vm pool-logs
 
 # 5. Cleanup (delete all VMs - IMPORTANT to stop billing!)
-uv run python -m openadapt_ml.benchmarks.cli pool-cleanup
+oa-vm pool-cleanup
 ```
 
 ### 14.4 VNC Access to Workers
@@ -1049,7 +1052,7 @@ View what each Windows VM is doing:
 
 ```bash
 # Get worker IPs
-uv run python -m openadapt_ml.benchmarks.cli pool-status
+oa-vm pool-status
 
 # Set up SSH tunnels (tunnels are created automatically, but you can also do this manually)
 ssh -f -N -L 8006:localhost:8006 azureuser@<worker-0-ip>  # localhost:8006
@@ -1065,7 +1068,7 @@ open http://localhost:8007  # Worker 1
 
 ```
 Local Machine
-├── openadapt-ml CLI (pool-create, pool-wait, pool-run)
+├── openadapt-evals CLI: oa-vm (pool-create, pool-wait, pool-run)
 │   └── SSH tunnels to each worker
 │
 Azure (N VMs, Standard_D8ds_v5)
