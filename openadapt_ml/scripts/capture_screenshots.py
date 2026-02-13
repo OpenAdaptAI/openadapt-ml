@@ -321,7 +321,15 @@ def capture_vm_monitor(output_path: Path, mock: bool = True) -> bool:
     Returns:
         True if successful, False otherwise
     """
-    cmd = ["uv", "run", "python", "-m", "openadapt_evals.benchmarks.vm_cli", "vm", "monitor"]
+    cmd = [
+        "uv",
+        "run",
+        "python",
+        "-m",
+        "openadapt_evals.benchmarks.vm_cli",
+        "vm",
+        "monitor",
+    ]
     if mock:
         cmd.append("--mock")
 
