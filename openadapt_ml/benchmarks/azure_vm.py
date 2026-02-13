@@ -278,7 +278,8 @@ class AzureVMManager:
         """Set Azure auto-shutdown policy on a VM.
 
         Safety net to prevent orphaned VMs from running indefinitely.
-        Always uses az CLI (no SDK equivalent without DevTestLabs).
+        Uses azure-mgmt-resource SDK (generic resource API) when available,
+        falling back to az CLI.
 
         Args:
             name: VM name.
@@ -287,6 +288,68 @@ class AzureVMManager:
         Returns:
             True if auto-shutdown was set successfully.
         """
+        if self._use_sdk:
+            return self._sdk_set_auto_shutdown(name, hours)
+        return self._cli_set_auto_shutdown(name, hours)
+
+    def _sdk_set_auto_shutdown(self, name: str, hours: int) -> bool:
+        """Set auto-shutdown via Azure SDK (generic resource API).
+
+        Auto-shutdown is a Microsoft.DevTestLab/schedules resource, not part
+        of the compute SDK. We use azure-mgmt-resource's generic resource
+        client to create it.
+        """
+        try:
+            from azure.mgmt.resource import ResourceManagementClient
+        except ImportError:
+            logger.debug("azure-mgmt-resource not available, falling back to CLI")
+            return self._cli_set_auto_shutdown(name, hours)
+
+        try:
+            cred = self.credential or _get_credential()
+            resource_client = ResourceManagementClient(cred, self.subscription_id)
+
+            shutdown_time = datetime.utcnow() + timedelta(hours=hours)
+            shutdown_time_str = shutdown_time.strftime("%H%M")
+
+            # Get the VM to find its location
+            compute = self._get_compute_client()
+            vm = compute.virtual_machines.get(self.resource_group, name)
+
+            schedule_name = f"shutdown-computevm-{name}"
+            vm_id = (
+                f"/subscriptions/{self.subscription_id}"
+                f"/resourceGroups/{self.resource_group}"
+                f"/providers/Microsoft.Compute/virtualMachines/{name}"
+            )
+
+            resource_client.resources.begin_create_or_update_by_id(
+                resource_id=(
+                    f"/subscriptions/{self.subscription_id}"
+                    f"/resourceGroups/{self.resource_group}"
+                    f"/providers/Microsoft.DevTestLab/schedules/{schedule_name}"
+                ),
+                api_version="2018-09-15",
+                parameters={
+                    "location": vm.location,
+                    "properties": {
+                        "status": "Enabled",
+                        "taskType": "ComputeVmShutdownTask",
+                        "dailyRecurrence": {"time": shutdown_time_str},
+                        "timeZoneId": "UTC",
+                        "targetResourceId": vm_id,
+                    },
+                },
+            ).result()
+
+            return True
+        except Exception as e:
+            logger.warning(f"SDK set_auto_shutdown failed for {name}: {e}")
+            # Fall back to CLI
+            return self._cli_set_auto_shutdown(name, hours)
+
+    def _cli_set_auto_shutdown(self, name: str, hours: int) -> bool:
+        """Set auto-shutdown via az CLI."""
         shutdown_time = datetime.utcnow() + timedelta(hours=hours)
         shutdown_time_str = shutdown_time.strftime("%H:%M")
 
