@@ -1034,7 +1034,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 # Session tracker provides elapsed_seconds and cost_usd for
                 # persistence across page refreshes
                 try:
-                    from openadapt_evals.infrastructure.azure_ops_tracker import read_status
+                    from openadapt_evals.infrastructure.azure_ops_tracker import (
+                        read_status,
+                    )
                     from openadapt_evals.infrastructure.session_tracker import (
                         get_session,
                         update_session_vm_state,
