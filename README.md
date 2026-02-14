@@ -10,6 +10,13 @@
 
 OpenAdapt-ML provides the GUI-specific ML layer for training and running vision-language model (VLM) agents that automate desktop tasks. It handles everything between raw screen recordings and a production policy API: canonical schemas for GUI trajectories, VLM adapters, supervised fine-tuning with TRL + Unsloth, grounding, and demo-conditioned inference.
 
+## Demos
+
+**Synthetic Login** -- Qwen3-VL-2B fine-tuned on synthetic UI scenarios:
+
+![Login Demo](experiments/qwen_login/login_demo.gif)
+![Registration Demo](experiments/qwen_login/registration_demo.gif)
+
 ## Key Features
 
 - **GUI trajectory schemas** -- Pydantic models for Episodes, Steps, Actions, and Observations with JSON Schema export and format converters (WAA, WebArena)
