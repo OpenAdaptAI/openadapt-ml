@@ -26,7 +26,7 @@ dependencies = [
     "click>=8.1.0", # CLI framework
     "google-generativeai>=0.8.5",
     "matplotlib>=3.10.7",
-    "openadapt-capture>=0.1.0",
+    "openadapt-capture>=0.3.0",
     "peft>=0.18.0",
     "pillow>=12.0.0",
     "pyautogui>=0.9.54",
@@ -83,6 +83,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["openadapt_ml"]
+
+[tool.uv.sources]
+openadapt-capture = { path = "../openadapt-capture", editable = true }
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
