@@ -1,4 +1,11 @@
-"""Demonstrations for WAA tasks.
+"""Hand-written demonstrations for WAA tasks.
+
+WARNING: These demos are FABRICATED — written from memory/imagination, not grounded
+in actual Windows 11 screenshots. UI descriptions may not match real Windows 11
+appearance. Use VLM-annotated demos from real recordings when available.
+
+See: openadapt_ml/experiments/demo_prompt/annotate.py for the annotation pipeline.
+See: openadapt_ml/experiments/waa_demo/annotated_demos/ for grounded demos.
 
 Each demo follows the format:
     DEMONSTRATION:
@@ -9,7 +16,7 @@ Each demo follows the format:
       [Action: ACTION_TYPE(parameters)]
       [Result: What changed]
 
-7 manual demos + 3 placeholder for recorded demos.
+7 hand-written demos (unverified) + 3 placeholder for recorded demos.
 """
 
 from __future__ import annotations
