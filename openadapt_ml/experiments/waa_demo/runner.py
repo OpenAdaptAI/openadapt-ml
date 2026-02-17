@@ -201,13 +201,51 @@ Think step by step, then output the action on a new line starting with "ACTION:"
         self._build_task_demo_map()
 
     def _build_task_demo_map(self) -> None:
-        """Build mapping from WAA task IDs to demo text."""
+        """Build mapping from WAA task IDs to demo text.
+
+        Priority: annotated demos (from VLM annotation of recordings) > hand-written demos.
+        """
+        # 1. Load annotated demos (highest quality — grounded in real recordings)
+        self._load_annotated_demos()
+
+        # 2. Fall back to hand-written demos for tasks without annotated demos
         for task_num, task in TASKS.items():
-            demo = get_demo(task_num)
-            if demo and "[PLACEHOLDER" not in demo:
-                # Map both task number and full task_id
-                self._task_demo_map[task_num] = demo
-                self._task_demo_map[task.task_id] = demo
+            if task.task_id not in self._task_demo_map:
+                demo = get_demo(task_num)
+                if demo and "[PLACEHOLDER" not in demo:
+                    self._task_demo_map[task_num] = demo
+                    self._task_demo_map[task.task_id] = demo
+
+    def _load_annotated_demos(self) -> None:
+        """Load VLM-annotated demo traces from JSON files."""
+        from pathlib import Path
+
+        try:
+            from openadapt_ml.experiments.demo_prompt.annotate import (
+                AnnotatedDemo,
+                format_annotated_demo,
+            )
+        except ImportError:
+            return
+
+        # Look for annotated demos in the standard location
+        demo_dirs = [
+            Path(__file__).parent / "annotated_demos",
+            Path(__file__).parent.parent / "demo_prompt" / "annotated_demos",
+        ]
+
+        for demo_dir in demo_dirs:
+            if not demo_dir.is_dir():
+                continue
+            for json_path in demo_dir.glob("*.json"):
+                try:
+                    demo = AnnotatedDemo.load(json_path)
+                    text = format_annotated_demo(demo, compact=True)
+                    if demo.task_id:
+                        self._task_demo_map[demo.task_id] = text
+                        logger.info(f"Loaded annotated demo for {demo.task_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to load annotated demo {json_path}: {e}")
 
     def _get_adapter(self):
         """Lazily initialize the API adapter."""
