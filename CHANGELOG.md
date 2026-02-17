@@ -1,6 +1,108 @@
 # CHANGELOG
 
 
+## v0.6.0 (2026-02-17)
+
+### Bug Fixes
+
+- **deps**: Bump openadapt-capture to >=0.3.0, add uv.sources
+  ([`26b10d0`](https://github.com/OpenAdaptAI/openadapt-ml/commit/26b10d0014b3145c757d7b86fe414690835b5ae6))
+
+The new recording format uses recording.db (not capture.db). Local editable source ensures lockfile
+  resolves correctly.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+### Code Style
+
+- Fix ruff formatting for migrated import references
+  ([#27](https://github.com/OpenAdaptAI/openadapt-ml/pull/27),
+  [`a4628f8`](https://github.com/OpenAdaptAI/openadapt-ml/commit/a4628f8482a50d1b9a7c1a08f7eb86e87a107a80))
+
+Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
+
+### Documentation
+
+- Add demo GIFs back to README
+  ([`f23daa6`](https://github.com/OpenAdaptAI/openadapt-ml/commit/f23daa63fd3f4d0a3cd8900a4815691843b1c093))
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+- Rewrite CLAUDE.md — remove migration guide, match pure ML scope
+  ([`c9be969`](https://github.com/OpenAdaptAI/openadapt-ml/commit/c9be9690871481f437020a27792bdd76a41f0ea5))
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+- Rewrite README for professional open-source style
+  ([`e393edb`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e393edb42a71821f0c2cbaf16cb84ddd4804c216))
+
+Replace 1100-line README containing stale VM/pool references with clean 220-line README reflecting
+  what the package actually contains post-migration. Use test.yml badge instead of release.yml for
+  accurate build status.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+- Update README references to migrated CLI
+  ([#26](https://github.com/OpenAdaptAI/openadapt-ml/pull/26),
+  [`71ffaad`](https://github.com/OpenAdaptAI/openadapt-ml/commit/71ffaad20bb6ecac0f40ec2dff82c69caa3a3e0d))
+
+* feat: remove evaluation infrastructure (moved to openadapt-evals)
+
+All evaluation infrastructure (~13,000 lines) has been migrated to openadapt-evals (PR #29). This PR
+  removes the now-redundant code from openadapt-ml, making it a pure ML package.
+
+Deleted files: - benchmarks/cli.py (8,503 lines - VM/pool CLI) - benchmarks/azure_vm.py
+  (AzureVMManager) - benchmarks/pool.py (PoolManager) - benchmarks/vm_monitor.py,
+  azure_ops_tracker.py, resource_tracker.py - benchmarks/azure.py, viewer.py, pool_viewer.py,
+  trace_export.py - benchmarks/waa_deploy/ (Docker agent deployment) -
+  tests/test_quota_auto_detection.py, test_demo_persistence.py - tests/benchmarks/test_api_agent.py,
+  test_waa.py
+
+Updated: - benchmarks/__init__.py: Only exports ML agents (PolicyAgent, etc.) - pyproject.toml:
+  Removed azure-ai-ml, azureml-core, azure-mgmt-* - CLAUDE.md: Removed CLI/VM/pool docs, added
+  migration guide
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+* fix: update stale references to migrated benchmark modules
+
+Update all remaining references to deleted benchmark modules across source code, scripts, and tests:
+
+- cloud/local.py: azure_ops_tracker, session_tracker, CLI subprocess calls - scripts/: p0/p1
+  validation scripts, screenshot generators, quota checker - training/benchmark_viewer.py: HTML
+  template CLI references - experiments/waa_demo/runner.py: docstring and print references -
+  deprecated/waa_deploy/__init__.py: import path
+
+All now point to openadapt_evals equivalents.
+
+* docs: update README references to migrated CLI
+
+All VM/pool CLI commands moved from openadapt_ml.benchmarks.cli to openadapt-evals (oa-vm). Update
+  all README references.
+
+---------
+
+Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
+
+### Features
+
+- **demo-prompt**: Add VLM annotation pipeline for recorded demos
+  ([`2ef7f64`](https://github.com/OpenAdaptAI/openadapt-ml/commit/2ef7f64644ea3f8aae21c620d0558bd2a4acef84))
+
+Converts raw recordings (coordinates + screenshots) into structured text traces matching the
+  hand-written demo format. Uses VLM to annotate each step with screen observation, intent, semantic
+  action, and result.
+
+Pipeline: capture → episode → coalesce → annotate (VLM) → validate → format
+
+Key components: - Step coalescing (500 raw actions → 5-30 meaningful steps) - Click marker rendering
+  on screenshots for VLM - Before+after frame pairs for grounded result descriptions - Sequential
+  context (previous step annotation feeds into next) - Compact formatting matching hand-written demo
+  shape - Runner integration with annotated > hand-written priority
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.5.0 (2026-02-13)
 
 ### Features
