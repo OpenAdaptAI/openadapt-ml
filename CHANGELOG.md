@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.7.0 (2026-02-18)
+
+### Features
+
+- **demo-prompt**: Add VLM-annotated traces for 3 recorded demos
+  ([`5462725`](https://github.com/OpenAdaptAI/openadapt-ml/commit/5462725bbb753979072398cca2b3619fa640987a))
+
+Ran annotation pipeline (GPT-4o) on all 3 recorded captures: - 37e10fc4 (notifications): 5 steps —
+  turn off system notifications - 0c9dda13 (archive): 9 steps — create Archive folder, move .docx
+  files - 366de66e (notepad): 6 steps — open Notepad, create draft.txt
+
+These grounded traces replace fabricated hand-written demos for demo-conditioned evaluation.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.6.0 (2026-02-17)
 
 ### Bug Fixes
