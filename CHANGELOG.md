@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v0.7.1 (2026-02-18)
+
+### Bug Fixes
+
+- **ci**: Use v9 branch config for python-semantic-release
+  ([#28](https://github.com/OpenAdaptAI/openadapt-ml/pull/28),
+  [`2a79519`](https://github.com/OpenAdaptAI/openadapt-ml/commit/2a7951959984ee49082bdbbe7700cc873385caac))
+
+Replace `branch = "main"` (v7/v8 key) with `[tool.semantic_release.branches.main]` table (v9 key).
+  The old key is silently ignored by v9, causing releases to never trigger on the main branch.
+
+Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.7.0 (2026-02-18)
 
 ### Features
