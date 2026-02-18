@@ -2884,6 +2884,7 @@ name = "openadapt-ml"
 version = "0.5.0"
 source = { editable = "." }
 dependencies = [
+    { name = "anthropic" },
     { name = "bitsandbytes" },
     { name = "click" },
     { name = "google-generativeai" },
@@ -2930,6 +2931,7 @@ training = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anthropic", specifier = ">=0.75.0" },
     { name = "anthropic", marker = "extra == 'api'", specifier = ">=0.40.0" },
     { name = "azure-ai-ml", marker = "extra == 'azure'", specifier = ">=1.0.0" },
     { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.0.0" },

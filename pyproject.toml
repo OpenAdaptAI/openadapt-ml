@@ -22,6 +22,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "anthropic>=0.75.0",
     "bitsandbytes>=0.41.0", # For 4-bit quantization
     "click>=8.1.0", # CLI framework
     "google-generativeai>=0.8.5",

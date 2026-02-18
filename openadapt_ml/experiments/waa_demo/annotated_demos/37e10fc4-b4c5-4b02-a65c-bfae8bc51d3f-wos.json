@@ -1,0 +1,74 @@
+{
+  "schema_version": "0.1",
+  "task_id": "37e10fc4-b4c5-4b02-a65c-bfae8bc51d3f-wos",
+  "instruction": "Turn off notifications for my system in the settings.",
+  "source": "recorded",
+  "annotator": {
+    "provider": "openai",
+    "model": "gpt-4o"
+  },
+  "recording_meta": {
+    "platform": "",
+    "screen_px": null,
+    "capture_id": "capture_1",
+    "raw_step_count": 5,
+    "annotated_step_count": 5
+  },
+  "steps": [
+    {
+      "step_index": 0,
+      "timestamp_ms": 26725,
+      "observation": "The application is Windows PowerShell. The taskbar is visible at the bottom of the screen. Key UI elements include the Start button on the left, several application icons in the taskbar, and the system tray on the right.",
+      "intent": "The user is trying to open the Start menu to access system settings.",
+      "action": "The user clicked on the Start button in the taskbar, as indicated by the red marker.",
+      "action_raw": "CLICK(0.263, 0.958)",
+      "action_px": null,
+      "result_observation": "The Start menu is now open, displaying pinned applications and a search bar.",
+      "expected_result": "The Start menu should be open, showing options to access applications and settings."
+    },
+    {
+      "step_index": 1,
+      "timestamp_ms": 28037,
+      "observation": "The Start menu is open, displaying pinned applications and a search bar. Key visible UI elements include: 'Search for apps, settings, and documents' bar at the top, 'Pinned' section with app icons like Edge, Word, and Excel, 'Settings' icon in the Pinned section, 'Recommended' section with recent documents, and 'All apps' button on the right.",
+      "intent": "The user is trying to access the system settings to turn off notifications.",
+      "action": "The user clicked on the 'Settings' icon in the Pinned section.",
+      "action_raw": "CLICK(0.335, 0.518)",
+      "action_px": null,
+      "result_observation": "The Settings application is now open, displaying the Home page with options like System, Bluetooth & devices, and Network & internet on the left sidebar.",
+      "expected_result": "The Settings application should open, displaying the Home page with various system settings options."
+    },
+    {
+      "step_index": 2,
+      "timestamp_ms": 30462,
+      "observation": "The application is 'Settings'. The current panel is 'Home'. Key visible UI elements include: 'Find a setting' search bar at the top, 'Home' highlighted in the left sidebar, 'System' option below 'Home' in the sidebar, a notification about backing up to Microsoft account in the main area, and 'Recommended settings' section at the bottom.",
+      "intent": "The user is navigating to the 'System' settings to access notification settings.",
+      "action": "The user clicked on the 'System' option in the left sidebar.",
+      "action_raw": "CLICK(0.349, 0.311)",
+      "action_px": null,
+      "result_observation": "The 'System' panel is now open, displaying options such as 'Display', 'Sound', 'Notifications', 'Focus', and others.",
+      "expected_result": "The screen should display the 'System' settings page with various system-related options, including 'Notifications'."
+    },
+    {
+      "step_index": 3,
+      "timestamp_ms": 33538,
+      "observation": "The application is 'Settings'. The current panel is 'System'. Key visible UI elements include 'Display' at the top, 'Sound' below it, 'Notifications' with a red marker indicating interaction, 'Focus', and 'Power & battery' further down.",
+      "intent": "The user is attempting to access the notifications settings to turn off notifications.",
+      "action": "The user clicked on the 'Notifications' option in the 'System' panel.",
+      "action_raw": "CLICK(0.576, 0.533)",
+      "action_px": null,
+      "result_observation": "The screen now displays the 'Notifications' settings page, showing options like 'Notifications' toggle, 'Do not disturb', and 'Set priority notifications'.",
+      "expected_result": "The 'Notifications' settings page should be open, allowing the user to turn off notifications."
+    },
+    {
+      "step_index": 4,
+      "timestamp_ms": 43563,
+      "observation": "The application is 'Settings'. The current panel is 'System > Notifications'. Key visible UI elements include: 'Notifications' toggle at the top right, 'Do not disturb' toggle below it, 'Turn on do not disturb automatically' option below that, 'Set priority notifications' option further down, and 'Focus' option below that.",
+      "intent": "The user is performing this action to turn off notifications for the system.",
+      "action": "The user interacted with the 'Notifications' toggle, which is marked with a red marker.",
+      "action_raw": "TYPE(\"\")",
+      "action_px": null,
+      "result_observation": "The 'Notifications' toggle is expected to change from 'On' to 'Off'.",
+      "expected_result": "The screen should show the 'Notifications' toggle in the 'Off' position, indicating that notifications are turned off."
+    }
+  ]
+}

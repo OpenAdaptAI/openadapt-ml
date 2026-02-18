@@ -1,0 +1,85 @@
+{
+  "schema_version": "0.1",
+  "task_id": "366de66e-cbae-4d72-b042-26390db2b145-WOS",
+  "instruction": "Open Notepad, create a new file named 'draft.txt', type 'This is a draft.', and save it to the Documents folder.",
+  "source": "recorded",
+  "annotator": {
+    "provider": "openai",
+    "model": "gpt-4o"
+  },
+  "recording_meta": {
+    "platform": "",
+    "screen_px": null,
+    "capture_id": "capture_1",
+    "raw_step_count": 6,
+    "annotated_step_count": 6
+  },
+  "steps": [
+    {
+      "step_index": 0,
+      "timestamp_ms": 8678,
+      "observation": "The BEFORE image shows the Windows PowerShell application open. The taskbar is visible at the bottom with various application icons. The Start menu is not open.",
+      "intent": "The user is attempting to open Notepad by searching for it.",
+      "action": "The user clicked on the search bar in the taskbar and typed 'notepad'.",
+      "action_raw": "TYPE(\"notepad\")",
+      "action_px": null,
+      "result_observation": "The AFTER image shows the Start menu open with search results for 'notepad'. The Notepad application is listed as the best match.",
+      "expected_result": "The Start menu should display search results with Notepad as the best match, allowing the user to open it."
+    },
+    {
+      "step_index": 1,
+      "timestamp_ms": 18533,
+      "observation": "The BEFORE image shows the Start menu with search results for 'notepad'. Key UI elements include the search bar at the top, 'Best match' section with 'notepad' listed, 'Apps' section with 'Notepad', and options like 'Open', 'Run as administrator', and 'Open file location' on the right.",
+      "intent": "The user intends to open Notepad to create a new text file.",
+      "action": "The user interacted with the 'notepad' entry under 'Best match'.",
+      "action_raw": "TYPE(\"Thisisadraft.\u0013\")",
+      "action_px": null,
+      "result_observation": "The AFTER image shows the Notepad application open with a 'Save As' dialog. The text 'This is a draft.' is typed in the 'File name' field.",
+      "expected_result": "The Notepad application should open with the text 'This is a draft.' typed in the main text area, and the 'Save As' dialog should be open to save the file."
+    },
+    {
+      "step_index": 2,
+      "timestamp_ms": 25985,
+      "observation": "The window is titled 'Save As' within the Notepad application. The current panel shows the Documents folder. Key visible UI elements include the 'File name' field with 'This is a draft.' typed in it, the 'Save as type' dropdown set to 'Text documents (*.txt)', the 'Save' button, and the 'Cancel' button.",
+      "intent": "The user is attempting to save the file with the specified name and content.",
+      "action": "The user clicked on the 'Save' button.",
+      "action_raw": "CLICK(0.294, 0.532)",
+      "action_px": null,
+      "result_observation": "There is no visible change between the BEFORE and AFTER images.",
+      "expected_result": "The 'Save As' dialog should close, and the file 'draft.txt' should be saved in the Documents folder."
+    },
+    {
+      "step_index": 3,
+      "timestamp_ms": 29871,
+      "observation": "The application window is 'Save As' dialog in Notepad. Key visible UI elements include the 'File name' input field at the bottom, 'Save as type' dropdown next to it, 'Save' button at the bottom right, 'Cancel' button next to 'Save', and the file list in the main area showing existing files.",
+      "intent": "The user is entering the desired file name to save the document as 'draft.txt'.",
+      "action": "The user typed 'draft.txt' in the 'File name' input field.",
+      "action_raw": "TYPE(\"draft.txt\")",
+      "action_px": null,
+      "result_observation": "A 'Confirm Save As' dialog appeared, indicating that 'draft.txt' already exists and asking if the user wants to replace it.",
+      "expected_result": "The 'File name' field should display 'draft.txt', and the user should be prompted to confirm overwriting the existing file if it already exists."
+    },
+    {
+      "step_index": 4,
+      "timestamp_ms": 37727,
+      "observation": "The application window is 'Save As' with a 'Confirm Save As' dialog open. Key UI elements include the dialog box with the message 'draft.txt already exists. Do you want to replace it?', and buttons labeled 'Yes' and 'No'. The red marker indicates interaction with the 'Yes' button.",
+      "intent": "The user intends to confirm overwriting the existing 'draft.txt' file.",
+      "action": "The user clicked the 'Yes' button in the 'Confirm Save As' dialog.",
+      "action_raw": "TYPE(\"\")",
+      "action_px": null,
+      "result_observation": "The 'Confirm Save As' dialog is closed, and the focus returns to the previous application window.",
+      "expected_result": "The 'Confirm Save As' dialog should close, and the file 'draft.txt' should be saved, replacing the existing file."
+    },
+    {
+      "step_index": 5,
+      "timestamp_ms": 40461,
+      "observation": "The application window is Windows PowerShell. The current panel displays a series of log entries. Key visible UI elements include the title bar with the application name at the top, a series of log entries in the main panel, a tab bar with a '+' button for new tabs, and a taskbar at the bottom with various application icons.",
+      "intent": "The user is attempting to type a command or text into the PowerShell window.",
+      "action": "The user interacted with the main text input area of the PowerShell window, indicated by the red marker.",
+      "action_raw": "TYPE(\"\")",
+      "action_px": null,
+      "result_observation": "The expected result is that the text or command typed by the user will appear in the PowerShell window at the location of the cursor.",
+      "expected_result": "The PowerShell window should display the newly typed text or command at the cursor's position in the main panel."
+    }
+  ]
+}
