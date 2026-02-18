@@ -1,0 +1,118 @@
+{
+  "schema_version": "0.1",
+  "task_id": "0c9dda13-428c-492b-900b-f48562111f93-WOS",
+  "instruction": "Create a new folder named 'Archive' in the Documents folder and move all .docx files into it.",
+  "source": "recorded",
+  "annotator": {
+    "provider": "openai",
+    "model": "gpt-4o"
+  },
+  "recording_meta": {
+    "platform": "",
+    "screen_px": null,
+    "capture_id": "capture_1",
+    "raw_step_count": 9,
+    "annotated_step_count": 9
+  },
+  "steps": [
+    {
+      "step_index": 0,
+      "timestamp_ms": 4961,
+      "observation": "The BEFORE image shows a Windows PowerShell window open with various log entries. The taskbar is visible at the bottom with icons for different applications. The red marker indicates interaction with the 'Search' icon on the taskbar.",
+      "intent": "The user is attempting to open File Explorer to access the Documents folder.",
+      "action": "The user interacted with the 'Search' icon on the taskbar.",
+      "action_raw": "TYPE(\"e\")",
+      "action_px": null,
+      "result_observation": "The AFTER image shows that File Explorer has opened, displaying the Home directory with quick access to folders like Desktop, Documents, and Downloads.",
+      "expected_result": "File Explorer should open, allowing the user to navigate to the Documents folder."
+    },
+    {
+      "step_index": 1,
+      "timestamp_ms": 9949,
+      "observation": "The BEFORE image shows the File Explorer application open to the Home directory. Key visible UI elements include: the 'Quick access' section with folders like Desktop and Documents, the 'Documents' folder in the navigation pane, the 'Search Home' bar at the top, and the 'New' button in the toolbar.",
+      "intent": "The user is navigating to the Documents folder to create a new folder named 'Archive'.",
+      "action": "The user clicked on the 'Documents' folder in the navigation pane, as indicated by the red marker.",
+      "action_raw": "CLICK(0.166, 0.569)",
+      "action_px": null,
+      "result_observation": "The AFTER image shows that the File Explorer window now displays the contents of the Documents folder, including several files and folders.",
+      "expected_result": "The screen should display the contents of the Documents folder, allowing the user to create a new folder within it."
+    },
+    {
+      "step_index": 2,
+      "timestamp_ms": 17360,
+      "observation": "The application is File Explorer. The current panel displays the contents of the 'Documents' folder. Key visible UI elements include the navigation pane on the left, the 'New' button in the toolbar, the search bar at the top right, and a list of files and folders in the main area. The red marker indicates a right-click action in the main area.",
+      "intent": "The user is attempting to create a new folder in the 'Documents' directory.",
+      "action": "The user right-clicked in the main area of the 'Documents' folder.",
+      "action_raw": "CLICK(0.345, 0.649)",
+      "action_px": null,
+      "result_observation": "A context menu has appeared, offering options such as 'View', 'Sort by', 'Group by', 'New', and others.",
+      "expected_result": "The context menu should be visible, allowing the user to select 'New' and then 'Folder' to create a new folder."
+    },
+    {
+      "step_index": 3,
+      "timestamp_ms": 21818,
+      "observation": "The application is Windows File Explorer, currently displaying the 'Documents' folder. Key visible UI elements include the navigation pane on the left, the file list in the center, a context menu with options like 'View', 'Sort by', 'Group by', and 'New', and a highlighted 'Folder' option in the context menu.",
+      "intent": "The user is creating a new folder named 'Archive' in the 'Documents' folder.",
+      "action": "The user typed 'Archive' after selecting 'Folder' from the context menu.",
+      "action_raw": "TYPE(\"Archive\")",
+      "action_px": null,
+      "result_observation": "A new folder named 'Archive' has been created in the 'Documents' folder.",
+      "expected_result": "The 'Documents' folder should display a new folder named 'Archive' among the list of items."
+    },
+    {
+      "step_index": 4,
+      "timestamp_ms": 26988,
+      "observation": "The application is File Explorer, displaying the 'Documents' folder. Key visible UI elements include the navigation pane on the left, the toolbar with options like 'New' and 'Sort' at the top, the file list in the center showing various files and folders, and the search bar at the top right.",
+      "intent": "The user is preparing to move .docx files into the newly created 'Archive' folder.",
+      "action": "The user interacted with the file named 'meeting_notes' as indicated by the red marker.",
+      "action_raw": "TYPE(\"\")",
+      "action_px": null,
+      "result_observation": "The file 'meeting_notes' is now selected in the file list.",
+      "expected_result": "The 'meeting_notes' file should be highlighted, indicating it is selected and ready for further actions such as moving or copying."
+    },
+    {
+      "step_index": 5,
+      "timestamp_ms": 27290,
+      "observation": "The application is File Explorer, currently displaying the 'Documents' folder. Key visible UI elements include the navigation pane on the left, the file list in the center, the 'New' button at the top left, and the search bar at the top right. The file 'meeting_notes' is selected.",
+      "intent": "The user is selecting multiple .docx files to move them into the 'Archive' folder.",
+      "action": "The user clicked on the file named 'proposal' as indicated by the red marker.",
+      "action_raw": "CLICK(0.284, 0.524)",
+      "action_px": null,
+      "result_observation": "The file 'proposal' is now selected along with 'meeting_notes', indicating multiple selection.",
+      "expected_result": "Both 'meeting_notes' and 'proposal' files should be highlighted, showing they are selected for further action."
+    },
+    {
+      "step_index": 6,
+      "timestamp_ms": 28595,
+      "observation": "The application is File Explorer, currently displaying the 'Documents' folder. Key visible UI elements include the navigation pane on the left, the toolbar with options like 'New' and 'Sort' at the top, the file list in the center showing files and folders, and the search bar at the top right. The files 'meeting_notes' and 'proposal' are selected.",
+      "intent": "The user is attempting to select all .docx files to move them to the 'Archive' folder.",
+      "action": "The user pressed 'Ctrl + A' to select all files.",
+      "action_raw": "TYPE(\"\u0018\")",
+      "action_px": null,
+      "result_observation": "The file 'report' is now also selected, along with 'meeting_notes' and 'proposal'.",
+      "expected_result": "All files in the 'Documents' folder should be selected, including 'meeting_notes', 'proposal', and 'report'."
+    },
+    {
+      "step_index": 7,
+      "timestamp_ms": 39679,
+      "observation": "The application is File Explorer, currently displaying the 'Documents' folder. Key visible UI elements include the navigation pane on the left, the toolbar with options like 'New' and 'Sort', the file list showing items such as 'meeting_notes', 'proposal', and 'report', and the 'Archive' folder. The red marker indicates a click on the 'Archive' folder.",
+      "intent": "The user intends to open the 'Archive' folder to move the selected .docx files into it.",
+      "action": "The user double-clicked on the 'Archive' folder.",
+      "action_raw": "DOUBLE_CLICK(0.283, 0.610)",
+      "action_px": null,
+      "result_observation": "The 'Documents' folder view is now empty, indicating that the user has navigated into the 'Archive' folder.",
+      "expected_result": "The screen should display the contents of the 'Archive' folder, which is currently empty, ready for the selected files to be moved into it."
+    },
+    {
+      "step_index": 8,
+      "timestamp_ms": 40569,
+      "observation": "The application is File Explorer. The current panel is the 'Archive' folder within the 'Documents' directory. Key visible UI elements include the navigation bar at the top showing 'Documents > Archive', the 'New' button on the toolbar, the empty file list area, and the sidebar with folder shortcuts.",
+      "intent": "The user is pasting the previously copied or cut .docx files into the 'Archive' folder.",
+      "action": "The user pressed 'CTRL + V' to paste files into the folder.",
+      "action_raw": "TYPE(\"\u0016\")",
+      "action_px": null,
+      "result_observation": "The .docx files should appear in the 'Archive' folder, populating the previously empty file list area.",
+      "expected_result": "The screen should display the .docx files within the 'Archive' folder, showing their names, types, and other details."
+    }
+  ]
+}
