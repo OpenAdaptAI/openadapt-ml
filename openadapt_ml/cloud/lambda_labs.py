@@ -557,6 +557,10 @@ else
 fi
 
 cd openadapt-ml
+
+# Remove uv.sources (local path deps that don't exist on remote)
+sed -i '/\\[tool.uv.sources\\]/,/^$/d' pyproject.toml 2>/dev/null || true
+
 uv sync
 echo "SETUP_COMPLETE"
 """

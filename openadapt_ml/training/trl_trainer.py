@@ -53,6 +53,92 @@ class TRLTrainingConfig:
     logging_steps: int = 10
     save_strategy: str = "epoch"
 
+    # Early stopping
+    early_stop_loss: float = 0.0  # Stop when loss drops below this (0 = disabled)
+    early_stop_patience: int = 5  # Steps below threshold before stopping
+
+
+class _OpenAdaptCallback:
+    """HuggingFace TrainerCallback for training_log.json and early stopping.
+
+    Writes step/epoch/loss/lr to training_log.json on each log event.
+    Stops training when loss drops below early_stop_loss threshold.
+    """
+
+    def __init__(self, config: TRLTrainingConfig):
+        import json
+        self._json = json
+        self._config = config
+        self._log_path = Path(config.output_dir) / "training_log.json"
+        self._log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._losses: list = []
+        self._below_threshold_count = 0
+        self._start_time: float | None = None
+
+    def on_train_begin(self, args, state, control, **kwargs):
+        import time
+        self._start_time = time.time()
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        import time
+        if logs is None:
+            return
+
+        loss = logs.get("loss")
+        lr = logs.get("learning_rate", 0)
+        epoch = logs.get("epoch", 0)
+        elapsed = time.time() - self._start_time if self._start_time else 0
+
+        if loss is not None:
+            self._losses.append({
+                "epoch": epoch,
+                "step": state.global_step,
+                "loss": loss,
+                "lr": lr,
+                "time": elapsed,
+            })
+
+        # Write training_log.json
+        log_data = {
+            "epoch": int(epoch),
+            "step": state.global_step,
+            "loss": loss or 0,
+            "learning_rate": lr,
+            "total_epochs": args.num_train_epochs,
+            "elapsed_time": elapsed,
+            "losses": self._losses,
+            "model_name": self._config.model_name,
+        }
+        self._log_path.write_text(self._json.dumps(log_data, indent=2))
+
+        # Early stopping check
+        if (
+            self._config.early_stop_loss > 0
+            and loss is not None
+            and loss <= self._config.early_stop_loss
+        ):
+            self._below_threshold_count += 1
+            if self._below_threshold_count >= self._config.early_stop_patience:
+                print(
+                    f"\nEarly stopping: loss {loss:.4f} <= {self._config.early_stop_loss} "
+                    f"for {self._below_threshold_count} steps"
+                )
+                control.should_training_stop = True
+        else:
+            self._below_threshold_count = 0
+
+
+def _make_callback(config: TRLTrainingConfig):
+    """Create a TrainerCallback instance (import deferred to avoid top-level dep)."""
+    from transformers import TrainerCallback
+
+    # Dynamically create a proper subclass
+    class OpenAdaptCallback(TrainerCallback, _OpenAdaptCallback):
+        def __init__(self, cfg):
+            _OpenAdaptCallback.__init__(self, cfg)
+
+    return OpenAdaptCallback(config)
+
 
 def _load_unsloth_model(config: TRLTrainingConfig):
     """Load model with Unsloth optimizations.
@@ -108,9 +194,27 @@ def _load_standard_model(config: TRLTrainingConfig):
     model class (Qwen2VLForConditionalGeneration for VL models,
     AutoModelForCausalLM for text-only models).
     """
-    from transformers import AutoConfig, AutoProcessor
+    from transformers import AutoConfig, AutoProcessor, BitsAndBytesConfig
     from peft import LoraConfig, get_peft_model
     import torch
+
+    # 4-bit quantization config
+    quant_config = None
+    if config.load_in_4bit:
+        quant_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_use_double_quant=True,
+        )
+
+    load_kwargs = dict(
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+        trust_remote_code=True,
+    )
+    if quant_config:
+        load_kwargs["quantization_config"] = quant_config
 
     # Check if this is a vision-language model
     model_config = AutoConfig.from_pretrained(config.model_name, trust_remote_code=True)
@@ -121,26 +225,19 @@ def _load_standard_model(config: TRLTrainingConfig):
     )
 
     if is_vl_model:
-        # Vision-language model - use Qwen2VLForConditionalGeneration or AutoModelForVision2Seq
+        # Vision-language model - prefer AutoModelForImageTextToText (supports Qwen3-VL)
         try:
-            from transformers import Qwen2VLForConditionalGeneration
+            from transformers import AutoModelForImageTextToText
 
-            model = Qwen2VLForConditionalGeneration.from_pretrained(
-                config.model_name,
-                torch_dtype=torch.bfloat16,
-                device_map="auto",
-                trust_remote_code=True,
+            model = AutoModelForImageTextToText.from_pretrained(
+                config.model_name, **load_kwargs,
             )
-            print("  Using Qwen2VLForConditionalGeneration for VL model")
+            print("  Using AutoModelForImageTextToText for VL model")
         except (ImportError, ValueError, RuntimeError, TypeError):
-            # Fallback to AutoModelForVision2Seq for other VL models
             from transformers import AutoModelForVision2Seq
 
             model = AutoModelForVision2Seq.from_pretrained(
-                config.model_name,
-                torch_dtype=torch.bfloat16,
-                device_map="auto",
-                trust_remote_code=True,
+                config.model_name, **load_kwargs,
             )
             print("  Using AutoModelForVision2Seq for VL model")
     else:
@@ -148,10 +245,7 @@ def _load_standard_model(config: TRLTrainingConfig):
         from transformers import AutoModelForCausalLM
 
         model = AutoModelForCausalLM.from_pretrained(
-            config.model_name,
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
-            trust_remote_code=True,
+            config.model_name, **load_kwargs,
         )
         print("  Using AutoModelForCausalLM for text-only model")
 
@@ -267,6 +361,8 @@ def train_with_trl(
     try:
         from trl import SFTTrainer, SFTConfig
 
+        callback = _make_callback(config)
+
         if is_unsloth:
             # Unsloth-specific configuration
             from unsloth.trainer import UnslothVisionDataCollator
@@ -293,6 +389,7 @@ def train_with_trl(
                 data_collator=UnslothVisionDataCollator(model, tokenizer),
                 train_dataset=dataset,
                 args=training_args,
+                callbacks=[callback],
             )
         else:
             # Standard TRL configuration
@@ -314,6 +411,7 @@ def train_with_trl(
                 model=model,
                 train_dataset=dataset,
                 args=training_args,
+                callbacks=[callback],
             )
 
         print(f"\n{'=' * 50}")
@@ -387,6 +485,8 @@ def train_from_jsonl(
     try:
         from trl import SFTTrainer, SFTConfig
 
+        callback = _make_callback(config)
+
         if is_unsloth:
             from unsloth.trainer import UnslothVisionDataCollator
 
@@ -411,6 +511,7 @@ def train_from_jsonl(
                 data_collator=UnslothVisionDataCollator(model, tokenizer),
                 train_dataset=dataset,
                 args=training_args,
+                callbacks=[callback],
             )
         else:
             training_args = SFTConfig(
@@ -431,6 +532,7 @@ def train_from_jsonl(
                 model=model,
                 train_dataset=dataset,
                 args=training_args,
+                callbacks=[callback],
             )
 
         print(f"\n{'=' * 50}")
@@ -441,6 +543,8 @@ def train_from_jsonl(
         print(f"  Batch size: {config.batch_size}")
         print(f"  Unsloth: {is_unsloth}")
         print(f"  Output: {config.output_dir}")
+        if config.early_stop_loss > 0:
+            print(f"  Early stop: loss <= {config.early_stop_loss} (patience: {config.early_stop_patience})")
         print(f"{'=' * 50}\n")
 
         trainer.train()

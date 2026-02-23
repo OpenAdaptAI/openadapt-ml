@@ -96,6 +96,8 @@ def main(
         output_dir=output_dir,
         logging_steps=train_cfg_raw.get("logging_steps", 10),
         save_strategy=train_cfg_raw.get("save_strategy", "epoch"),
+        early_stop_loss=train_cfg_raw.get("early_stop_loss", 0.0),
+        early_stop_patience=train_cfg_raw.get("early_stop_patience", 5),
     )
 
     # Disable Unsloth if requested

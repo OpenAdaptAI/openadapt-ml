@@ -1,6 +1,6 @@
 model:
-  name: Qwen/Qwen3-VL-8B-Instruct
-  load_in_4bit: true  # fits A10 24GB
+  name: Qwen/Qwen3-VL-2B-Instruct  # 2B for fast iteration; upgrade to 8B once pipeline is validated
+  load_in_4bit: true
 
 lora:
   r: 16
@@ -13,7 +13,7 @@ lora:
     - k_proj
     - o_proj
   task_type: CAUSAL_LM
-  weights_path: checkpoints/qwen3vl8b_demo_lora
+  weights_path: checkpoints/qwen3vl2b_demo_lora
 
 training:
   num_train_epochs: 10  # 20 samples, need more passes
