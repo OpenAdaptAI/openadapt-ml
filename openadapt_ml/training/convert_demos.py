@@ -6,6 +6,7 @@ fine-tuning.
 
 Input format (annotated demo JSON):
     {
+      "instruction": "Turn off notifications...",
       "steps": [{
         "step_index": 0,
         "observation": "The desktop shows...",
@@ -17,19 +18,24 @@ Input format (annotated demo JSON):
 
 Output format (ms-swift SFT JSONL):
     {
-      "image": "step_000_screenshot.png",
+      "image": "/path/to/screenshot.png",
       "conversations": [
-        {"role": "user", "content": "<image>\\nInstruction: ...\\nPrevious actions:\\n..."},
+        {"role": "system", "content": "You are a GUI agent..."},
+        {"role": "user", "content": "<image>\\nInstruction: ...\\n...\\nOutput exactly one action."},
         {"role": "assistant", "content": "<think>...</think>\\nclick(x=294, y=532)"}
       ]
     }
+
+The training conversation format is aligned with the inference prompt in
+qwen3vl_agent.py. If you change the prompt format here, update the agent
+to match (and vice versa).
 
 Coordinates are converted from [0, 1] to [0, 1000] (Qwen3-VL format).
 
 Usage:
     python -m openadapt_ml.training.convert_demos \\
         --demo-dir /path/to/annotated_demos \\
-        --captures-dir /path/to/captures \\
+        --mapping /path/to/screenshot_mapping.json \\
         --output /path/to/output.jsonl
 """
 
@@ -39,8 +45,60 @@ import argparse
 import json
 import re
 import sys
+import warnings
 from pathlib import Path
 from typing import Any
+
+
+# ---------------------------------------------------------------------------
+# System prompt — must match qwen3vl_agent.SYSTEM_PROMPT exactly
+# ---------------------------------------------------------------------------
+
+SYSTEM_PROMPT = (
+    "You are a GUI agent. You observe screenshots of a desktop and output "
+    "exactly one action per step. Use the following action format:\n"
+    "click(x=<int>, y=<int>)\n"
+    "double_click(x=<int>, y=<int>)\n"
+    "right_click(x=<int>, y=<int>)\n"
+    "type(text=\"<string>\")\n"
+    "press(keys=[\"<key1>\", ...])\n"
+    "scroll(direction=\"<up|down|left|right>\", amount=<int>)\n"
+    "drag(from_coord=[<x1>, <y1>], to_coord=[<x2>, <y2>])\n"
+    "wait()\n"
+    "finished()\n\n"
+    "Coordinates are in [0, 1000] range where (0,0) is top-left and "
+    "(1000,1000) is bottom-right."
+)
+
+# Required fields in annotated demo JSON
+_REQUIRED_DEMO_FIELDS = {"instruction", "steps"}
+_REQUIRED_STEP_FIELDS = {"step_index", "action_raw"}
+
+
+# ---------------------------------------------------------------------------
+# Action parsing
+# ---------------------------------------------------------------------------
+
+
+def _validate_coord(val: float, name: str, action_raw: str) -> float:
+    """Validate that a coordinate is in [0, 1] range.
+
+    Args:
+        val: Coordinate value.
+        name: Coordinate name for error message.
+        action_raw: Original action string for context.
+
+    Returns:
+        The value, unchanged.
+    """
+    if not (0.0 <= val <= 1.0):
+        warnings.warn(
+            f"Coordinate {name}={val} outside [0, 1] in '{action_raw}'. "
+            f"Expected normalized coordinates from format_action(). "
+            f"If these are pixel coordinates, the output will be wrong.",
+            stacklevel=3,
+        )
+    return val
 
 
 def _parse_action_raw(action_raw: str) -> tuple[str, dict[str, Any]]:
@@ -55,17 +113,23 @@ def _parse_action_raw(action_raw: str) -> tuple[str, dict[str, Any]]:
     # DOUBLE_CLICK(x, y)
     m = re.match(r"DOUBLE_CLICK\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*\)", action_raw, re.IGNORECASE)
     if m:
-        return "double_click", {"x": float(m.group(1)), "y": float(m.group(2))}
+        x = _validate_coord(float(m.group(1)), "x", action_raw)
+        y = _validate_coord(float(m.group(2)), "y", action_raw)
+        return "double_click", {"x": x, "y": y}
 
     # RIGHT_CLICK(x, y)
     m = re.match(r"RIGHT_CLICK\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*\)", action_raw, re.IGNORECASE)
     if m:
-        return "right_click", {"x": float(m.group(1)), "y": float(m.group(2))}
+        x = _validate_coord(float(m.group(1)), "x", action_raw)
+        y = _validate_coord(float(m.group(2)), "y", action_raw)
+        return "right_click", {"x": x, "y": y}
 
     # CLICK(x, y)
     m = re.match(r"CLICK\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*\)", action_raw, re.IGNORECASE)
     if m:
-        return "click", {"x": float(m.group(1)), "y": float(m.group(2))}
+        x = _validate_coord(float(m.group(1)), "x", action_raw)
+        y = _validate_coord(float(m.group(2)), "y", action_raw)
+        return "click", {"x": x, "y": y}
 
     # TYPE("text") or TYPE(text)
     m = re.match(r"TYPE\s*\(\s*[\"']?(.*?)[\"']?\s*\)", action_raw, re.IGNORECASE)
@@ -89,12 +153,11 @@ def _parse_action_raw(action_raw: str) -> tuple[str, dict[str, Any]]:
         re.IGNORECASE,
     )
     if m:
-        return "drag", {
-            "from_x": float(m.group(1)),
-            "from_y": float(m.group(2)),
-            "to_x": float(m.group(3)),
-            "to_y": float(m.group(4)),
-        }
+        fx = _validate_coord(float(m.group(1)), "from_x", action_raw)
+        fy = _validate_coord(float(m.group(2)), "from_y", action_raw)
+        tx = _validate_coord(float(m.group(3)), "to_x", action_raw)
+        ty = _validate_coord(float(m.group(4)), "to_y", action_raw)
+        return "drag", {"from_x": fx, "from_y": fy, "to_x": tx, "to_y": ty}
 
     # DONE / FINISHED / WAIT
     if re.match(r"(DONE|FINISHED|WAIT)\s*\(\s*\)", action_raw, re.IGNORECASE):
@@ -189,6 +252,51 @@ def _build_think_block(step: dict[str, Any]) -> str:
     return "<think>\n" + " ".join(parts) + "\n</think>\n"
 
 
+# ---------------------------------------------------------------------------
+# Validation
+# ---------------------------------------------------------------------------
+
+
+def _validate_demo(demo: dict[str, Any], path: Path) -> list[str]:
+    """Validate annotated demo JSON structure.
+
+    Args:
+        demo: Parsed demo dict.
+        path: Path to the demo file (for error messages).
+
+    Returns:
+        List of warning messages (empty if valid).
+    """
+    issues: list[str] = []
+
+    for field in _REQUIRED_DEMO_FIELDS:
+        if field not in demo:
+            issues.append(f"{path.name}: missing required field '{field}'")
+
+    if not demo.get("instruction"):
+        issues.append(f"{path.name}: 'instruction' is empty")
+
+    steps = demo.get("steps", [])
+    if not steps:
+        issues.append(f"{path.name}: 'steps' is empty")
+
+    for i, step in enumerate(steps):
+        for field in _REQUIRED_STEP_FIELDS:
+            if field not in step:
+                issues.append(
+                    f"{path.name}: step {i} missing required field '{field}'"
+                )
+        if not step.get("action_raw"):
+            issues.append(f"{path.name}: step {i} has empty 'action_raw'")
+
+    return issues
+
+
+# ---------------------------------------------------------------------------
+# Step conversion
+# ---------------------------------------------------------------------------
+
+
 def convert_step(
     step: dict[str, Any],
     instruction: str,
@@ -197,6 +305,9 @@ def convert_step(
     include_thinking: bool = True,
 ) -> dict[str, Any] | None:
     """Convert a single annotated step to ms-swift SFT format.
+
+    The user message format is aligned with qwen3vl_agent._build_prompt()
+    so the model sees the same structure at training and inference time.
 
     Args:
         step: Step dict from annotated demo.
@@ -214,14 +325,24 @@ def convert_step(
 
     action_type, params = _parse_action_raw(action_raw)
 
-    # Build user content
+    # Build user content — aligned with qwen3vl_agent._build_prompt()
     user_parts = ["<image>"]
     user_parts.append(f"Instruction: {instruction}")
+
     if previous_actions:
         user_parts.append("")
         user_parts.append("Previous actions:")
         for i, act in enumerate(previous_actions):
             user_parts.append(f"  Step {i}: {act}")
+
+    user_parts.append("")
+    if include_thinking:
+        user_parts.append(
+            "First reason about what you see in <think>...</think> "
+            "tags, then output exactly one action."
+        )
+    else:
+        user_parts.append("Output exactly one action.")
 
     user_content = "\n".join(user_parts)
 
@@ -238,6 +359,7 @@ def convert_step(
 
     sample: dict[str, Any] = {
         "conversations": [
+            {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
             {"role": "assistant", "content": assistant_content},
         ],
@@ -249,6 +371,11 @@ def convert_step(
     return sample
 
 
+# ---------------------------------------------------------------------------
+# Screenshot resolution
+# ---------------------------------------------------------------------------
+
+
 def _resolve_screenshots_from_capture(
     task_id: str,
     captures_dir: Path,
@@ -257,7 +384,9 @@ def _resolve_screenshots_from_capture(
     """Derive screenshot paths by re-running coalesce on the capture.
 
     The annotated demo step indices correspond to coalesced episode steps,
-    not raw capture steps. This function re-derives the mapping.
+    not raw capture steps. This function re-derives the mapping using the
+    capture API, which is the only programmatic method that produces correct
+    results.
 
     Args:
         task_id: Task ID (matches capture directory name).
@@ -295,181 +424,39 @@ def _resolve_screenshots_from_capture(
             if step.observation and step.observation.screenshot_path:
                 mapping[step.step_index] = step.observation.screenshot_path
         return mapping
-    except Exception:
-        pass
-
-    # Fallback: read the capture DB directly with sqlite3 to build
-    # the action-to-screenshot mapping. This avoids importing
-    # openadapt_capture (which may fail on macOS without a display).
-    try:
-        return _resolve_screenshots_from_db(
-            capture_dir, screenshots_dir, num_steps,
-        )
     except Exception as e:
-        print(f"  Warning: could not resolve screenshots: {e}", file=sys.stderr)
+        print(
+            f"  Warning: capture API unavailable for {task_id}: {e}",
+            file=sys.stderr,
+        )
+        print(
+            "  Use --mapping with a pre-computed screenshot_mapping.json instead.",
+            file=sys.stderr,
+        )
         return {}
 
 
-def _resolve_screenshots_from_db(
-    capture_dir: Path,
-    screenshots_dir: Path,
-    num_steps: int,
-) -> dict[int, str]:
-    """Read capture DB directly to build step-to-screenshot mapping.
-
-    This avoids importing openadapt_capture (which may fail on macOS
-    without a display). Reads action_event + recording tables to
-    enumerate non-move actions, determines the episode_id from the
-    recording table, then applies coalesce logic to map annotated
-    step indices to screenshot files.
-
-    Args:
-        capture_dir: Path to the capture directory.
-        screenshots_dir: Path to screenshots subdirectory.
-        num_steps: Number of annotated steps expected.
-
-    Returns:
-        Dict mapping annotated step_index -> absolute screenshot path.
-    """
-    import sqlite3
-
-    from openadapt_ml.experiments.demo_prompt.annotate import coalesce_steps
-    from openadapt_ml.schema.episode import (
-        Action, ActionType, Episode, Observation, Step,
-    )
-
-    db_path = capture_dir / "recording.db"
-    if not db_path.exists():
-        return {}
-
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-
-    # Get recording ID for episode_id naming
-    row = conn.execute("SELECT id FROM recording LIMIT 1").fetchone()
-    recording_id = row["id"] if row else 1
-    episode_id = f"capture_{recording_id}"
-
-    # Get screen dimensions from recording table
-    rec = conn.execute(
-        "SELECT * FROM recording WHERE id = ?", (recording_id,)
-    ).fetchone()
-    # Screen size may be in recording metadata; default to 1920x1200
-    screen_width = 1920
-    screen_height = 1200
-
-    # Enumerate non-move action events ordered by timestamp
-    rows = conn.execute(
-        "SELECT * FROM action_event WHERE name != 'move' ORDER BY timestamp"
-    ).fetchall()
-    conn.close()
-
-    if not rows:
-        return {}
-
-    # Map DB event names to ActionType
-    type_map = {
-        "click": ActionType.CLICK,
-        "double_click": ActionType.DOUBLE_CLICK,
-        "key_type": ActionType.TYPE,
-        "scroll": ActionType.SCROLL,
-        "drag": ActionType.DRAG,
-        "key": ActionType.KEY,
-        "singleclick": ActionType.CLICK,
-        "doubleclick": ActionType.DOUBLE_CLICK,
-    }
-
-    # Get the start timestamp
-    start_ts = rows[0]["timestamp"] if rows else 0
-
-    steps: list[Step] = []
-    for idx, row in enumerate(rows):
-        ss_path = screenshots_dir / f"{episode_id}_step_{idx}.png"
-        ss_str = str(ss_path) if ss_path.exists() else None
-
-        event_name = (row["name"] or "").lower()
-        action_type = type_map.get(event_name, ActionType.CLICK)
-
-        mouse_x = row["mouse_x"]
-        mouse_y = row["mouse_y"]
-        norm_coords = None
-        if mouse_x is not None and mouse_y is not None:
-            norm_coords = (mouse_x / screen_width, mouse_y / screen_height)
-
-        # For key/type events, get the typed text
-        text = row["key_char"] or None
-
-        ts_ms = int((row["timestamp"] - start_ts) * 1000)
-
-        steps.append(Step(
-            step_index=idx,
-            observation=Observation(screenshot_path=ss_str),
-            action=Action(
-                type=action_type,
-                normalized_coordinates=norm_coords,
-                text=text,
-                key=row["key_name"],
-            ),
-            timestamp_ms=ts_ms,
-        ))
-
-    episode = Episode(
-        episode_id=episode_id,
-        instruction="",
-        steps=steps,
-    )
-    coalesced = coalesce_steps(episode)
-
-    mapping = {}
-    for step in coalesced.steps[:num_steps]:
-        if step.observation and step.observation.screenshot_path:
-            mapping[step.step_index] = step.observation.screenshot_path
-    return mapping
-
-
-def _resolve_screenshots_direct(
-    screenshots_dir: Path,
-    num_steps: int,
-) -> dict[int, str]:
-    """Fallback: map annotated step indices to screenshot files directly.
-
-    When the capture API is unavailable, we map annotated step indices
-    to capture_1_step_{N}.png files. Since coalesced steps skip some
-    raw indices, we just use the first N screenshots in sorted order.
-
-    Args:
-        screenshots_dir: Directory containing capture_1_step_*.png files.
-        num_steps: Number of annotated steps.
-
-    Returns:
-        Dict mapping annotated step_index -> absolute screenshot path.
-    """
-    pngs = sorted(
-        screenshots_dir.glob("capture_1_step_*.png"),
-        key=lambda p: int(re.search(r"step_(\d+)", p.name).group(1)),
-    )
-    mapping = {}
-    for i in range(min(num_steps, len(pngs))):
-        mapping[i] = str(pngs[i].resolve())
-    return mapping
+# ---------------------------------------------------------------------------
+# Demo conversion
+# ---------------------------------------------------------------------------
 
 
 def convert_demo(
     demo_path: Path,
-    screenshot_dir: Path | None = None,
     captures_dir: Path | None = None,
     screenshot_mapping: dict[str, dict[str, str]] | None = None,
     include_thinking: bool = True,
 ) -> list[dict[str, Any]]:
     """Convert an annotated demo JSON file to ms-swift SFT samples.
 
+    Screenshot resolution priority:
+        1. Explicit --mapping JSON (most reliable, works everywhere)
+        2. capture_to_episode + coalesce_steps (requires openadapt-capture)
+
     Args:
         demo_path: Path to annotated demo JSON file.
-        screenshot_dir: Directory containing screenshot PNGs (flat layout).
         captures_dir: Parent directory containing capture dirs.
-            Screenshots are resolved by re-running coalesce on the capture.
         screenshot_mapping: Pre-computed mapping of task_id -> {step_index -> path}.
-            This is the most reliable method when captures can't be loaded.
         include_thinking: Whether to include <think> blocks.
 
     Returns:
@@ -478,11 +465,17 @@ def convert_demo(
     with open(demo_path) as f:
         demo = json.load(f)
 
+    # Validate input
+    issues = _validate_demo(demo, demo_path)
+    if issues:
+        for issue in issues:
+            print(f"  Warning: {issue}", file=sys.stderr)
+
     instruction = demo.get("instruction", "")
     steps = demo.get("steps", [])
     task_id = demo.get("task_id", demo_path.stem)
 
-    # Resolve screenshot mapping — priority: explicit mapping > capture > flat dir
+    # Resolve screenshot mapping — priority: explicit mapping > capture API
     screenshot_map: dict[int, str] = {}
     if screenshot_mapping and task_id in screenshot_mapping:
         screenshot_map = {
@@ -493,27 +486,19 @@ def convert_demo(
             task_id, captures_dir, len(steps),
         )
 
+    if not screenshot_map:
+        print(
+            f"  Warning: no screenshots resolved for {task_id}. "
+            f"Training samples will lack images.",
+            file=sys.stderr,
+        )
+
     samples = []
     previous_actions: list[str] = []
 
     for step in steps:
         step_idx = step.get("step_index", len(previous_actions))
-
-        # Find screenshot — prefer capture-derived mapping
         screenshot_path = screenshot_map.get(step_idx)
-
-        if screenshot_path is None and screenshot_dir:
-            # Fallback: try common naming patterns in flat screenshot dir
-            for pattern in [
-                f"capture_1_step_{step_idx}.png",
-                f"step_{step_idx:03d}_screenshot.png",
-                f"step_{step_idx:03d}.png",
-                f"{task_id}_step_{step_idx:03d}.png",
-            ]:
-                candidate = screenshot_dir / pattern
-                if candidate.exists():
-                    screenshot_path = str(candidate)
-                    break
 
         sample = convert_step(
             step=step,
@@ -535,7 +520,6 @@ def convert_demo(
 
 def convert_all_demos(
     demo_dir: Path,
-    screenshot_dir: Path | None = None,
     captures_dir: Path | None = None,
     screenshot_mapping: dict[str, dict[str, str]] | None = None,
     output_path: Path | None = None,
@@ -545,7 +529,6 @@ def convert_all_demos(
 
     Args:
         demo_dir: Directory containing annotated demo JSON files.
-        screenshot_dir: Directory containing screenshot PNGs (flat layout).
         captures_dir: Parent directory containing capture dirs.
         screenshot_mapping: Pre-computed mapping JSON (task_id -> {step -> path}).
         output_path: Optional path to write JSONL output.
@@ -565,7 +548,6 @@ def convert_all_demos(
         print(f"Converting {demo_path.name}...")
         samples = convert_demo(
             demo_path=demo_path,
-            screenshot_dir=screenshot_dir,
             captures_dir=captures_dir,
             screenshot_mapping=screenshot_mapping,
             include_thinking=include_thinking,
@@ -601,12 +583,7 @@ def main() -> int:
     parser.add_argument(
         "--captures-dir",
         type=str,
-        help="Parent directory containing capture directories (preferred for screenshot resolution)",
-    )
-    parser.add_argument(
-        "--screenshot-dir",
-        type=str,
-        help="Directory containing screenshot PNGs (flat layout fallback)",
+        help="Parent directory containing capture directories (requires openadapt-capture)",
     )
     parser.add_argument(
         "--output",
@@ -617,7 +594,11 @@ def main() -> int:
     parser.add_argument(
         "--mapping",
         type=str,
-        help="Pre-computed screenshot mapping JSON file (task_id -> {step_index -> path})",
+        help=(
+            "Pre-computed screenshot mapping JSON file "
+            "(task_id -> {step_index -> path}). "
+            "This is the recommended method for screenshot resolution."
+        ),
     )
     parser.add_argument(
         "--no-thinking",
@@ -632,7 +613,6 @@ def main() -> int:
         print(f"ERROR: {demo_dir} is not a directory", file=sys.stderr)
         return 1
 
-    screenshot_dir = Path(args.screenshot_dir) if args.screenshot_dir else None
     captures_dir = Path(args.captures_dir) if args.captures_dir else None
 
     screenshot_mapping = None
@@ -647,7 +627,6 @@ def main() -> int:
 
     convert_all_demos(
         demo_dir=demo_dir,
-        screenshot_dir=screenshot_dir,
         captures_dir=captures_dir,
         screenshot_mapping=screenshot_mapping,
         output_path=Path(args.output),
