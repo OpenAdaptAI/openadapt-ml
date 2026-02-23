@@ -341,6 +341,122 @@ def train_with_trl(
         )
 
 
+def train_from_jsonl(
+    jsonl_path: str,
+    config: Optional[TRLTrainingConfig] = None,
+) -> str:
+    """Train from a JSONL file in internal SFT format (images + messages).
+
+    Each line must have {"images": ["path/to/img.png"], "messages": [...]}.
+    Relative image paths are resolved from the JSONL file's parent directory.
+
+    Args:
+        jsonl_path: Path to JSONL training data file.
+        config: Training configuration.
+
+    Returns:
+        Path to saved checkpoint.
+    """
+    import json
+    from datasets import Dataset
+
+    config = config or TRLTrainingConfig()
+    base_path = Path(jsonl_path).parent
+
+    # Load JSONL lines
+    raw_samples = []
+    with open(jsonl_path) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                raw_samples.append(json.loads(line))
+
+    print(f"Loaded {len(raw_samples)} samples from {jsonl_path}")
+
+    # Convert to TRL format (load images as PIL)
+    trl_samples = _convert_samples_to_trl_format(raw_samples, base_path)
+    print(f"  {len(trl_samples)} samples with valid images")
+
+    if not trl_samples:
+        raise ValueError("No valid training samples after loading images")
+
+    # Create HF Dataset and train
+    dataset = Dataset.from_list(trl_samples)
+    model, tokenizer, is_unsloth = _load_unsloth_model(config)
+
+    try:
+        from trl import SFTTrainer, SFTConfig
+
+        if is_unsloth:
+            from unsloth.trainer import UnslothVisionDataCollator
+
+            training_args = SFTConfig(
+                output_dir=config.output_dir,
+                per_device_train_batch_size=config.batch_size,
+                gradient_accumulation_steps=config.gradient_accumulation_steps,
+                learning_rate=config.learning_rate,
+                num_train_epochs=config.num_epochs,
+                warmup_ratio=config.warmup_ratio,
+                lr_scheduler_type="cosine",
+                logging_steps=config.logging_steps,
+                save_strategy=config.save_strategy,
+                remove_unused_columns=False,
+                dataset_text_field="",
+                dataset_kwargs={"skip_prepare_dataset": True},
+            )
+
+            trainer = SFTTrainer(
+                model=model,
+                tokenizer=tokenizer,
+                data_collator=UnslothVisionDataCollator(model, tokenizer),
+                train_dataset=dataset,
+                args=training_args,
+            )
+        else:
+            training_args = SFTConfig(
+                output_dir=config.output_dir,
+                per_device_train_batch_size=config.batch_size,
+                gradient_accumulation_steps=config.gradient_accumulation_steps,
+                learning_rate=config.learning_rate,
+                num_train_epochs=config.num_epochs,
+                warmup_ratio=config.warmup_ratio,
+                lr_scheduler_type="cosine",
+                logging_steps=config.logging_steps,
+                save_strategy=config.save_strategy,
+                max_length=None,
+                assistant_only_loss=False,
+            )
+
+            trainer = SFTTrainer(
+                model=model,
+                train_dataset=dataset,
+                args=training_args,
+            )
+
+        print(f"\n{'=' * 50}")
+        print("Starting training (JSONL):")
+        print(f"  Model: {config.model_name}")
+        print(f"  Samples: {len(trl_samples)}")
+        print(f"  Epochs: {config.num_epochs}")
+        print(f"  Batch size: {config.batch_size}")
+        print(f"  Unsloth: {is_unsloth}")
+        print(f"  Output: {config.output_dir}")
+        print(f"{'=' * 50}\n")
+
+        trainer.train()
+
+        checkpoint_path = Path(config.output_dir) / "final"
+        trainer.save_model(str(checkpoint_path))
+        print(f"\n✓ Saved checkpoint to {checkpoint_path}")
+
+        return str(checkpoint_path)
+
+    except ImportError as e:
+        raise ImportError(
+            f"TRL not installed. Install with: pip install trl\nOriginal error: {e}"
+        )
+
+
 def train_from_parquet(
     parquet_path: str,
     config: Optional[TRLTrainingConfig] = None,

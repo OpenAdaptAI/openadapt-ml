@@ -695,6 +695,7 @@ echo "SETUP_COMPLETE"
         config: str = "configs/qwen3vl_capture.yaml",
         capture: str | None = None,
         goal: str | None = None,
+        jsonl: str | None = None,
         background: bool = True,
     ) -> subprocess.Popen | subprocess.CompletedProcess:
         """Run training on instance.
@@ -704,6 +705,7 @@ echo "SETUP_COMPLETE"
             config: Config file path (relative to repo)
             capture: Remote capture path (if uploaded)
             goal: Task goal description
+            jsonl: Remote path to JSONL training data
             background: Run in background (returns Popen) or foreground
 
         Returns:
@@ -714,7 +716,9 @@ echo "SETUP_COMPLETE"
 
         # Build training command
         train_cmd = f"uv run python -m openadapt_ml.scripts.train --config {config}"
-        if capture:
+        if jsonl:
+            train_cmd += f" --jsonl {jsonl}"
+        elif capture:
             train_cmd += f" --capture {capture}"
         if goal:
             train_cmd += f' --goal "{goal}"'
@@ -966,6 +970,11 @@ def main():
     )
     train_parser.add_argument(
         "--instance", "-i", help="Use existing instance ID instead of launching new"
+    )
+    train_parser.add_argument(
+        "--bundle",
+        "-b",
+        help="Local bundle directory (with training_data.jsonl + images/) to upload",
     )
     train_parser.add_argument(
         "--no-terminate",
@@ -1467,6 +1476,27 @@ def main():
                     )
                     return  # Don't terminate - let user debug
 
+            # Upload bundle if provided
+            remote_jsonl = None
+            if args.bundle:
+                setup_logs.append("Uploading training bundle...")
+                update_dashboard("installing", setup_logs)
+                if client.upload_capture(instance, args.bundle, "~/training_data"):
+                    remote_jsonl = "~/training_data/training_data.jsonl"
+                    setup_logs.append(f"Bundle uploaded to {instance.ip}:~/training_data")
+                    update_dashboard("installing", setup_logs)
+                    print(f"Bundle uploaded to {instance.ip}:~/training_data")
+                else:
+                    setup_logs.append("ERROR: Failed to upload bundle after retries")
+                    update_dashboard("installing", setup_logs)
+                    print("\nError: Failed to upload bundle after retries")
+                    print(f"Instance still running: {instance.ip}")
+                    print("Debug via: ssh ubuntu@" + instance.ip)
+                    print(
+                        f"Terminate with: python -m openadapt_ml.cloud.lambda_labs terminate {instance.id}"
+                    )
+                    return  # Don't terminate - let user debug
+
             # Run training in background and poll for status
             setup_logs.append("Installing dependencies and starting training...")
             update_dashboard("training", setup_logs)
@@ -1479,6 +1509,7 @@ def main():
                 config=args.config,
                 capture=remote_capture,
                 goal=args.goal,
+                jsonl=remote_jsonl,
                 background=True,  # Run in background so we can poll
             )
 
