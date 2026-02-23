@@ -1,8 +1,8 @@
-"""Convert annotated demo JSON files to ms-swift SFT training format.
+"""Convert annotated demo JSON files to SFT training format.
 
 Reads annotated demos produced by the VLM annotation pipeline and converts
-them into JSONL training data compatible with ms-swift for Qwen3-VL
-fine-tuning.
+them into JSONL training data compatible with the internal SFT format
+(matching build_next_action_sft_samples() output) for VLM fine-tuning.
 
 Input format (annotated demo JSON):
     {
@@ -16,10 +16,10 @@ Input format (annotated demo JSON):
       }]
     }
 
-Output format (ms-swift SFT JSONL):
+Output format (internal SFT JSONL):
     {
-      "image": "/path/to/screenshot.png",
-      "conversations": [
+      "images": ["/path/to/screenshot.png"],
+      "messages": [
         {"role": "system", "content": "You are a GUI agent..."},
         {"role": "user", "content": "<image>\\nInstruction: ...\\n...\\nOutput exactly one action."},
         {"role": "assistant", "content": "<think>...</think>\\nclick(x=294, y=532)"}
@@ -37,6 +37,12 @@ Usage:
         --demo-dir /path/to/annotated_demos \\
         --mapping /path/to/screenshot_mapping.json \\
         --output /path/to/output.jsonl
+
+    # Create self-contained bundle for upload:
+    python -m openadapt_ml.training.convert_demos \\
+        --demo-dir /path/to/annotated_demos \\
+        --mapping /path/to/screenshot_mapping.json \\
+        --bundle /path/to/bundle_dir
 """
 
 from __future__ import annotations
@@ -44,6 +50,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import sys
 import warnings
 from pathlib import Path
@@ -358,7 +365,7 @@ def convert_step(
     assistant_content = "".join(assistant_parts)
 
     sample: dict[str, Any] = {
-        "conversations": [
+        "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
             {"role": "assistant", "content": assistant_content},
@@ -366,7 +373,7 @@ def convert_step(
     }
 
     if screenshot_path:
-        sample["image"] = screenshot_path
+        sample["images"] = [screenshot_path]
 
     return sample
 
@@ -552,11 +559,11 @@ def convert_all_demos(
             screenshot_mapping=screenshot_mapping,
             include_thinking=include_thinking,
         )
-        n_with_img = sum(1 for s in samples if "image" in s)
+        n_with_img = sum(1 for s in samples if "images" in s)
         print(f"  -> {len(samples)} training samples ({n_with_img} with screenshots)")
         all_samples.extend(samples)
 
-    n_total_img = sum(1 for s in all_samples if "image" in s)
+    n_total_img = sum(1 for s in all_samples if "images" in s)
     print(f"\nTotal: {len(all_samples)} training samples ({n_total_img} with screenshots) from {len(demo_files)} demos")
 
     if output_path:
@@ -567,6 +574,54 @@ def convert_all_demos(
         print(f"Written to {output_path}")
 
     return all_samples
+
+
+def create_bundle(
+    samples: list[dict[str, Any]],
+    bundle_dir: Path,
+) -> Path:
+    """Create a self-contained training bundle directory.
+
+    Copies referenced screenshots into bundle_dir/images/ and rewrites
+    image paths to relative so the bundle can be uploaded anywhere.
+
+    Args:
+        samples: Training samples (with absolute image paths).
+        bundle_dir: Output directory for the bundle.
+
+    Returns:
+        Path to the written JSONL file inside the bundle.
+    """
+    images_dir = bundle_dir / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+
+    bundled_samples = []
+    for sample in samples:
+        sample = dict(sample)  # shallow copy
+        if "images" in sample:
+            new_paths = []
+            for img_path in sample["images"]:
+                src = Path(img_path)
+                if src.exists():
+                    dst = images_dir / src.name
+                    if not dst.exists():
+                        shutil.copy2(src, dst)
+                    new_paths.append(f"images/{src.name}")
+                else:
+                    print(f"  Warning: image not found, skipping: {src}", file=sys.stderr)
+            sample["images"] = new_paths
+        bundled_samples.append(sample)
+
+    jsonl_path = bundle_dir / "training_data.jsonl"
+    with open(jsonl_path, "w") as f:
+        for sample in bundled_samples:
+            f.write(json.dumps(sample) + "\n")
+
+    n_images = len(list(images_dir.iterdir()))
+    print(f"Bundle created: {bundle_dir}")
+    print(f"  {len(bundled_samples)} samples in training_data.jsonl")
+    print(f"  {n_images} images in images/")
+    return jsonl_path
 
 
 def main() -> int:
@@ -605,6 +660,15 @@ def main() -> int:
         action="store_true",
         help="Exclude <think> blocks from training data",
     )
+    parser.add_argument(
+        "--bundle",
+        type=str,
+        help=(
+            "Create a self-contained bundle directory with images/ and "
+            "training_data.jsonl (rewrites paths to relative). "
+            "Overrides --output."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -625,13 +689,24 @@ def main() -> int:
             screenshot_mapping = json.load(f)
         print(f"Loaded screenshot mapping: {len(screenshot_mapping)} tasks")
 
-    convert_all_demos(
-        demo_dir=demo_dir,
-        captures_dir=captures_dir,
-        screenshot_mapping=screenshot_mapping,
-        output_path=Path(args.output),
-        include_thinking=not args.no_thinking,
-    )
+    if args.bundle:
+        # Bundle mode: convert then create self-contained directory
+        samples = convert_all_demos(
+            demo_dir=demo_dir,
+            captures_dir=captures_dir,
+            screenshot_mapping=screenshot_mapping,
+            output_path=None,  # don't write yet
+            include_thinking=not args.no_thinking,
+        )
+        create_bundle(samples, Path(args.bundle))
+    else:
+        convert_all_demos(
+            demo_dir=demo_dir,
+            captures_dir=captures_dir,
+            screenshot_mapping=screenshot_mapping,
+            output_path=Path(args.output),
+            include_thinking=not args.no_thinking,
+        )
 
     return 0
 

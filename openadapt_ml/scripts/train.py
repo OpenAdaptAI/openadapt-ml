@@ -21,7 +21,7 @@ from typing import Dict, Any, Optional
 import yaml
 
 from openadapt_ml.ingest.synthetic import generate_synthetic_episodes
-from openadapt_ml.training.trl_trainer import TRLTrainingConfig, train_with_trl
+from openadapt_ml.training.trl_trainer import TRLTrainingConfig, train_with_trl, train_from_jsonl
 
 
 def _load_config(path: str | Path) -> dict:
@@ -45,6 +45,7 @@ def main(
     output_dir: str | None = None,
     open_dashboard: bool = False,
     use_unsloth: bool = True,
+    jsonl_path: str | None = None,
 ) -> None:
     """Train a VLM using TRL SFTTrainer.
 
@@ -55,6 +56,7 @@ def main(
         output_dir: Output directory for logs and dashboard
         open_dashboard: Open training dashboard in browser after training
         use_unsloth: Enable Unsloth optimizations (default True)
+        jsonl_path: Optional path to JSONL training data (internal SFT format)
     """
     cfg = _load_config(config_path)
 
@@ -68,33 +70,6 @@ def main(
         lora_cfg = {k: v for k, v in raw_lora_cfg.items() if k != "weights_path"}
     else:
         lora_cfg = raw_lora_cfg
-
-    # Load data - either from capture or synthetic
-    use_som = cfg.get("synthetic_data", {}).get("use_som", False)
-
-    if capture_path:
-        # Load from real openadapt-capture recording
-        print(f"Loading capture from: {capture_path}")
-        episodes = _load_capture_episodes(capture_path, goal=goal)
-        data_source = f"capture '{Path(capture_path).name}'"
-    else:
-        # Generate synthetic data
-        synth_cfg = cfg.get("synthetic_data", {})
-        num_sessions = synth_cfg.get("num_sessions", 10)
-        seed = synth_cfg.get("seed")
-        default_output_dir = str(Path("synthetic") / "train")
-        synth_output = synth_cfg.get("output_dir", default_output_dir)
-        use_som = synth_cfg.get("use_som", False)
-        scenario = synth_cfg.get("scenario", "login")
-
-        episodes = generate_synthetic_episodes(
-            num_episodes=num_sessions,
-            seed=seed,
-            output_dir=synth_output,
-            use_som=use_som,
-            scenario=scenario,
-        )
-        data_source = f"synthetic '{scenario}'"
 
     # Determine output directory
     train_cfg_raw = cfg.get("training", {})
@@ -128,6 +103,49 @@ def main(
         import os
 
         os.environ["OPENADAPT_DISABLE_UNSLOTH"] = "1"
+
+    # JSONL path: skip episode loading, use train_from_jsonl directly
+    if jsonl_path:
+        print(f"Training from JSONL: {jsonl_path}")
+        checkpoint_path = train_from_jsonl(
+            jsonl_path=jsonl_path,
+            config=trl_config,
+        )
+        print(f"Training complete. Checkpoint saved to: {checkpoint_path}")
+        if open_dashboard:
+            import webbrowser
+
+            dashboard_path = Path(output_dir) / "dashboard.html"
+            if dashboard_path.exists():
+                webbrowser.open(f"file://{dashboard_path.absolute()}")
+        return
+
+    # Load data - either from capture or synthetic
+    use_som = cfg.get("synthetic_data", {}).get("use_som", False)
+
+    if capture_path:
+        # Load from real openadapt-capture recording
+        print(f"Loading capture from: {capture_path}")
+        episodes = _load_capture_episodes(capture_path, goal=goal)
+        data_source = f"capture '{Path(capture_path).name}'"
+    else:
+        # Generate synthetic data
+        synth_cfg = cfg.get("synthetic_data", {})
+        num_sessions = synth_cfg.get("num_sessions", 10)
+        seed = synth_cfg.get("seed")
+        default_output_dir = str(Path("synthetic") / "train")
+        synth_output = synth_cfg.get("output_dir", default_output_dir)
+        use_som = synth_cfg.get("use_som", False)
+        scenario = synth_cfg.get("scenario", "login")
+
+        episodes = generate_synthetic_episodes(
+            num_episodes=num_sessions,
+            seed=seed,
+            output_dir=synth_output,
+            use_som=use_som,
+            scenario=scenario,
+        )
+        data_source = f"synthetic '{scenario}'"
 
     base_path = Path(capture_path).parent if capture_path else None
     print(f"Training on {len(episodes)} episodes from {data_source}")
@@ -174,6 +192,11 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--jsonl",
+        type=str,
+        help="Path to JSONL training data (internal SFT format with images + messages).",
+    )
+    parser.add_argument(
         "--use-unsloth",
         action="store_true",
         default=True,
@@ -194,4 +217,5 @@ if __name__ == "__main__":
         output_dir=args.output_dir,
         open_dashboard=args.open,
         use_unsloth=use_unsloth,
+        jsonl_path=args.jsonl,
     )
