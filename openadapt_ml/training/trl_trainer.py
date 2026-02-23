@@ -132,8 +132,9 @@ def _make_callback(config: TRLTrainingConfig):
     """Create a TrainerCallback instance (import deferred to avoid top-level dep)."""
     from transformers import TrainerCallback
 
-    # Dynamically create a proper subclass
-    class OpenAdaptCallback(TrainerCallback, _OpenAdaptCallback):
+    # _OpenAdaptCallback must come BEFORE TrainerCallback so its on_log/on_train_begin
+    # override TrainerCallback's no-op implementations (Python MRO).
+    class OpenAdaptCallback(_OpenAdaptCallback, TrainerCallback):
         def __init__(self, cfg):
             _OpenAdaptCallback.__init__(self, cfg)
 
