@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.11.0 (2026-02-24)
+
+### Features
+
+- **modal**: Add inference serving with call_inference API
+  ([`57e5c5f`](https://github.com/OpenAdaptAI/openadapt-ml/commit/57e5c5ff9bfefc69003c608981f2e702b0507e65))
+
+- Add _build_inference_app() for Modal GPU inference with PEFT adapter - Add
+  upload_adapter_to_volume() for uploading adapters to Modal volume - Add call_inference() as the
+  primary API for remote inference - Add 'serve' CLI command for interactive model serving -
+  Container caches model in memory across calls (container_idle_timeout=600) - Support --no-adapter
+  for zero-shot base model serving
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.10.1 (2026-02-24)
 
 ### Bug Fixes
