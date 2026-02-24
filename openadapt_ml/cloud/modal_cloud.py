@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 import tempfile
@@ -387,7 +386,9 @@ def _build_inference_app(
                     text_content = msg["content"]
                     # Replace <image> tag in text with proper multi-modal format
                     if "<image>" in text_content:
-                        text_content = text_content.replace("<image>\n", "").replace("<image>", "")
+                        text_content = text_content.replace("<image>\n", "").replace(
+                            "<image>", ""
+                        )
                     msg["content"] = [
                         {"type": "image"},
                         {"type": "text", "text": text_content},
@@ -404,9 +405,7 @@ def _build_inference_app(
                 text=[text], images=[image], return_tensors="pt", padding=True
             )
         else:
-            inputs = infer._processor(
-                text=[text], return_tensors="pt", padding=True
-            )
+            inputs = infer._processor(text=[text], return_tensors="pt", padding=True)
 
         inputs = inputs.to(infer._model.device)
 
