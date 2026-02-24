@@ -453,6 +453,24 @@ def _run_sft_training(
     trainer.save_model(str(checkpoint_path))
     print(f"\n✓ Saved checkpoint to {checkpoint_path}")
 
+    # Co-locate training log and plots with checkpoint
+    import shutil
+
+    log_path = Path(config.output_dir) / "training_log.json"
+    if log_path.exists():
+        shutil.copy2(log_path, checkpoint_path / "training_log.json")
+
+    try:
+        from openadapt_ml.training.plot_training import plot_training_curves
+
+        plots = plot_training_curves(log_path, Path(config.output_dir))
+        for plot_path in plots:
+            shutil.copy2(plot_path, checkpoint_path / plot_path.name)
+        if plots:
+            print(f"  Generated {len(plots)} training plots")
+    except Exception as e:
+        print(f"  Warning: plot generation failed: {e}")
+
     return str(checkpoint_path)
 
 

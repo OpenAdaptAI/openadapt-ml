@@ -30,32 +30,13 @@
 
 ## Loss Curve
 
-```
-Loss
-27 │ ██
-   │  ██
-   │   ██
-   │    ██
-24 │     ██
-   │      ██
-   │       ██
-21 │        ██
-   │         ██
-   │          ██
-18 │           ██
-   │            ██
-   │             ██
-15 │              ██
-   │               ██
-   │                ██
-12 │                 ███
-   │                   ████
-   │                       ████
- 9 │                           ████████████████████
-   └──────────────────────────────────────────────────
-   0    5   10   15   20   25   30   35   40   45   50
-                        Step
-```
+![Training Loss & LR](training_results/training_combined.png)
+
+![Training Loss](training_results/training_loss.png)
+
+*Generated from [`training_results/qwen3vl2b_demo_training_log.json`](training_results/qwen3vl2b_demo_training_log.json) using `python -m openadapt_ml.training.plot_training`.*
+
+*Note: Steps 1-5 and 45-50 are exact values recovered from training output; steps 6-44 are linearly interpolated within epoch boundaries.*
 
 ### Per-Epoch Summary
 
