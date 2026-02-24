@@ -49,6 +49,14 @@ class Settings(BaseSettings):
     # Lambda Labs (cloud GPU for training)
     lambda_api_key: str | None = None
 
+    # Vast.ai (cloud GPU marketplace for training)
+    vast_api_key: str | None = None
+
+    # Modal (serverless cloud GPU for training)
+    # Auth via `modal token set` CLI, or set these env vars.
+    modal_token_id: str = ""
+    modal_token_secret: str = ""
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",
