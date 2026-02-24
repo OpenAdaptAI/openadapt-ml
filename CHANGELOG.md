@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.11.1 (2026-02-24)
+
+### Bug Fixes
+
+- **modal**: Fix inference container image and multi-modal message handling
+  ([`88e4c09`](https://github.com/OpenAdaptAI/openadapt-ml/commit/88e4c09dcfdf26acda0b4b35d064c68aa297c895))
+
+- Pin transformers==4.57.3 (matches local, has Qwen3-VL support) - Add torchvision dependency
+  (required by AutoVideoProcessor) - Add fallback: AutoModelForVision2Seq ->
+  Qwen2_5_VLForConditionalGeneration - Add fallback: AutoProcessor -> Qwen2_5_VLProcessor -
+  Reconstruct multi-modal messages with {"type": "image"} placeholders for proper vision token
+  generation in apply_chat_template - Rename container_idle_timeout -> scaledown_window (Modal API
+  update)
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.11.0 (2026-02-24)
 
 ### Features
