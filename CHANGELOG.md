@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.9.0 (2026-02-24)
+
+### Features
+
+- **train**: Add end-to-end pipeline automation with --demo-dir flag
+  ([`b874018`](https://github.com/OpenAdaptAI/openadapt-ml/commit/b874018d45b174f4f9c6bacb855f571f91612cf0))
+
+Add prepare_bundle() and generate_screenshot_mapping() to convert_demos.py for single-call demo
+  conversion. Extend both train.py and lambda_labs.py train commands with --demo-dir,
+  --captures-dir, --mapping flags so the full pipeline (mapping → conversion → bundle → upload →
+  train) runs as one command. Add --gpu-wait for Lambda GPU availability retry loop.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.8.0 (2026-02-24)
 
 ### Features
