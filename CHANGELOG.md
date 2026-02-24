@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.10.1 (2026-02-24)
+
+### Bug Fixes
+
+- **modal**: Apply fixes from first successful Modal training run
+  ([`120c903`](https://github.com/OpenAdaptAI/openadapt-ml/commit/120c903065b0dc15936bc1a58da7ec2e1b84e6af))
+
+- Add `serialized=True` to @app.function for non-global-scope support - Auto-create volume before
+  upload, add `--force` for overwrites - Fix variable scoping (`vol = training_volume`) inside
+  remote function - Add `openadapt-ml[training]` to container image dependencies - Use `--jsonl`
+  flag in train subprocess for correct data path - Add `modal` to project dependencies - Update test
+  to verify create+put two-call pattern
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.10.0 (2026-02-24)
 
 ### Features
