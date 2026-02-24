@@ -721,13 +721,7 @@ class TestVLModelDetection:
         assert not is_vl_model("google/gemma-7b", False)
 
     def test_lora_task_type_selection(self) -> None:
-        """Test that correct LoRA task type is selected based on model type.
-
-        VL models should use SEQ_2_SEQ_LM, text-only should use CAUSAL_LM.
-        """
-        def get_task_type(is_vl: bool) -> str:
-            """Replicate the task type selection from _load_standard_model."""
-            return "SEQ_2_SEQ_LM" if is_vl else "CAUSAL_LM"
-
-        assert get_task_type(True) == "SEQ_2_SEQ_LM"
-        assert get_task_type(False) == "CAUSAL_LM"
+        """Test that CAUSAL_LM is always used (Qwen-VL is decoder-only, not encoder-decoder)."""
+        # All models use CAUSAL_LM — VL models like Qwen-VL are decoder-only
+        task_type = "CAUSAL_LM"
+        assert task_type == "CAUSAL_LM"

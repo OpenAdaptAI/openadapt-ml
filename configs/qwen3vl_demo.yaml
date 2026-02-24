@@ -12,7 +12,7 @@ lora:
     - v_proj
     - k_proj
     - o_proj
-  task_type: CAUSAL_LM
+  # task_type is always CAUSAL_LM (set in trl_trainer.py, not configurable)
   weights_path: checkpoints/qwen3vl2b_demo_lora
 
 training:
