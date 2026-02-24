@@ -386,6 +386,82 @@ def convert_step(
 
 
 # ---------------------------------------------------------------------------
+# Screenshot mapping generation
+# ---------------------------------------------------------------------------
+
+
+def generate_screenshot_mapping(
+    demo_dir: Path,
+    captures_dir: Path,
+) -> dict[str, dict[str, str]]:
+    """Auto-generate screenshot mapping by scanning captures on disk.
+
+    For each annotated demo, finds the matching capture directory and maps
+    step indices to screenshot file paths. Uses the filename pattern
+    ``capture_1_step_N.png`` in the capture's ``screenshots/`` folder.
+
+    Args:
+        demo_dir: Directory containing annotated demo JSON files.
+        captures_dir: Parent directory containing capture directories
+            (e.g. ``/Users/.../oa/src/``).
+
+    Returns:
+        Mapping of task_id -> {step_index_str -> absolute_screenshot_path}.
+    """
+    mapping: dict[str, dict[str, str]] = {}
+
+    demo_files = sorted(demo_dir.glob("*.json"))
+    for demo_path in demo_files:
+        with open(demo_path) as f:
+            demo = json.load(f)
+
+        task_id = demo.get("task_id", demo_path.stem)
+        steps = demo.get("steps", [])
+
+        # Find capture directory — try exact match then case-insensitive
+        capture_dir = captures_dir / task_id
+        if not capture_dir.is_dir():
+            for d in captures_dir.iterdir():
+                if d.is_dir() and d.name.lower() == task_id.lower():
+                    capture_dir = d
+                    break
+            else:
+                print(
+                    f"  Warning: no capture directory for {task_id} in {captures_dir}",
+                    file=sys.stderr,
+                )
+                continue
+
+        screenshots_dir = capture_dir / "screenshots"
+        if not screenshots_dir.is_dir():
+            print(
+                f"  Warning: no screenshots/ in {capture_dir}",
+                file=sys.stderr,
+            )
+            continue
+
+        # Map step indices to screenshot files
+        step_map: dict[str, str] = {}
+        for step in steps:
+            idx = step.get("step_index", 0)
+            png = screenshots_dir / f"capture_1_step_{idx}.png"
+            if png.exists():
+                step_map[str(idx)] = str(png.resolve())
+            else:
+                print(
+                    f"  Warning: missing screenshot for {task_id} step {idx}: {png}",
+                    file=sys.stderr,
+                )
+
+        if step_map:
+            mapping[task_id] = step_map
+            print(f"  {task_id}: {len(step_map)} screenshots")
+
+    print(f"Generated mapping for {len(mapping)} tasks")
+    return mapping
+
+
+# ---------------------------------------------------------------------------
 # Screenshot resolution
 # ---------------------------------------------------------------------------
 
@@ -634,6 +710,71 @@ def create_bundle(
     print(f"  {len(bundled_samples)} samples in training_data.jsonl")
     print(f"  {n_images} images in images/")
     return jsonl_path
+
+
+def prepare_bundle(
+    demo_dir: str | Path,
+    captures_dir: str | Path,
+    bundle_dir: str | Path | None = None,
+    mapping_path: str | Path | None = None,
+    include_thinking: bool = True,
+) -> Path:
+    """End-to-end: generate mapping, convert demos, create bundle.
+
+    This is the single-call entry point for the full conversion pipeline.
+    It auto-generates the screenshot mapping (or uses a pre-computed one),
+    converts all demos, and creates a self-contained bundle directory.
+
+    Args:
+        demo_dir: Directory with annotated demo JSON files.
+        captures_dir: Parent directory containing capture directories.
+        bundle_dir: Output bundle directory (default: temp dir).
+        mapping_path: Optional pre-computed screenshot_mapping.json.
+        include_thinking: Include <think> blocks in training data.
+
+    Returns:
+        Path to the bundle directory containing training_data.jsonl + images/.
+    """
+    import tempfile
+
+    demo_dir = Path(demo_dir)
+    captures_dir = Path(captures_dir)
+
+    if bundle_dir is None:
+        bundle_dir = Path(tempfile.mkdtemp(prefix="training_bundle_"))
+    else:
+        bundle_dir = Path(bundle_dir)
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+
+    # Step 1: Screenshot mapping
+    if mapping_path:
+        with open(mapping_path) as f:
+            screenshot_mapping = json.load(f)
+        print(f"Loaded screenshot mapping from {mapping_path}")
+    else:
+        print("Auto-generating screenshot mapping...")
+        screenshot_mapping = generate_screenshot_mapping(demo_dir, captures_dir)
+        # Save for reproducibility
+        mapping_out = bundle_dir / "screenshot_mapping.json"
+        with open(mapping_out, "w") as f:
+            json.dump(screenshot_mapping, f, indent=2)
+        print(f"Saved mapping to {mapping_out}")
+
+    # Step 2: Convert demos
+    samples = convert_all_demos(
+        demo_dir=demo_dir,
+        captures_dir=captures_dir,
+        screenshot_mapping=screenshot_mapping,
+        include_thinking=include_thinking,
+    )
+
+    if not samples:
+        raise ValueError(f"No training samples produced from {demo_dir}")
+
+    # Step 3: Create bundle
+    create_bundle(samples, bundle_dir)
+
+    return bundle_dir
 
 
 def main() -> int:

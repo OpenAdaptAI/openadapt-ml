@@ -28,6 +28,8 @@ from openadapt_ml.training.convert_demos import (
     _validate_demo,
     convert_step,
     create_bundle,
+    generate_screenshot_mapping,
+    prepare_bundle,
 )
 
 
@@ -366,3 +368,161 @@ class TestCreateBundle:
         with open(jsonl_path) as f:
             line = json.loads(f.readline())
         assert line["images"] == []
+
+
+class TestGenerateScreenshotMapping:
+    """Test auto-generation of screenshot mapping from captures on disk."""
+
+    def _make_capture(self, captures_dir, task_id, num_steps):
+        """Create a fake capture directory with screenshots."""
+        cap_dir = captures_dir / task_id / "screenshots"
+        cap_dir.mkdir(parents=True)
+        for i in range(num_steps):
+            (cap_dir / f"capture_1_step_{i}.png").write_bytes(b"fake")
+        return cap_dir
+
+    def _make_demo(self, demo_dir, task_id, num_steps):
+        """Create a fake annotated demo JSON."""
+        demo = {
+            "task_id": task_id,
+            "instruction": "Do something",
+            "steps": [
+                {"step_index": i, "action_raw": f"CLICK(0.{i}, 0.{i})"}
+                for i in range(num_steps)
+            ],
+        }
+        demo_path = demo_dir / f"{task_id}.json"
+        demo_path.write_text(json.dumps(demo))
+        return demo_path
+
+    def test_basic_mapping(self, tmp_path):
+        demos = tmp_path / "demos"
+        demos.mkdir()
+        captures = tmp_path / "captures"
+        captures.mkdir()
+
+        self._make_demo(demos, "task-1", 3)
+        self._make_capture(captures, "task-1", 3)
+
+        mapping = generate_screenshot_mapping(demos, captures)
+        assert "task-1" in mapping
+        assert len(mapping["task-1"]) == 3
+        for i in range(3):
+            assert str(i) in mapping["task-1"]
+
+    def test_missing_capture_warns(self, tmp_path):
+        demos = tmp_path / "demos"
+        demos.mkdir()
+        captures = tmp_path / "captures"
+        captures.mkdir()
+
+        self._make_demo(demos, "task-missing", 2)
+        # No capture dir created
+
+        mapping = generate_screenshot_mapping(demos, captures)
+        assert "task-missing" not in mapping
+
+    def test_missing_screenshot_warns(self, tmp_path):
+        demos = tmp_path / "demos"
+        demos.mkdir()
+        captures = tmp_path / "captures"
+        captures.mkdir()
+
+        self._make_demo(demos, "task-2", 3)
+        self._make_capture(captures, "task-2", 2)  # only 2 screenshots for 3 steps
+
+        mapping = generate_screenshot_mapping(demos, captures)
+        assert "task-2" in mapping
+        assert len(mapping["task-2"]) == 2  # only 2 found
+
+    def test_multiple_tasks(self, tmp_path):
+        demos = tmp_path / "demos"
+        demos.mkdir()
+        captures = tmp_path / "captures"
+        captures.mkdir()
+
+        for tid in ["a", "b", "c"]:
+            self._make_demo(demos, tid, 2)
+            self._make_capture(captures, tid, 2)
+
+        mapping = generate_screenshot_mapping(demos, captures)
+        assert len(mapping) == 3
+
+
+class TestPrepareBundle:
+    """Test end-to-end prepare_bundle pipeline."""
+
+    def test_prepare_bundle_auto_mapping(self, tmp_path):
+        demos = tmp_path / "demos"
+        demos.mkdir()
+        captures = tmp_path / "captures"
+        captures.mkdir()
+
+        # Create demo + capture
+        demo = {
+            "task_id": "t1",
+            "instruction": "Click the button",
+            "steps": [
+                {
+                    "step_index": 0,
+                    "action_raw": "CLICK(0.5, 0.5)",
+                    "observation": "I see a button",
+                    "intent": "Click it",
+                }
+            ],
+        }
+        (demos / "t1.json").write_text(json.dumps(demo))
+        ss_dir = captures / "t1" / "screenshots"
+        ss_dir.mkdir(parents=True)
+        (ss_dir / "capture_1_step_0.png").write_bytes(b"fake png")
+
+        bundle_dir = tmp_path / "bundle"
+        result = prepare_bundle(demos, captures, bundle_dir=bundle_dir)
+
+        assert result == bundle_dir
+        assert (bundle_dir / "training_data.jsonl").exists()
+        assert (bundle_dir / "images").is_dir()
+        assert (bundle_dir / "screenshot_mapping.json").exists()
+
+        # Verify JSONL content
+        with open(bundle_dir / "training_data.jsonl") as f:
+            sample = json.loads(f.readline())
+        assert sample["images"] == ["images/capture_1_step_0.png"]
+        assert sample["messages"][0]["role"] == "system"
+
+    def test_prepare_bundle_with_mapping(self, tmp_path):
+        demos = tmp_path / "demos"
+        demos.mkdir()
+        captures = tmp_path / "captures"
+        captures.mkdir()
+
+        demo = {
+            "task_id": "t2",
+            "instruction": "Type hello",
+            "steps": [{"step_index": 0, "action_raw": 'TYPE("hello")'}],
+        }
+        (demos / "t2.json").write_text(json.dumps(demo))
+
+        # Create image and pre-computed mapping
+        img = tmp_path / "img.png"
+        img.write_bytes(b"fake")
+        mapping = {"t2": {"0": str(img)}}
+        mapping_path = tmp_path / "mapping.json"
+        mapping_path.write_text(json.dumps(mapping))
+
+        bundle_dir = tmp_path / "bundle"
+        prepare_bundle(demos, captures, bundle_dir=bundle_dir, mapping_path=mapping_path)
+
+        assert (bundle_dir / "training_data.jsonl").exists()
+        # Should NOT have screenshot_mapping.json since we provided one
+        assert not (bundle_dir / "screenshot_mapping.json").exists()
+
+    def test_prepare_bundle_no_samples_raises(self, tmp_path):
+        demos = tmp_path / "demos"
+        demos.mkdir()
+        captures = tmp_path / "captures"
+        captures.mkdir()
+        # Empty demo dir — no JSON files
+
+        with pytest.raises(ValueError, match="No training samples"):
+            prepare_bundle(demos, captures, bundle_dir=tmp_path / "bundle")
