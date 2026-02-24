@@ -1507,8 +1507,10 @@ def main():
 
             # Poll for training status and update dashboard
             poll_interval = 10  # seconds
+            sync_interval = 300  # sync training_log.json every 5 minutes
             last_step = 0
             last_epoch = 0
+            last_sync_time = time_module.time()
             print(
                 f"Polling training status every {poll_interval}s (Ctrl+C to stop)...\n"
             )
@@ -1593,6 +1595,26 @@ def main():
 
                 except Exception as e:
                     print(f"  Poll error: {e}")
+
+                # Periodic sync of training artifacts (every 5 min)
+                now = time_module.time()
+                if now - last_sync_time >= sync_interval:
+                    try:
+                        subprocess.run(
+                            [
+                                "rsync",
+                                "-az",
+                                "-e",
+                                "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10",
+                                f"ubuntu@{instance.ip}:~/openadapt-ml/training_output/training_log.json",
+                                str(log_path),
+                            ],
+                            capture_output=True,
+                            timeout=30,
+                        )
+                    except Exception:
+                        pass  # Non-critical — best-effort sync
+                    last_sync_time = now
 
                 time_module.sleep(poll_interval)
 
