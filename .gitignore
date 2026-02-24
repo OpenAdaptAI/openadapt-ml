@@ -81,3 +81,6 @@ _trash/
 # Auto-generated files
 RESOURCES.md
 azure_logs/
+
+# User-specific screenshot mappings (contains absolute paths)
+screenshot_mapping.json

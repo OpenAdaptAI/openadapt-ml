@@ -271,13 +271,13 @@ def _load_standard_model(config: TRLTrainingConfig):
 
     processor = AutoProcessor.from_pretrained(config.model_name, trust_remote_code=True)
 
-    # Apply LoRA - use SEQ_2_SEQ_LM for VL models, CAUSAL_LM for text-only
+    # Apply LoRA - CAUSAL_LM for all models (Qwen-VL is decoder-only, not encoder-decoder)
     peft_config = LoraConfig(
         r=config.lora_r,
         lora_alpha=config.lora_alpha,
         lora_dropout=config.lora_dropout,
         target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],
-        task_type="SEQ_2_SEQ_LM" if is_vl_model else "CAUSAL_LM",
+        task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, peft_config)
 

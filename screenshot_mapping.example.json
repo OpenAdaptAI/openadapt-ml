@@ -1,0 +1,6 @@
+{
+  "task-id-from-demo-filename": {
+    "0": "/absolute/path/to/captures/task-id/screenshots/capture_1_step_0.png",
+    "1": "/absolute/path/to/captures/task-id/screenshots/capture_1_step_1.png"
+  }
+}
