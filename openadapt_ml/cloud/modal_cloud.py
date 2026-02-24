@@ -87,6 +87,7 @@ def _build_app():
         "accelerate",
         "pyyaml",
         "pillow",
+        "openadapt-ml[training]",
     )
 
     return app, training_image, training_volume
@@ -120,11 +121,15 @@ def _register_train_function():
     """
     app, training_image, training_volume = _ensure_app()
 
+    # Capture volume reference for use inside remote function
+    vol = training_volume
+
     @app.function(
         gpu="A10G",
         image=training_image,
-        volumes={VOLUME_MOUNT: training_volume},
+        volumes={VOLUME_MOUNT: vol},
         timeout=3600,
+        serialized=True,
     )
     def train_model(
         config_yaml: str,
@@ -141,50 +146,52 @@ def _register_train_function():
         """
         import json as _json
         import os as _os
+        import subprocess as _subprocess
+        import sys as _sys
         import time
 
         import yaml
 
         results_dir = RESULTS_REMOTE_PATH
-        os.makedirs(results_dir, exist_ok=True)
+        _os.makedirs(results_dir, exist_ok=True)
 
         config = yaml.safe_load(config_yaml)
-
-        # Point config at volume paths
-        config["dataset_path"] = f"{bundle_path}/training_data.jsonl"
-        config["image_dir"] = f"{bundle_path}/images"
-        config["output_dir"] = results_dir
 
         # Write config to disk for the trainer
         config_path = f"{VOLUME_MOUNT}/train_config.yaml"
         with open(config_path, "w") as f:
             yaml.dump(config, f)
 
+        # Paths inside the volume
+        jsonl_path = f"{bundle_path}/training_data.jsonl"
+
         # Log start
         training_log = {
             "status": "running",
             "start_time": time.time(),
-            "config": config,
             "losses": [],
         }
         log_path = f"{results_dir}/training_log.json"
         with open(log_path, "w") as f:
             _json.dump(training_log, f, indent=2)
+        vol.commit()
 
-        # Commit volume so logs are visible during training
-        training_volume.commit()
-
-        # Run training via subprocess (same pattern as Lambda)
+        # Run training via subprocess using --jsonl flag
         cmd = [
-            sys.executable,
+            _sys.executable,
             "-m",
             "openadapt_ml.scripts.train",
             "--config",
             config_path,
+            "--jsonl",
+            jsonl_path,
+            "--output-dir",
+            results_dir,
         ]
 
+        print(f"Running: {' '.join(cmd)}")
         try:
-            result = subprocess.run(
+            result = _subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
@@ -199,11 +206,13 @@ def _register_train_function():
             )
 
             if result.stdout:
+                print(result.stdout[-2000:])
                 training_log["stdout_tail"] = result.stdout[-2000:]
             if result.stderr:
+                print(result.stderr[-2000:])
                 training_log["stderr_tail"] = result.stderr[-2000:]
 
-        except subprocess.TimeoutExpired:
+        except _subprocess.TimeoutExpired:
             training_log["status"] = "timeout"
             training_log["end_time"] = time.time()
             training_log["elapsed_time"] = (
@@ -218,10 +227,10 @@ def _register_train_function():
             )
 
         # Read losses from the trainer's own log if it exists
-        trainer_log = f"{results_dir}/training_log.json"
-        if _os.path.exists(trainer_log):
+        trainer_log_path = f"{results_dir}/training_log.json"
+        if _os.path.exists(trainer_log_path):
             try:
-                with open(trainer_log) as f:
+                with open(trainer_log_path) as f:
                     trainer_data = _json.load(f)
                 if "losses" in trainer_data:
                     training_log["losses"] = trainer_data["losses"]
@@ -233,8 +242,7 @@ def _register_train_function():
         # Save final log and commit volume
         with open(log_path, "w") as f:
             _json.dump(training_log, f, indent=2)
-
-        training_volume.commit()
+        vol.commit()
 
         return _json.dumps(
             {
@@ -271,6 +279,13 @@ def upload_bundle_to_volume(local_bundle: str | Path) -> None:
 
     print(f"Uploading bundle to Modal volume '{VOLUME_NAME}'...")
 
+    # Create volume if it doesn't exist
+    create_cmd = ["modal", "volume", "create", VOLUME_NAME]
+    create_result = subprocess.run(create_cmd, capture_output=True, text=True)
+    if create_result.returncode == 0:
+        print(f"  Created volume '{VOLUME_NAME}'")
+    # Ignore errors (volume may already exist)
+
     cmd = [
         "modal",
         "volume",
@@ -278,6 +293,7 @@ def upload_bundle_to_volume(local_bundle: str | Path) -> None:
         VOLUME_NAME,
         str(local_bundle),
         "/bundle",
+        "--force",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:

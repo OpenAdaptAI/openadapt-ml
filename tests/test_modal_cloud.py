@@ -97,7 +97,7 @@ class TestBundleUpload:
                 upload_bundle_to_volume(tmpdir)
 
     def test_upload_bundle_calls_modal_volume_put(self):
-        """Test that upload invokes 'modal volume put' with correct args."""
+        """Test that upload invokes 'modal volume create' then 'modal volume put'."""
         from openadapt_ml.cloud.modal_cloud import upload_bundle_to_volume, VOLUME_NAME
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -115,14 +115,16 @@ class TestBundleUpload:
             ) as mock_run:
                 upload_bundle_to_volume(tmpdir)
 
-                mock_run.assert_called_once()
-                cmd = mock_run.call_args[0][0]
-                assert cmd[0] == "modal"
-                assert cmd[1] == "volume"
-                assert cmd[2] == "put"
-                assert cmd[3] == VOLUME_NAME
-                assert cmd[4] == tmpdir
-                assert cmd[5] == "/bundle"
+                # Two calls: create volume + put
+                assert mock_run.call_count == 2
+                # Second call is the put
+                put_cmd = mock_run.call_args_list[1][0][0]
+                assert put_cmd[0] == "modal"
+                assert put_cmd[1] == "volume"
+                assert put_cmd[2] == "put"
+                assert put_cmd[3] == VOLUME_NAME
+                assert put_cmd[4] == tmpdir
+                assert put_cmd[5] == "/bundle"
 
     def test_upload_bundle_failure_raises(self):
         """Test that a failed volume put raises RuntimeError."""
