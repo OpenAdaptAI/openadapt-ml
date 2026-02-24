@@ -967,6 +967,25 @@ def main():
         help="Local bundle directory (with training_data.jsonl + images/) to upload",
     )
     train_parser.add_argument(
+        "--demo-dir",
+        help="Directory with annotated demo JSON files (auto-converts to bundle)",
+    )
+    train_parser.add_argument(
+        "--captures-dir",
+        help="Parent directory containing capture directories (for screenshot resolution)",
+    )
+    train_parser.add_argument(
+        "--mapping",
+        help="Pre-computed screenshot_mapping.json (optional, auto-generated if omitted)",
+    )
+    train_parser.add_argument(
+        "--gpu-wait",
+        type=int,
+        default=0,
+        metavar="MINUTES",
+        help="Wait up to N minutes for GPU availability (0=fail immediately, default: 0)",
+    )
+    train_parser.add_argument(
         "--no-terminate",
         action="store_true",
         help="Don't terminate instance after training",
@@ -1309,6 +1328,29 @@ def main():
         start_time = time_module.time()
         training_completed = False  # Track if training actually finished
 
+        # --- Step 0: Auto-convert demos to bundle if --demo-dir provided ---
+        if args.demo_dir and not args.bundle:
+            from openadapt_ml.training.convert_demos import prepare_bundle
+
+            if not args.captures_dir:
+                print("Error: --captures-dir is required with --demo-dir")
+                return
+
+            print("=" * 50)
+            print("Step 0: Converting demos to training bundle")
+            print("=" * 50)
+            try:
+                bundle_dir = prepare_bundle(
+                    demo_dir=args.demo_dir,
+                    captures_dir=args.captures_dir,
+                    mapping_path=args.mapping,
+                )
+                args.bundle = str(bundle_dir)
+                print(f"Bundle ready at: {bundle_dir}\n")
+            except Exception as e:
+                print(f"Error converting demos: {e}")
+                return
+
         # Instance pricing (approximate $/hr)
         INSTANCE_PRICES = {
             "gpu_1x_a10": 0.75,
@@ -1334,15 +1376,37 @@ def main():
                 print(f"Using existing instance: {instances[0].id[:8]}...")
                 instance = instances[0]
             else:
-                # Launch new instance
+                # Launch new instance (with optional GPU wait/retry)
                 ssh_key = setup_lambda_ssh_key(client)
-                print(f"Launching {args.type}...")
-                instance = client.launch_instance(
-                    instance_type=args.type,
-                    ssh_key_names=[ssh_key],
-                    name="openadapt-training",
-                )
-                print(f"Instance launched: {instance.id[:8]}... at {instance.ip}")
+                gpu_wait = getattr(args, "gpu_wait", 0)
+                deadline = time_module.time() + gpu_wait * 60
+                retry_interval = 60  # check every minute
+
+                while True:
+                    try:
+                        print(f"Launching {args.type}...")
+                        instance = client.launch_instance(
+                            instance_type=args.type,
+                            ssh_key_names=[ssh_key],
+                            name="openadapt-training",
+                        )
+                        print(
+                            f"Instance launched: {instance.id[:8]}... at {instance.ip}"
+                        )
+                        break
+                    except RuntimeError as e:
+                        if "No regions available" not in str(e) or gpu_wait <= 0:
+                            raise
+                        remaining = deadline - time_module.time()
+                        if remaining <= 0:
+                            print(f"Error: GPU not available after {gpu_wait} min wait")
+                            return
+                        mins_left = int(remaining / 60)
+                        print(
+                            f"  GPU unavailable, retrying in {retry_interval}s "
+                            f"({mins_left} min remaining)..."
+                        )
+                        time_module.sleep(retry_interval)
 
         price_per_hour = INSTANCE_PRICES.get(instance.instance_type, 1.00)
         print(f"  Instance type: {instance.instance_type} (~${price_per_hour:.2f}/hr)")

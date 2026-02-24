@@ -209,6 +209,21 @@ if __name__ == "__main__":
         help="Path to JSONL training data (internal SFT format with images + messages).",
     )
     parser.add_argument(
+        "--demo-dir",
+        type=str,
+        help="Directory with annotated demo JSON files (auto-converts to JSONL bundle).",
+    )
+    parser.add_argument(
+        "--captures-dir",
+        type=str,
+        help="Parent directory containing capture directories (for screenshot resolution).",
+    )
+    parser.add_argument(
+        "--mapping",
+        type=str,
+        help="Pre-computed screenshot_mapping.json (optional with --demo-dir).",
+    )
+    parser.add_argument(
         "--use-unsloth",
         action="store_true",
         default=True,
@@ -222,6 +237,25 @@ if __name__ == "__main__":
     # Determine effective flags
     use_unsloth = args.use_unsloth and not args.no_unsloth
 
+    # Auto-convert demos to JSONL if --demo-dir provided
+    jsonl_path = args.jsonl
+    if args.demo_dir and not jsonl_path:
+        from openadapt_ml.training.convert_demos import prepare_bundle
+
+        if not args.captures_dir:
+            parser.error("--captures-dir is required with --demo-dir")
+
+        print("=" * 50)
+        print("Converting demos to training bundle...")
+        print("=" * 50)
+        bundle_dir = prepare_bundle(
+            demo_dir=args.demo_dir,
+            captures_dir=args.captures_dir,
+            mapping_path=args.mapping,
+        )
+        jsonl_path = str(bundle_dir / "training_data.jsonl")
+        print(f"Bundle ready: {jsonl_path}\n")
+
     main(
         args.config,
         capture_path=args.capture,
@@ -229,5 +263,5 @@ if __name__ == "__main__":
         output_dir=args.output_dir,
         open_dashboard=args.open,
         use_unsloth=use_unsloth,
-        jsonl_path=args.jsonl,
+        jsonl_path=jsonl_path,
     )
