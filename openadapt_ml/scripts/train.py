@@ -21,7 +21,11 @@ from typing import Dict, Any, Optional
 import yaml
 
 from openadapt_ml.ingest.synthetic import generate_synthetic_episodes
-from openadapt_ml.training.trl_trainer import TRLTrainingConfig, train_with_trl
+from openadapt_ml.training.trl_trainer import (
+    TRLTrainingConfig,
+    train_with_trl,
+    train_from_jsonl,
+)
 
 
 def _load_config(path: str | Path) -> dict:
@@ -45,6 +49,7 @@ def main(
     output_dir: str | None = None,
     open_dashboard: bool = False,
     use_unsloth: bool = True,
+    jsonl_path: str | None = None,
 ) -> None:
     """Train a VLM using TRL SFTTrainer.
 
@@ -55,6 +60,7 @@ def main(
         output_dir: Output directory for logs and dashboard
         open_dashboard: Open training dashboard in browser after training
         use_unsloth: Enable Unsloth optimizations (default True)
+        jsonl_path: Optional path to JSONL training data (internal SFT format)
     """
     cfg = _load_config(config_path)
 
@@ -68,6 +74,63 @@ def main(
         lora_cfg = {k: v for k, v in raw_lora_cfg.items() if k != "weights_path"}
     else:
         lora_cfg = raw_lora_cfg
+
+    # Determine output directory
+    train_cfg_raw = cfg.get("training", {})
+    if output_dir is None:
+        output_dir = train_cfg_raw.get("output_dir", "training_output")
+
+    print(f"Using TRL trainer (Unsloth: {use_unsloth})")
+
+    # Build TRL config from YAML config
+    lora_dict = lora_cfg if isinstance(lora_cfg, dict) else {}
+    trl_config = TRLTrainingConfig(
+        model_name=model_name,
+        load_in_4bit=load_in_4bit,
+        max_seq_length=train_cfg_raw.get("max_seq_length", 4096),
+        lora_r=lora_dict.get("r", 16),
+        lora_alpha=lora_dict.get("lora_alpha", 32),
+        lora_dropout=lora_dict.get("lora_dropout", 0.0),
+        finetune_vision_layers=lora_dict.get("finetune_vision_layers", False),
+        target_modules=lora_dict.get("target_modules"),
+        num_epochs=train_cfg_raw.get("num_train_epochs", 3),
+        batch_size=train_cfg_raw.get("per_device_train_batch_size", 1),
+        gradient_accumulation_steps=train_cfg_raw.get("gradient_accumulation_steps", 4),
+        learning_rate=train_cfg_raw.get("learning_rate", 2e-4),
+        warmup_ratio=train_cfg_raw.get("warmup_ratio", 0.03),
+        lr_scheduler_type=train_cfg_raw.get("lr_scheduler_type", "cosine"),
+        weight_decay=train_cfg_raw.get("weight_decay", 0.0),
+        max_grad_norm=train_cfg_raw.get("max_grad_norm", 1.0),
+        output_dir=output_dir,
+        logging_steps=train_cfg_raw.get("logging_steps", 10),
+        save_strategy=train_cfg_raw.get("save_strategy", "epoch"),
+        early_stop_loss=train_cfg_raw.get("early_stop_loss", 0.0),
+        early_stop_patience=train_cfg_raw.get("early_stop_patience", 5),
+        early_stop_min_delta=train_cfg_raw.get("early_stop_min_delta", 0.0),
+        early_stop_plateau_patience=train_cfg_raw.get("early_stop_plateau_patience", 5),
+    )
+
+    # Disable Unsloth if requested
+    if not use_unsloth:
+        import os
+
+        os.environ["OPENADAPT_DISABLE_UNSLOTH"] = "1"
+
+    # JSONL path: skip episode loading, use train_from_jsonl directly
+    if jsonl_path:
+        print(f"Training from JSONL: {jsonl_path}")
+        checkpoint_path = train_from_jsonl(
+            jsonl_path=jsonl_path,
+            config=trl_config,
+        )
+        print(f"Training complete. Checkpoint saved to: {checkpoint_path}")
+        if open_dashboard:
+            import webbrowser
+
+            dashboard_path = Path(output_dir) / "dashboard.html"
+            if dashboard_path.exists():
+                webbrowser.open(f"file://{dashboard_path.absolute()}")
+        return
 
     # Load data - either from capture or synthetic
     use_som = cfg.get("synthetic_data", {}).get("use_som", False)
@@ -95,39 +158,6 @@ def main(
             scenario=scenario,
         )
         data_source = f"synthetic '{scenario}'"
-
-    # Determine output directory
-    train_cfg_raw = cfg.get("training", {})
-    if output_dir is None:
-        output_dir = train_cfg_raw.get("output_dir", "training_output")
-
-    print(f"Using TRL trainer (Unsloth: {use_unsloth})")
-
-    # Build TRL config from YAML config
-    lora_dict = lora_cfg if isinstance(lora_cfg, dict) else {}
-    trl_config = TRLTrainingConfig(
-        model_name=model_name,
-        load_in_4bit=load_in_4bit,
-        max_seq_length=train_cfg_raw.get("max_seq_length", 4096),
-        lora_r=lora_dict.get("r", 16),
-        lora_alpha=lora_dict.get("lora_alpha", 32),
-        lora_dropout=lora_dict.get("lora_dropout", 0.0),
-        finetune_vision_layers=lora_dict.get("finetune_vision_layers", False),
-        num_epochs=train_cfg_raw.get("num_train_epochs", 3),
-        batch_size=train_cfg_raw.get("per_device_train_batch_size", 1),
-        gradient_accumulation_steps=train_cfg_raw.get("gradient_accumulation_steps", 4),
-        learning_rate=train_cfg_raw.get("learning_rate", 2e-4),
-        warmup_ratio=train_cfg_raw.get("warmup_ratio", 0.03),
-        output_dir=output_dir,
-        logging_steps=train_cfg_raw.get("logging_steps", 10),
-        save_strategy=train_cfg_raw.get("save_strategy", "epoch"),
-    )
-
-    # Disable Unsloth if requested
-    if not use_unsloth:
-        import os
-
-        os.environ["OPENADAPT_DISABLE_UNSLOTH"] = "1"
 
     base_path = Path(capture_path).parent if capture_path else None
     print(f"Training on {len(episodes)} episodes from {data_source}")
@@ -174,6 +204,11 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--jsonl",
+        type=str,
+        help="Path to JSONL training data (internal SFT format with images + messages).",
+    )
+    parser.add_argument(
         "--use-unsloth",
         action="store_true",
         default=True,
@@ -194,4 +229,5 @@ if __name__ == "__main__":
         output_dir=args.output_dir,
         open_dashboard=args.open,
         use_unsloth=use_unsloth,
+        jsonl_path=args.jsonl,
     )
