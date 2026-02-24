@@ -58,7 +58,7 @@ from typing import Any
 
 
 # ---------------------------------------------------------------------------
-# System prompt — must match qwen3vl_agent.SYSTEM_PROMPT exactly
+# System prompt for SFT training data
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = (
@@ -67,9 +67,9 @@ SYSTEM_PROMPT = (
     "click(x=<int>, y=<int>)\n"
     "double_click(x=<int>, y=<int>)\n"
     "right_click(x=<int>, y=<int>)\n"
-    "type(text=\"<string>\")\n"
-    "press(keys=[\"<key1>\", ...])\n"
-    "scroll(direction=\"<up|down|left|right>\", amount=<int>)\n"
+    'type(text="<string>")\n'
+    'press(keys=["<key1>", ...])\n'
+    'scroll(direction="<up|down|left|right>", amount=<int>)\n'
     "drag(from_coord=[<x1>, <y1>], to_coord=[<x2>, <y2>])\n"
     "wait()\n"
     "finished()\n\n"
@@ -118,21 +118,27 @@ def _parse_action_raw(action_raw: str) -> tuple[str, dict[str, Any]]:
         Tuple of (action_type, params_dict).
     """
     # DOUBLE_CLICK(x, y)
-    m = re.match(r"DOUBLE_CLICK\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*\)", action_raw, re.IGNORECASE)
+    m = re.match(
+        r"DOUBLE_CLICK\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*\)", action_raw, re.IGNORECASE
+    )
     if m:
         x = _validate_coord(float(m.group(1)), "x", action_raw)
         y = _validate_coord(float(m.group(2)), "y", action_raw)
         return "double_click", {"x": x, "y": y}
 
     # RIGHT_CLICK(x, y)
-    m = re.match(r"RIGHT_CLICK\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*\)", action_raw, re.IGNORECASE)
+    m = re.match(
+        r"RIGHT_CLICK\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*\)", action_raw, re.IGNORECASE
+    )
     if m:
         x = _validate_coord(float(m.group(1)), "x", action_raw)
         y = _validate_coord(float(m.group(2)), "y", action_raw)
         return "right_click", {"x": x, "y": y}
 
     # CLICK(x, y)
-    m = re.match(r"CLICK\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*\)", action_raw, re.IGNORECASE)
+    m = re.match(
+        r"CLICK\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*\)", action_raw, re.IGNORECASE
+    )
     if m:
         x = _validate_coord(float(m.group(1)), "x", action_raw)
         y = _validate_coord(float(m.group(2)), "y", action_raw)
@@ -234,7 +240,10 @@ def _format_action_qwen(action_type: str, params: dict[str, Any]) -> str:
         ty = _coord_01_to_1000(params["to_y"])
         return f"drag(from_coord=[{fx}, {fy}], to_coord=[{tx}, {ty}])"
 
-    if action_type in ("wait", "done", "finished"):
+    if action_type == "wait":
+        return "wait()"
+
+    if action_type in ("done", "finished"):
         return "finished()"
 
     return f"# unknown: {params.get('raw', action_type)}"
@@ -290,9 +299,7 @@ def _validate_demo(demo: dict[str, Any], path: Path) -> list[str]:
     for i, step in enumerate(steps):
         for field in _REQUIRED_STEP_FIELDS:
             if field not in step:
-                issues.append(
-                    f"{path.name}: step {i} missing required field '{field}'"
-                )
+                issues.append(f"{path.name}: step {i} missing required field '{field}'")
         if not step.get("action_raw"):
             issues.append(f"{path.name}: step {i} has empty 'action_raw'")
 
@@ -422,7 +429,8 @@ def _resolve_screenshots_from_capture(
         from openadapt_ml.experiments.demo_prompt.annotate import coalesce_steps
 
         episode = capture_to_episode(
-            str(capture_dir), output_dir=str(screenshots_dir),
+            str(capture_dir),
+            output_dir=str(screenshots_dir),
         )
         coalesced = coalesce_steps(episode)
 
@@ -485,12 +493,12 @@ def convert_demo(
     # Resolve screenshot mapping — priority: explicit mapping > capture API
     screenshot_map: dict[int, str] = {}
     if screenshot_mapping and task_id in screenshot_mapping:
-        screenshot_map = {
-            int(k): v for k, v in screenshot_mapping[task_id].items()
-        }
+        screenshot_map = {int(k): v for k, v in screenshot_mapping[task_id].items()}
     elif captures_dir:
         screenshot_map = _resolve_screenshots_from_capture(
-            task_id, captures_dir, len(steps),
+            task_id,
+            captures_dir,
+            len(steps),
         )
 
     if not screenshot_map:
@@ -564,7 +572,9 @@ def convert_all_demos(
         all_samples.extend(samples)
 
     n_total_img = sum(1 for s in all_samples if "images" in s)
-    print(f"\nTotal: {len(all_samples)} training samples ({n_total_img} with screenshots) from {len(demo_files)} demos")
+    print(
+        f"\nTotal: {len(all_samples)} training samples ({n_total_img} with screenshots) from {len(demo_files)} demos"
+    )
 
     if output_path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -608,7 +618,9 @@ def create_bundle(
                         shutil.copy2(src, dst)
                     new_paths.append(f"images/{src.name}")
                 else:
-                    print(f"  Warning: image not found, skipping: {src}", file=sys.stderr)
+                    print(
+                        f"  Warning: image not found, skipping: {src}", file=sys.stderr
+                    )
             sample["images"] = new_paths
         bundled_samples.append(sample)
 

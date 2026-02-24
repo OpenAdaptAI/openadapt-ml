@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -614,7 +615,7 @@ echo "SETUP_COMPLETE"
         # git archive HEAD produces a tarball of only committed tracked files,
         # piped over SSH and extracted on the remote — clean and minimal.
         cmd = (
-            f"cd {local_repo_path} && "
+            f"cd {shlex.quote(local_repo_path)} && "
             f"git archive HEAD | "
             f"{ssh_opts} ubuntu@{instance.ip} "
             f"'mkdir -p ~/openadapt-ml && tar -xf - -C ~/openadapt-ml/'"
@@ -703,14 +704,14 @@ echo "SETUP_COMPLETE"
         if not instance.ip:
             raise RuntimeError("Instance has no IP address")
 
-        # Build training command
-        train_cmd = f"uv run python -m openadapt_ml.scripts.train --config {config}"
+        # Build training command (quote user-supplied values for shell safety)
+        train_cmd = f"uv run python -m openadapt_ml.scripts.train --config {shlex.quote(config)}"
         if jsonl:
-            train_cmd += f" --jsonl {jsonl}"
+            train_cmd += f" --jsonl {shlex.quote(jsonl)}"
         elif capture:
-            train_cmd += f" --capture {capture}"
+            train_cmd += f" --capture {shlex.quote(capture)}"
         if goal:
-            train_cmd += f' --goal "{goal}"'
+            train_cmd += f" --goal {shlex.quote(goal)}"
 
         # Full script with environment setup
         script = f"""
@@ -1472,7 +1473,9 @@ def main():
                 update_dashboard("installing", setup_logs)
                 if client.upload_capture(instance, args.bundle, "~/training_data"):
                     remote_jsonl = "~/training_data/training_data.jsonl"
-                    setup_logs.append(f"Bundle uploaded to {instance.ip}:~/training_data")
+                    setup_logs.append(
+                        f"Bundle uploaded to {instance.ip}:~/training_data"
+                    )
                     update_dashboard("installing", setup_logs)
                     print(f"Bundle uploaded to {instance.ip}:~/training_data")
                 else:

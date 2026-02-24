@@ -98,6 +98,34 @@ class TestTrainingLogWriting:
         cb.on_log(_make_args(), _make_state(), _make_control(), logs=None)
         assert not (tmp_path / "training_log.json").exists()
 
+    def test_non_loss_log_uses_last_loss(self, tmp_path):
+        """Non-loss log events (e.g. eval metrics) should use last known loss, not 0."""
+        config = _make_config(tmp_path)
+        cb = _OpenAdaptCallback(config)
+        cb.on_train_begin(_make_args(), _make_state(), _make_control())
+
+        # First: a real loss event
+        cb.on_log(
+            _make_args(),
+            _make_state(global_step=1),
+            _make_control(),
+            logs={"loss": 8.5, "learning_rate": 5e-5, "epoch": 0.1},
+        )
+
+        # Second: a non-loss log event (e.g. eval metrics)
+        cb.on_log(
+            _make_args(),
+            _make_state(global_step=2),
+            _make_control(),
+            logs={"eval_loss": 9.0, "learning_rate": 4e-5, "epoch": 0.2},
+        )
+
+        data = json.loads((tmp_path / "training_log.json").read_text())
+        # Should report last known loss (8.5), NOT 0
+        assert data["loss"] == 8.5
+        # Only 1 entry in losses array (non-loss events don't add entries)
+        assert len(data["losses"]) == 1
+
 
 class TestEarlyStopThreshold:
     """Test early stopping via absolute loss threshold."""
@@ -212,8 +240,12 @@ class TestEarlyStopPlateau:
         cb.on_train_begin(_make_args(), _make_state(), _make_control())
 
         cb.on_log(_make_args(), _make_state(1), _make_control(), logs={"loss": 10.0})
-        cb.on_log(_make_args(), _make_state(2), _make_control(), logs={"loss": 9.95})  # plateau 1
-        cb.on_log(_make_args(), _make_state(3), _make_control(), logs={"loss": 9.92})  # plateau 2
+        cb.on_log(
+            _make_args(), _make_state(2), _make_control(), logs={"loss": 9.95}
+        )  # plateau 1
+        cb.on_log(
+            _make_args(), _make_state(3), _make_control(), logs={"loss": 9.92}
+        )  # plateau 2
 
         # Big improvement — resets
         cb.on_log(_make_args(), _make_state(4), _make_control(), logs={"loss": 9.0})
