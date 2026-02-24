@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.10.0 (2026-02-24)
+
+### Features
+
+- **cloud**: Add Vast.ai and Modal GPU providers
+  ([`5812f89`](https://github.com/OpenAdaptAI/openadapt-ml/commit/5812f89db83f6be71202b0cc6fec587554b11ec7))
+
+Vast.ai (~$0.17/hr A10): SSH+rsync marketplace model with full CLI (list, launch, terminate, train)
+  matching lambda_labs.py pattern. Includes GPU search, --gpu-wait retry, auto-convert --demo-dir
+  flow.
+
+Modal ($30/mo free, $1.10/hr A10G): Python-native cloud with zero-ops training via decorated
+  functions and Modal Volumes for data transfer. CLI: train, status, download, list-volumes.
+
+Both support the same --demo-dir end-to-end pipeline as Lambda Labs.
+
+53 new tests (34 Vast.ai + 19 Modal), all passing.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.9.0 (2026-02-24)
 
 ### Features
