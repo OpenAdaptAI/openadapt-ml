@@ -28,3 +28,5 @@ training:
   save_strategy: epoch
   early_stop_loss: 1.0
   early_stop_patience: 5
+  early_stop_min_delta: 0.1  # Stop if loss doesn't improve by at least 0.1
+  early_stop_plateau_patience: 5  # for 5 consecutive steps
