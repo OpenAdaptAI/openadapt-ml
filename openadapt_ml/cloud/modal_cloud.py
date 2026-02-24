@@ -1,4 +1,4 @@
-"""Modal cloud GPU integration for training.
+"""Modal cloud GPU integration for training and inference.
 
 Modal is a Python-native serverless cloud platform:
 - No SSH, no instances to manage
@@ -24,6 +24,11 @@ Usage:
 
     # Download results
     python -m openadapt_ml.cloud.modal_cloud download --output ./results
+
+    # Serve fine-tuned model for inference
+    python -m openadapt_ml.cloud.modal_cloud serve \
+        --adapter /path/to/adapter \
+        --base-model Qwen/Qwen3-VL-2B-Instruct
 
     # List volumes
     python -m openadapt_ml.cloud.modal_cloud list-volumes
@@ -256,6 +261,224 @@ def _register_train_function():
 
 
 # ---------------------------------------------------------------------------
+# Inference serving
+# ---------------------------------------------------------------------------
+
+INFERENCE_APP_NAME = "openadapt-inference"
+
+
+def _build_inference_app(
+    adapter_path: str | None = None,
+    base_model: str = "Qwen/Qwen3-VL-2B-Instruct",
+    gpu: str = "A10G",
+):
+    """Build Modal app for model inference.
+
+    Args:
+        adapter_path: Path to PEFT adapter in the volume (e.g., /training/results/final).
+        base_model: HuggingFace model ID for the base model.
+        gpu: GPU type.
+
+    Returns:
+        (app, infer_fn) - the app and the inference function handle.
+    """
+    modal = _get_modal()
+
+    app = modal.App(INFERENCE_APP_NAME)
+    volume = modal.Volume.from_name(VOLUME_NAME, create_if_missing=True)
+
+    inference_image = modal.Image.debian_slim(python_version="3.12").pip_install(
+        "torch",
+        "transformers",
+        "peft",
+        "accelerate",
+        "pillow",
+        "qwen-vl-utils",
+    )
+
+    vol = volume
+    _adapter = adapter_path
+    _base = base_model
+
+    @app.function(
+        gpu=gpu,
+        image=inference_image,
+        volumes={VOLUME_MOUNT: vol},
+        timeout=300,
+        serialized=True,
+        container_idle_timeout=600,
+    )
+    def infer(
+        messages_json: str,
+        image_base64: str | None = None,
+        max_new_tokens: int = 512,
+    ) -> str:
+        """Run inference on the fine-tuned model.
+
+        Args:
+            messages_json: JSON-encoded list of messages (OpenAI chat format).
+            image_base64: Base64-encoded screenshot image (optional).
+            max_new_tokens: Maximum tokens to generate.
+
+        Returns:
+            JSON string with 'response' key containing model output.
+        """
+        import base64 as _base64
+        import json as _json
+        from io import BytesIO as _BytesIO
+
+        import torch
+        from PIL import Image as _Image
+        from transformers import AutoModelForVision2Seq, AutoProcessor
+
+        # Load model (cached in container memory across calls)
+        if not hasattr(infer, "_model"):
+            print(f"Loading base model: {_base}")
+            infer._model = AutoModelForVision2Seq.from_pretrained(
+                _base,
+                torch_dtype=torch.bfloat16,
+                device_map="auto",
+            )
+
+            if _adapter:
+                from peft import PeftModel
+
+                print(f"Loading PEFT adapter: {_adapter}")
+                vol.reload()
+                infer._model = PeftModel.from_pretrained(infer._model, _adapter)
+
+            infer._processor = AutoProcessor.from_pretrained(_base)
+            print("Model ready for inference")
+
+        messages = _json.loads(messages_json)
+
+        # If image_base64 is provided, decode it
+        image = None
+        if image_base64:
+            img_bytes = _base64.b64decode(image_base64)
+            image = _Image.open(_BytesIO(img_bytes)).convert("RGB")
+
+        # Build inputs using the processor's chat template
+        text = infer._processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+
+        if image is not None:
+            inputs = infer._processor(
+                text=[text], images=[image], return_tensors="pt", padding=True
+            )
+        else:
+            inputs = infer._processor(
+                text=[text], return_tensors="pt", padding=True
+            )
+
+        inputs = inputs.to(infer._model.device)
+
+        with torch.no_grad():
+            output_ids = infer._model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+            )
+
+        # Decode only the generated tokens (skip the input)
+        generated_ids = output_ids[:, inputs["input_ids"].shape[1] :]
+        response_text = infer._processor.batch_decode(
+            generated_ids, skip_special_tokens=True
+        )[0]
+
+        return _json.dumps({"response": response_text.strip()})
+
+    return app, infer
+
+
+def upload_adapter_to_volume(adapter_dir: str | Path) -> str:
+    """Upload a local PEFT adapter to the Modal volume.
+
+    Args:
+        adapter_dir: Path to local adapter directory.
+
+    Returns:
+        Remote path to the adapter in the volume.
+    """
+    adapter_dir = Path(adapter_dir)
+    if not adapter_dir.exists():
+        raise FileNotFoundError(f"Adapter not found: {adapter_dir}")
+    if not (adapter_dir / "adapter_config.json").exists():
+        raise FileNotFoundError(f"No adapter_config.json in: {adapter_dir}")
+
+    remote_path = "/adapter"
+
+    # Create volume if needed
+    create_cmd = ["modal", "volume", "create", VOLUME_NAME]
+    subprocess.run(create_cmd, capture_output=True, text=True)
+
+    cmd = [
+        "modal",
+        "volume",
+        "put",
+        VOLUME_NAME,
+        str(adapter_dir),
+        remote_path,
+        "--force",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"Adapter upload failed: {result.stderr or result.stdout}")
+
+    full_remote = f"{VOLUME_MOUNT}{remote_path}"
+    print(f"Adapter uploaded to volume at: {full_remote}")
+    return full_remote
+
+
+def call_inference(
+    messages: list[dict],
+    image_base64: str | None = None,
+    max_new_tokens: int = 512,
+    adapter_path: str | None = None,
+    base_model: str = "Qwen/Qwen3-VL-2B-Instruct",
+    gpu: str = "A10G",
+) -> str:
+    """Call the Modal inference function remotely.
+
+    This is the primary API for external callers (e.g., Qwen3VLAgent).
+    Builds and runs the Modal app, sends a single inference request,
+    and returns the model output.
+
+    Args:
+        messages: Chat messages in OpenAI format.
+        image_base64: Base64-encoded image string.
+        max_new_tokens: Maximum tokens to generate.
+        adapter_path: Remote adapter path in the volume.
+        base_model: HuggingFace model ID for the base model.
+        gpu: GPU type.
+
+    Returns:
+        Model response text.
+    """
+    modal = _get_modal()
+    modal.enable_output()
+
+    app, infer_fn = _build_inference_app(
+        adapter_path=adapter_path,
+        base_model=base_model,
+        gpu=gpu,
+    )
+
+    messages_json = json.dumps(messages)
+
+    with app.run():
+        result_json = infer_fn.remote(
+            messages_json=messages_json,
+            image_base64=image_base64,
+            max_new_tokens=max_new_tokens,
+        )
+
+    result = json.loads(result_json)
+    return result.get("response", "")
+
+
+# ---------------------------------------------------------------------------
 # Local helpers for CLI commands
 # ---------------------------------------------------------------------------
 
@@ -462,6 +685,34 @@ def cli_main(argv: list[str] | None = None) -> int:
         help="Local output directory (default: training_output/modal)",
     )
 
+    # --- serve ---
+    serve_parser = subparsers.add_parser(
+        "serve", help="Serve fine-tuned model for inference on Modal GPU"
+    )
+    serve_parser.add_argument(
+        "--adapter",
+        help="Local adapter directory to upload and serve",
+    )
+    serve_parser.add_argument(
+        "--adapter-remote",
+        help="Remote adapter path already in the volume (e.g., /training/results/final)",
+    )
+    serve_parser.add_argument(
+        "--base-model",
+        default="Qwen/Qwen3-VL-2B-Instruct",
+        help="Base model HuggingFace ID (default: Qwen/Qwen3-VL-2B-Instruct)",
+    )
+    serve_parser.add_argument(
+        "--gpu",
+        default="A10G",
+        help="GPU type (default: A10G)",
+    )
+    serve_parser.add_argument(
+        "--no-adapter",
+        action="store_true",
+        help="Serve base model without adapter (zero-shot)",
+    )
+
     # --- list-volumes ---
     subparsers.add_parser("list-volumes", help="List Modal volumes")
 
@@ -477,6 +728,8 @@ def cli_main(argv: list[str] | None = None) -> int:
         return _cmd_status(args)
     elif args.command == "download":
         return _cmd_download(args)
+    elif args.command == "serve":
+        return _cmd_serve(args)
     elif args.command == "list-volumes":
         return _cmd_list_volumes(args)
     else:
@@ -624,6 +877,96 @@ def _cmd_download(args: argparse.Namespace) -> int:
     except RuntimeError as e:
         print(f"Error: {e}")
         return 1
+
+
+def _cmd_serve(args: argparse.Namespace) -> int:
+    """Serve a fine-tuned model on Modal GPU for inference.
+
+    Uploads the adapter (if local path provided), then starts the
+    inference function that clients can call via Modal's .remote() API.
+    Alternatively, clients can use the HTTP wrapper in Qwen3VLAgent.
+    """
+    modal = _get_modal()
+
+    adapter_remote = None
+
+    if args.no_adapter:
+        print(f"Serving base model: {args.base_model} (no adapter)")
+    elif args.adapter:
+        # Upload local adapter to volume
+        print("Uploading adapter to Modal volume...")
+        try:
+            adapter_remote = upload_adapter_to_volume(args.adapter)
+        except (FileNotFoundError, RuntimeError) as e:
+            print(f"Error: {e}")
+            return 1
+    elif args.adapter_remote:
+        adapter_remote = args.adapter_remote
+        print(f"Using remote adapter: {adapter_remote}")
+    else:
+        # Default: use the latest training results
+        adapter_remote = f"{RESULTS_REMOTE_PATH}/final"
+        print(f"Using default adapter: {adapter_remote}")
+
+    print(f"Base model: {args.base_model}")
+    print(f"GPU: {args.gpu}")
+    print()
+
+    try:
+        modal.enable_output()
+
+        app, infer_fn = _build_inference_app(
+            adapter_path=adapter_remote,
+            base_model=args.base_model,
+            gpu=args.gpu,
+        )
+
+        print("Starting inference server on Modal...")
+        print("Press Ctrl+C to stop.\n")
+
+        with app.run():
+            # Test with a simple warmup call
+            test_messages = json.dumps(
+                [
+                    {
+                        "role": "system",
+                        "content": "You are a GUI automation agent.",
+                    },
+                    {
+                        "role": "user",
+                        "content": "Respond with: ready",
+                    },
+                ]
+            )
+            result = infer_fn.remote(messages_json=test_messages)
+            result_data = json.loads(result)
+            print(f"Model ready. Test response: {result_data.get('response', '')}")
+            print()
+            print("=" * 50)
+            print("INFERENCE SERVER RUNNING")
+            print("=" * 50)
+            print()
+            print(
+                "To run inference from another process, use:\n"
+                "  from openadapt_ml.cloud.modal_cloud import call_inference\n"
+                "  result = call_inference(messages, image_base64)\n"
+            )
+            print("Or use Qwen3VLAgent with --model-endpoint modal\n")
+
+            # Keep the app running until Ctrl+C
+            import time as _time
+
+            try:
+                while True:
+                    _time.sleep(1)
+            except KeyboardInterrupt:
+                print("\nShutting down inference server...")
+
+    except Exception as e:
+        print(f"Serve failed: {e}")
+        return 1
+
+    return 0
 
 
 def _cmd_list_volumes(args: argparse.Namespace) -> int:

@@ -418,7 +418,119 @@ class TestConstants:
         from openadapt_ml.cloud import modal_cloud
 
         assert modal_cloud.MODAL_APP_NAME == "openadapt-training"
+        assert modal_cloud.INFERENCE_APP_NAME == "openadapt-inference"
         assert modal_cloud.VOLUME_NAME == "openadapt-training-data"
         assert modal_cloud.VOLUME_MOUNT == "/training"
         assert modal_cloud.BUNDLE_REMOTE_PATH == "/training/bundle"
         assert modal_cloud.RESULTS_REMOTE_PATH == "/training/results"
+
+
+# ---------------------------------------------------------------------------
+# Serve / inference tests
+# ---------------------------------------------------------------------------
+
+
+class TestServeCLI:
+    """Test serve command CLI parsing."""
+
+    def test_serve_help(self):
+        """Test that serve --help exits cleanly."""
+        from openadapt_ml.cloud.modal_cloud import cli_main
+
+        with pytest.raises(SystemExit) as exc_info:
+            cli_main(["serve", "--help"])
+        assert exc_info.value.code == 0
+
+    def test_serve_no_adapter_flag(self):
+        """Test that serve --no-adapter uses base model only."""
+        from openadapt_ml.cloud.modal_cloud import cli_main
+
+        mock_modal = MagicMock()
+        mock_modal.enable_output = MagicMock()
+
+        mock_app = MagicMock()
+        mock_infer = MagicMock()
+
+        with (
+            patch(
+                "openadapt_ml.cloud.modal_cloud._get_modal", return_value=mock_modal
+            ),
+            patch(
+                "openadapt_ml.cloud.modal_cloud._build_inference_app",
+                return_value=(mock_app, mock_infer),
+            ) as mock_build,
+            patch("openadapt_ml.cloud.modal_cloud.json") as mock_json,
+        ):
+            mock_json.dumps.return_value = '[]'
+            mock_json.loads.return_value = {"response": "ready"}
+            mock_infer.remote.return_value = '{"response": "ready"}'
+            mock_app.run.return_value.__enter__ = MagicMock()
+            mock_app.run.return_value.__exit__ = MagicMock(return_value=False)
+
+            # The serve command blocks on the while loop, so we use KeyboardInterrupt
+            import time as _time
+
+            original_sleep = _time.sleep
+            call_count = [0]
+
+            def mock_sleep(t):
+                call_count[0] += 1
+                if call_count[0] > 1:
+                    raise KeyboardInterrupt()
+
+            with patch("time.sleep", side_effect=mock_sleep):
+                result = cli_main(["serve", "--no-adapter"])
+
+            # Should have called _build_inference_app with no adapter
+            mock_build.assert_called_once_with(
+                adapter_path=None,
+                base_model="Qwen/Qwen3-VL-2B-Instruct",
+                gpu="A10G",
+            )
+            assert result == 0
+
+
+class TestUploadAdapter:
+    """Test adapter upload logic."""
+
+    def test_upload_missing_adapter_raises(self):
+        """Test that uploading a non-existent adapter raises."""
+        from openadapt_ml.cloud.modal_cloud import upload_adapter_to_volume
+
+        with pytest.raises(FileNotFoundError, match="Adapter not found"):
+            upload_adapter_to_volume("/nonexistent/path")
+
+    def test_upload_adapter_without_config_raises(self):
+        """Test that adapter without adapter_config.json raises."""
+        from openadapt_ml.cloud.modal_cloud import upload_adapter_to_volume
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with pytest.raises(FileNotFoundError, match="No adapter_config.json"):
+                upload_adapter_to_volume(tmpdir)
+
+    def test_upload_adapter_calls_volume_put(self):
+        """Test that upload invokes volume put with correct args."""
+        from openadapt_ml.cloud.modal_cloud import upload_adapter_to_volume
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "adapter_config.json").write_text('{"test": true}')
+            (Path(tmpdir) / "adapter_model.safetensors").write_text("fake")
+
+            mock_result = MagicMock()
+            mock_result.returncode = 0
+            mock_result.stdout = ""
+            mock_result.stderr = ""
+
+            with patch(
+                "openadapt_ml.cloud.modal_cloud.subprocess.run",
+                return_value=mock_result,
+            ) as mock_run:
+                remote = upload_adapter_to_volume(tmpdir)
+
+                # Two calls: create + put
+                assert mock_run.call_count == 2
+                put_cmd = mock_run.call_args_list[1][0][0]
+                assert "put" in put_cmd
+                assert "/adapter" in put_cmd
+                assert "--force" in put_cmd
+                assert remote == "/training/adapter"
