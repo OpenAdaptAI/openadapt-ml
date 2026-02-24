@@ -1,5 +1,19 @@
 # Claude Context for openadapt-ml
 
+## MANDATORY: Branches and Pull Requests
+
+**NEVER push directly to main. ALWAYS use feature branches and pull requests.**
+
+1. Create a feature branch: `git checkout -b feat/description` or `fix/description`
+2. Make commits on the branch
+3. Push the branch: `git push -u origin branch-name`
+4. Create a PR: `gh pr create --title "..." --body "..."`
+5. Only merge via PR (never `git push origin main`)
+
+This is a hard rule with NO exceptions, even for "small" changes.
+
+---
+
 ## Simplicity Guidelines
 
 **Philosophy**: "Less is more. 80/20 impact/complexity. Working code beats elegant design."
