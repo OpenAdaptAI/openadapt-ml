@@ -106,7 +106,11 @@ def coalesce_steps(episode: Episode) -> Episode:
     Returns:
         New Episode with coalesced steps, re-indexed.
     """
-    steps = [s for s in episode.steps if s.action.type not in (ActionType.DONE, ActionType.FAIL)]
+    steps = [
+        s
+        for s in episode.steps
+        if s.action.type not in (ActionType.DONE, ActionType.FAIL)
+    ]
 
     # Filter stop-sequence keypresses
     steps = _filter_stop_sequence_keys(steps)
@@ -241,9 +245,7 @@ def _drop_focus_clicks(steps: list[Step]) -> list[Step]:
             and nxt.action.type == ActionType.TYPE
         ):
             # Use current step's observation (screenshot before click) with next step's action
-            merged = nxt.model_copy(
-                update={"observation": current.observation}
-            )
+            merged = nxt.model_copy(update={"observation": current.observation})
             result.append(merged)
             skip_next = True
         else:
@@ -411,7 +413,9 @@ def annotate_episode(
 
         no_after_note = ""
         if img_after is None:
-            no_after_note = " (No AFTER image available — describe expected result only.)"
+            no_after_note = (
+                " (No AFTER image available — describe expected result only.)"
+            )
 
         # Build prompt
         prompt_text = ANNOTATION_STEP_PROMPT.format(
@@ -572,6 +576,7 @@ def validate_annotations(demo: AnnotatedDemo) -> list[str]:
 
         # Check if action still contains raw coordinates
         import re
+
         if re.search(r"CLICK\(\s*0\.\d+\s*,\s*0\.\d+\s*\)", step.action):
             warnings.append(f"{prefix}: action contains raw coordinates: {step.action}")
 
@@ -582,7 +587,9 @@ def validate_annotations(demo: AnnotatedDemo) -> list[str]:
             action_lower = step.action.lower() + " " + step.observation.lower()
             for term in mac_terms:
                 if term in action_lower:
-                    warnings.append(f"{prefix}: macOS term '{term}' in Windows recording")
+                    warnings.append(
+                        f"{prefix}: macOS term '{term}' in Windows recording"
+                    )
 
     return warnings
 
@@ -763,9 +770,9 @@ def cmd_annotate_all(
     for db_path in db_files:
         capture_path = db_path.parent
         out_path = output_dir / f"{capture_path.name}.json"
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Annotating: {capture_path.name}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         try:
             cmd_annotate(
@@ -801,11 +808,13 @@ def main() -> None:
     """CLI entry point."""
     import fire
 
-    fire.Fire({
-        "annotate": cmd_annotate,
-        "annotate-all": cmd_annotate_all,
-        "preview": cmd_preview,
-    })
+    fire.Fire(
+        {
+            "annotate": cmd_annotate,
+            "annotate-all": cmd_annotate_all,
+            "preview": cmd_preview,
+        }
+    )
 
 
 if __name__ == "__main__":
