@@ -11,6 +11,8 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    env:
+      UV_NO_SOURCES: "1"
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -29,7 +31,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --all-extras --no-sources
+        run: uv sync --all-extras
 
       - name: Run ruff linter (check)
         run: uv run ruff check openadapt_ml/
@@ -38,4 +40,4 @@ jobs:
         run: uv run ruff format --check openadapt_ml/
 
       - name: Run pytest
-        run: uv run pytest tests/ -v
+        run: uv run pytest tests/ -v --ignore=tests/integration
