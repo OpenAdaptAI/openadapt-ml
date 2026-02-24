@@ -310,6 +310,103 @@ def _convert_samples_to_trl_format(
     return trl_samples
 
 
+def _run_sft_training(
+    dataset,
+    config: TRLTrainingConfig,
+    model,
+    tokenizer,
+    is_unsloth: bool,
+    num_samples: int,
+    label: str = "",
+) -> str:
+    """Shared SFTTrainer setup, training, and checkpoint saving.
+
+    Args:
+        dataset: HuggingFace Dataset with images + messages columns.
+        config: Training configuration.
+        model: Loaded model (Unsloth or standard).
+        tokenizer: Tokenizer/processor.
+        is_unsloth: Whether model was loaded with Unsloth.
+        num_samples: Number of training samples (for logging).
+        label: Optional label for log messages (e.g. "JSONL").
+
+    Returns:
+        Path to saved checkpoint.
+    """
+    from trl import SFTTrainer, SFTConfig
+
+    callback = _make_callback(config)
+
+    if is_unsloth:
+        from unsloth.trainer import UnslothVisionDataCollator
+
+        training_args = SFTConfig(
+            output_dir=config.output_dir,
+            per_device_train_batch_size=config.batch_size,
+            gradient_accumulation_steps=config.gradient_accumulation_steps,
+            learning_rate=config.learning_rate,
+            num_train_epochs=config.num_epochs,
+            warmup_ratio=config.warmup_ratio,
+            lr_scheduler_type="cosine",
+            logging_steps=config.logging_steps,
+            save_strategy=config.save_strategy,
+            remove_unused_columns=False,
+            dataset_text_field="",
+            dataset_kwargs={"skip_prepare_dataset": True},
+        )
+
+        trainer = SFTTrainer(
+            model=model,
+            tokenizer=tokenizer,
+            data_collator=UnslothVisionDataCollator(model, tokenizer),
+            train_dataset=dataset,
+            args=training_args,
+            callbacks=[callback],
+        )
+    else:
+        training_args = SFTConfig(
+            output_dir=config.output_dir,
+            per_device_train_batch_size=config.batch_size,
+            gradient_accumulation_steps=config.gradient_accumulation_steps,
+            learning_rate=config.learning_rate,
+            num_train_epochs=config.num_epochs,
+            warmup_ratio=config.warmup_ratio,
+            lr_scheduler_type="cosine",
+            logging_steps=config.logging_steps,
+            save_strategy=config.save_strategy,
+            max_length=None,  # Critical for VLMs
+            assistant_only_loss=False,  # Not supported for VL models yet
+        )
+
+        trainer = SFTTrainer(
+            model=model,
+            train_dataset=dataset,
+            args=training_args,
+            callbacks=[callback],
+        )
+
+    tag = f" ({label})" if label else ""
+    print(f"\n{'=' * 50}")
+    print(f"Starting training{tag}:")
+    print(f"  Model: {config.model_name}")
+    print(f"  Samples: {num_samples}")
+    print(f"  Epochs: {config.num_epochs}")
+    print(f"  Batch size: {config.batch_size}")
+    print(f"  Unsloth: {is_unsloth}")
+    print(f"  Output: {config.output_dir}")
+    if config.early_stop_loss > 0:
+        print(f"  Early stop: loss <= {config.early_stop_loss} (patience: {config.early_stop_patience})")
+    print(f"{'=' * 50}\n")
+
+    trainer.train()
+
+    checkpoint_path = Path(config.output_dir) / "final"
+    trainer.save_model(str(checkpoint_path))
+    print(f"\n✓ Saved checkpoint to {checkpoint_path}")
+
+    return str(checkpoint_path)
+
+
 def train_with_trl(
     episodes: List,
     config: Optional[TRLTrainingConfig] = None,
@@ -339,12 +436,12 @@ def train_with_trl(
 
     config = config or TRLTrainingConfig()
 
-    # Step 1: Convert episodes to SFT samples
+    # Convert episodes to SFT samples
     print(f"Converting {len(episodes)} episodes to training samples...")
     raw_samples = build_next_action_sft_samples(episodes, use_som=use_som)
     print(f"  Generated {len(raw_samples)} training samples")
 
-    # Step 2: Convert to TRL format (load images as PIL)
+    # Convert to TRL format (load images as PIL)
     print("Loading images...")
     trl_samples = _convert_samples_to_trl_format(raw_samples, base_path)
     print(f"  Loaded {len(trl_samples)} samples with images")
@@ -352,92 +449,12 @@ def train_with_trl(
     if not trl_samples:
         raise ValueError("No valid training samples after loading images")
 
-    # Step 3: Create HuggingFace Dataset
     dataset = Dataset.from_list(trl_samples)
-
-    # Step 4: Load model with Unsloth (or fallback)
     model, tokenizer, is_unsloth = _load_unsloth_model(config)
 
-    # Step 5: Configure and run training
-    try:
-        from trl import SFTTrainer, SFTConfig
-
-        callback = _make_callback(config)
-
-        if is_unsloth:
-            # Unsloth-specific configuration
-            from unsloth.trainer import UnslothVisionDataCollator
-
-            training_args = SFTConfig(
-                output_dir=config.output_dir,
-                per_device_train_batch_size=config.batch_size,
-                gradient_accumulation_steps=config.gradient_accumulation_steps,
-                learning_rate=config.learning_rate,
-                num_train_epochs=config.num_epochs,
-                warmup_ratio=config.warmup_ratio,
-                lr_scheduler_type="cosine",
-                logging_steps=config.logging_steps,
-                save_strategy=config.save_strategy,
-                # Unsloth-specific settings
-                remove_unused_columns=False,
-                dataset_text_field="",
-                dataset_kwargs={"skip_prepare_dataset": True},
-            )
-
-            trainer = SFTTrainer(
-                model=model,
-                tokenizer=tokenizer,
-                data_collator=UnslothVisionDataCollator(model, tokenizer),
-                train_dataset=dataset,
-                args=training_args,
-                callbacks=[callback],
-            )
-        else:
-            # Standard TRL configuration
-            training_args = SFTConfig(
-                output_dir=config.output_dir,
-                per_device_train_batch_size=config.batch_size,
-                gradient_accumulation_steps=config.gradient_accumulation_steps,
-                learning_rate=config.learning_rate,
-                num_train_epochs=config.num_epochs,
-                warmup_ratio=config.warmup_ratio,
-                lr_scheduler_type="cosine",
-                logging_steps=config.logging_steps,
-                save_strategy=config.save_strategy,
-                max_length=None,  # Critical for VLMs
-                assistant_only_loss=False,  # Not supported for VL models yet
-            )
-
-            trainer = SFTTrainer(
-                model=model,
-                train_dataset=dataset,
-                args=training_args,
-                callbacks=[callback],
-            )
-
-        print(f"\n{'=' * 50}")
-        print("Starting training:")
-        print(f"  Model: {config.model_name}")
-        print(f"  Samples: {len(trl_samples)}")
-        print(f"  Epochs: {config.num_epochs}")
-        print(f"  Batch size: {config.batch_size}")
-        print(f"  Unsloth: {is_unsloth}")
-        print(f"  Output: {config.output_dir}")
-        print(f"{'=' * 50}\n")
-
-        trainer.train()
-
-        # Save the LoRA adapter
-        checkpoint_path = Path(config.output_dir) / "final"
-        trainer.save_model(str(checkpoint_path))
-        print(f"\n✓ Saved checkpoint to {checkpoint_path}")
-
-        return str(checkpoint_path)
-
-    except ImportError as e:
-        raise ImportError(
-            f"TRL not installed. Install with: pip install trl\nOriginal error: {e}"
-        )
+    return _run_sft_training(
+        dataset, config, model, tokenizer, is_unsloth, len(trl_samples),
+    )
 
 
 def train_from_jsonl(
@@ -479,87 +496,13 @@ def train_from_jsonl(
     if not trl_samples:
         raise ValueError("No valid training samples after loading images")
 
-    # Create HF Dataset and train
     dataset = Dataset.from_list(trl_samples)
     model, tokenizer, is_unsloth = _load_unsloth_model(config)
 
-    try:
-        from trl import SFTTrainer, SFTConfig
-
-        callback = _make_callback(config)
-
-        if is_unsloth:
-            from unsloth.trainer import UnslothVisionDataCollator
-
-            training_args = SFTConfig(
-                output_dir=config.output_dir,
-                per_device_train_batch_size=config.batch_size,
-                gradient_accumulation_steps=config.gradient_accumulation_steps,
-                learning_rate=config.learning_rate,
-                num_train_epochs=config.num_epochs,
-                warmup_ratio=config.warmup_ratio,
-                lr_scheduler_type="cosine",
-                logging_steps=config.logging_steps,
-                save_strategy=config.save_strategy,
-                remove_unused_columns=False,
-                dataset_text_field="",
-                dataset_kwargs={"skip_prepare_dataset": True},
-            )
-
-            trainer = SFTTrainer(
-                model=model,
-                tokenizer=tokenizer,
-                data_collator=UnslothVisionDataCollator(model, tokenizer),
-                train_dataset=dataset,
-                args=training_args,
-                callbacks=[callback],
-            )
-        else:
-            training_args = SFTConfig(
-                output_dir=config.output_dir,
-                per_device_train_batch_size=config.batch_size,
-                gradient_accumulation_steps=config.gradient_accumulation_steps,
-                learning_rate=config.learning_rate,
-                num_train_epochs=config.num_epochs,
-                warmup_ratio=config.warmup_ratio,
-                lr_scheduler_type="cosine",
-                logging_steps=config.logging_steps,
-                save_strategy=config.save_strategy,
-                max_length=None,
-                assistant_only_loss=False,
-            )
-
-            trainer = SFTTrainer(
-                model=model,
-                train_dataset=dataset,
-                args=training_args,
-                callbacks=[callback],
-            )
-
-        print(f"\n{'=' * 50}")
-        print("Starting training (JSONL):")
-        print(f"  Model: {config.model_name}")
-        print(f"  Samples: {len(trl_samples)}")
-        print(f"  Epochs: {config.num_epochs}")
-        print(f"  Batch size: {config.batch_size}")
-        print(f"  Unsloth: {is_unsloth}")
-        print(f"  Output: {config.output_dir}")
-        if config.early_stop_loss > 0:
-            print(f"  Early stop: loss <= {config.early_stop_loss} (patience: {config.early_stop_patience})")
-        print(f"{'=' * 50}\n")
-
-        trainer.train()
-
-        checkpoint_path = Path(config.output_dir) / "final"
-        trainer.save_model(str(checkpoint_path))
-        print(f"\n✓ Saved checkpoint to {checkpoint_path}")
-
-        return str(checkpoint_path)
-
-    except ImportError as e:
-        raise ImportError(
-            f"TRL not installed. Install with: pip install trl\nOriginal error: {e}"
-        )
+    return _run_sft_training(
+        dataset, config, model, tokenizer, is_unsloth, len(trl_samples),
+        label="JSONL",
+    )
 
 
 def train_from_parquet(
