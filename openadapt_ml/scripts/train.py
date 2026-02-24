@@ -21,7 +21,11 @@ from typing import Dict, Any, Optional
 import yaml
 
 from openadapt_ml.ingest.synthetic import generate_synthetic_episodes
-from openadapt_ml.training.trl_trainer import TRLTrainingConfig, train_with_trl, train_from_jsonl
+from openadapt_ml.training.trl_trainer import (
+    TRLTrainingConfig,
+    train_with_trl,
+    train_from_jsonl,
+)
 
 
 def _load_config(path: str | Path) -> dict:
@@ -88,11 +92,15 @@ def main(
         lora_alpha=lora_dict.get("lora_alpha", 32),
         lora_dropout=lora_dict.get("lora_dropout", 0.0),
         finetune_vision_layers=lora_dict.get("finetune_vision_layers", False),
+        target_modules=lora_dict.get("target_modules"),
         num_epochs=train_cfg_raw.get("num_train_epochs", 3),
         batch_size=train_cfg_raw.get("per_device_train_batch_size", 1),
         gradient_accumulation_steps=train_cfg_raw.get("gradient_accumulation_steps", 4),
         learning_rate=train_cfg_raw.get("learning_rate", 2e-4),
         warmup_ratio=train_cfg_raw.get("warmup_ratio", 0.03),
+        lr_scheduler_type=train_cfg_raw.get("lr_scheduler_type", "cosine"),
+        weight_decay=train_cfg_raw.get("weight_decay", 0.0),
+        max_grad_norm=train_cfg_raw.get("max_grad_norm", 1.0),
         output_dir=output_dir,
         logging_steps=train_cfg_raw.get("logging_steps", 10),
         save_strategy=train_cfg_raw.get("save_strategy", "epoch"),

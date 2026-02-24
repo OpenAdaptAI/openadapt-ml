@@ -29,7 +29,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --all-extras --no-sources
 
       - name: Run ruff linter (check)
         run: uv run ruff check openadapt_ml/

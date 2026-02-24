@@ -179,16 +179,22 @@ class TestFormatActionQwen:
         assert result == 'scroll(direction="down", amount=3)'
 
     def test_drag(self):
-        result = _format_action_qwen("drag", {
-            "from_x": 0.1, "from_y": 0.2, "to_x": 0.8, "to_y": 0.9,
-        })
+        result = _format_action_qwen(
+            "drag",
+            {
+                "from_x": 0.1,
+                "from_y": 0.2,
+                "to_x": 0.8,
+                "to_y": 0.9,
+            },
+        )
         assert result == "drag(from_coord=[100, 200], to_coord=[800, 900])"
 
     def test_finished(self):
         assert _format_action_qwen("finished", {}) == "finished()"
 
     def test_wait(self):
-        assert _format_action_qwen("wait", {}) == "finished()"
+        assert _format_action_qwen("wait", {}) == "wait()"
 
     def test_unknown(self):
         result = _format_action_qwen("unknown", {"raw": "FOO(bar)"})

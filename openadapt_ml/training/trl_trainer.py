@@ -41,12 +41,20 @@ class TRLTrainingConfig:
     lora_dropout: float = 0.0
     finetune_vision_layers: bool = False  # Set True if grounding needs improvement
 
+    # LoRA target modules
+    target_modules: list = (
+        None  # None = default ["q_proj", "v_proj", "k_proj", "o_proj"]
+    )
+
     # Training
     num_epochs: int = 3
     batch_size: int = 1
     gradient_accumulation_steps: int = 4
     learning_rate: float = 2e-4
     warmup_ratio: float = 0.03
+    lr_scheduler_type: str = "cosine"
+    weight_decay: float = 0.0
+    max_grad_norm: float = 1.0
 
     # Output
     output_dir: str = "checkpoints"
@@ -56,7 +64,9 @@ class TRLTrainingConfig:
     # Early stopping
     early_stop_loss: float = 0.0  # Stop when loss drops below this (0 = disabled)
     early_stop_patience: int = 5  # Steps below threshold before stopping
-    early_stop_min_delta: float = 0.0  # Min improvement to count as progress (0 = disabled)
+    early_stop_min_delta: float = (
+        0.0  # Min improvement to count as progress (0 = disabled)
+    )
     early_stop_plateau_patience: int = 5  # Steps without improvement before stopping
 
 
@@ -69,6 +79,7 @@ class _OpenAdaptCallback:
 
     def __init__(self, config: TRLTrainingConfig):
         import json
+
         self._json = json
         self._config = config
         self._log_path = Path(config.output_dir) / "training_log.json"
@@ -76,15 +87,18 @@ class _OpenAdaptCallback:
         self._losses: list = []
         self._below_threshold_count = 0
         self._best_loss: float | None = None
+        self._last_loss: float = 0
         self._plateau_count = 0
         self._start_time: float | None = None
 
     def on_train_begin(self, args, state, control, **kwargs):
         import time
+
         self._start_time = time.time()
 
     def on_log(self, args, state, control, logs=None, **kwargs):
         import time
+
         if logs is None:
             return
 
@@ -94,19 +108,22 @@ class _OpenAdaptCallback:
         elapsed = time.time() - self._start_time if self._start_time else 0
 
         if loss is not None:
-            self._losses.append({
-                "epoch": epoch,
-                "step": state.global_step,
-                "loss": loss,
-                "lr": lr,
-                "time": elapsed,
-            })
+            self._last_loss = loss
+            self._losses.append(
+                {
+                    "epoch": epoch,
+                    "step": state.global_step,
+                    "loss": loss,
+                    "lr": lr,
+                    "time": elapsed,
+                }
+            )
 
-        # Write training_log.json
+        # Write training_log.json (use last known loss for non-loss log events)
         log_data = {
             "epoch": int(epoch),
             "step": state.global_step,
-            "loss": loss or 0,
+            "loss": self._last_loss,
             "learning_rate": lr,
             "total_epochs": args.num_train_epochs,
             "elapsed_time": elapsed,
@@ -133,7 +150,10 @@ class _OpenAdaptCallback:
 
         # Early stopping: plateau detection
         if self._config.early_stop_min_delta > 0 and loss is not None:
-            if self._best_loss is None or loss < self._best_loss - self._config.early_stop_min_delta:
+            if (
+                self._best_loss is None
+                or loss < self._best_loss - self._config.early_stop_min_delta
+            ):
                 self._best_loss = loss
                 self._plateau_count = 0
             else:
@@ -250,14 +270,16 @@ def _load_standard_model(config: TRLTrainingConfig):
             from transformers import AutoModelForImageTextToText
 
             model = AutoModelForImageTextToText.from_pretrained(
-                config.model_name, **load_kwargs,
+                config.model_name,
+                **load_kwargs,
             )
             print("  Using AutoModelForImageTextToText for VL model")
         except (ImportError, ValueError, RuntimeError, TypeError):
             from transformers import AutoModelForVision2Seq
 
             model = AutoModelForVision2Seq.from_pretrained(
-                config.model_name, **load_kwargs,
+                config.model_name,
+                **load_kwargs,
             )
             print("  Using AutoModelForVision2Seq for VL model")
     else:
@@ -265,18 +287,20 @@ def _load_standard_model(config: TRLTrainingConfig):
         from transformers import AutoModelForCausalLM
 
         model = AutoModelForCausalLM.from_pretrained(
-            config.model_name, **load_kwargs,
+            config.model_name,
+            **load_kwargs,
         )
         print("  Using AutoModelForCausalLM for text-only model")
 
     processor = AutoProcessor.from_pretrained(config.model_name, trust_remote_code=True)
 
     # Apply LoRA - CAUSAL_LM for all models (Qwen-VL is decoder-only, not encoder-decoder)
+    modules = config.target_modules or ["q_proj", "v_proj", "k_proj", "o_proj"]
     peft_config = LoraConfig(
         r=config.lora_r,
         lora_alpha=config.lora_alpha,
         lora_dropout=config.lora_dropout,
-        target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],
+        target_modules=modules,
         task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, peft_config)
@@ -366,7 +390,9 @@ def _run_sft_training(
             learning_rate=config.learning_rate,
             num_train_epochs=config.num_epochs,
             warmup_ratio=config.warmup_ratio,
-            lr_scheduler_type="cosine",
+            lr_scheduler_type=config.lr_scheduler_type,
+            weight_decay=config.weight_decay,
+            max_grad_norm=config.max_grad_norm,
             logging_steps=config.logging_steps,
             save_strategy=config.save_strategy,
             remove_unused_columns=False,
@@ -390,7 +416,9 @@ def _run_sft_training(
             learning_rate=config.learning_rate,
             num_train_epochs=config.num_epochs,
             warmup_ratio=config.warmup_ratio,
-            lr_scheduler_type="cosine",
+            lr_scheduler_type=config.lr_scheduler_type,
+            weight_decay=config.weight_decay,
+            max_grad_norm=config.max_grad_norm,
             logging_steps=config.logging_steps,
             save_strategy=config.save_strategy,
             max_length=None,  # Critical for VLMs
@@ -414,7 +442,9 @@ def _run_sft_training(
     print(f"  Unsloth: {is_unsloth}")
     print(f"  Output: {config.output_dir}")
     if config.early_stop_loss > 0:
-        print(f"  Early stop: loss <= {config.early_stop_loss} (patience: {config.early_stop_patience})")
+        print(
+            f"  Early stop: loss <= {config.early_stop_loss} (patience: {config.early_stop_patience})"
+        )
     print(f"{'=' * 50}\n")
 
     trainer.train()
@@ -472,7 +502,12 @@ def train_with_trl(
     model, tokenizer, is_unsloth = _load_unsloth_model(config)
 
     return _run_sft_training(
-        dataset, config, model, tokenizer, is_unsloth, len(trl_samples),
+        dataset,
+        config,
+        model,
+        tokenizer,
+        is_unsloth,
+        len(trl_samples),
     )
 
 
@@ -519,7 +554,12 @@ def train_from_jsonl(
     model, tokenizer, is_unsloth = _load_unsloth_model(config)
 
     return _run_sft_training(
-        dataset, config, model, tokenizer, is_unsloth, len(trl_samples),
+        dataset,
+        config,
+        model,
+        tokenizer,
+        is_unsloth,
+        len(trl_samples),
         label="JSONL",
     )
 
