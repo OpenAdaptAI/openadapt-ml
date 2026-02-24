@@ -56,6 +56,8 @@ class TRLTrainingConfig:
     # Early stopping
     early_stop_loss: float = 0.0  # Stop when loss drops below this (0 = disabled)
     early_stop_patience: int = 5  # Steps below threshold before stopping
+    early_stop_min_delta: float = 0.0  # Min improvement to count as progress (0 = disabled)
+    early_stop_plateau_patience: int = 5  # Steps without improvement before stopping
 
 
 class _OpenAdaptCallback:
@@ -73,6 +75,8 @@ class _OpenAdaptCallback:
         self._log_path.parent.mkdir(parents=True, exist_ok=True)
         self._losses: list = []
         self._below_threshold_count = 0
+        self._best_loss: float | None = None
+        self._plateau_count = 0
         self._start_time: float | None = None
 
     def on_train_begin(self, args, state, control, **kwargs):
@@ -111,7 +115,7 @@ class _OpenAdaptCallback:
         }
         self._log_path.write_text(self._json.dumps(log_data, indent=2))
 
-        # Early stopping check
+        # Early stopping: absolute threshold
         if (
             self._config.early_stop_loss > 0
             and loss is not None
@@ -126,6 +130,21 @@ class _OpenAdaptCallback:
                 control.should_training_stop = True
         else:
             self._below_threshold_count = 0
+
+        # Early stopping: plateau detection
+        if self._config.early_stop_min_delta > 0 and loss is not None:
+            if self._best_loss is None or loss < self._best_loss - self._config.early_stop_min_delta:
+                self._best_loss = loss
+                self._plateau_count = 0
+            else:
+                self._plateau_count += 1
+                if self._plateau_count >= self._config.early_stop_plateau_patience:
+                    print(
+                        f"\nEarly stopping: loss plateaued at {loss:.4f} "
+                        f"(best: {self._best_loss:.4f}, delta: {self._config.early_stop_min_delta}, "
+                        f"no improvement for {self._plateau_count} steps)"
+                    )
+                    control.should_training_stop = True
 
 
 def _make_callback(config: TRLTrainingConfig):

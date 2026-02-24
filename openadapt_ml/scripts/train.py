@@ -98,6 +98,8 @@ def main(
         save_strategy=train_cfg_raw.get("save_strategy", "epoch"),
         early_stop_loss=train_cfg_raw.get("early_stop_loss", 0.0),
         early_stop_patience=train_cfg_raw.get("early_stop_patience", 5),
+        early_stop_min_delta=train_cfg_raw.get("early_stop_min_delta", 0.0),
+        early_stop_plateau_patience=train_cfg_raw.get("early_stop_plateau_patience", 5),
     )
 
     # Disable Unsloth if requested
