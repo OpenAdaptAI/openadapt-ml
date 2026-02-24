@@ -1,6 +1,126 @@
 # CHANGELOG
 
 
+## v0.8.0 (2026-02-24)
+
+### Features
+
+- Sft training pipeline with demo conversion, Lambda Labs integration, and data persistence
+  ([#29](https://github.com/OpenAdaptAI/openadapt-ml/pull/29),
+  [`e8baa69`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e8baa692a30c19c24981ac5c2c25e7e1462e26cc))
+
+* feat(training): add demo conversion pipeline for ms-swift SFT format
+
+Convert annotated demo JSON files to JSONL training data compatible with ms-swift for Qwen3-VL
+  fine-tuning. Handles coordinate conversion from [0,1] to [0,1000] range, generates <think> blocks
+  from observation and intent fields, and accumulates action history across steps.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+* feat(training): add screenshot linking via mapping file
+
+Support --mapping flag for pre-computed screenshot mapping JSON that maps task_id -> {step_index ->
+  screenshot_path}. This correctly handles the coalesced step-to-raw-capture mapping (where step
+  indices skip due to merging). Also adds --captures-dir with DB-based fallback and
+  DOUBLE_CLICK/RIGHT_CLICK parsing.
+
+* fix(training): align SFT format with inference prompt and add validation
+
+- Add system role message to training conversations matching qwen3vl_agent.SYSTEM_PROMPT - Add
+  "Output exactly one action" / thinking instruction to user message matching _build_prompt() output
+  - Add coordinate range validation warning for values outside [0, 1] - Add input schema validation
+  for required demo/step fields - Remove broken _resolve_screenshots_from_db() and
+  _resolve_screenshots_direct() fallbacks that produced silently wrong mappings for coalesced demos
+  - Remove --screenshot-dir CLI arg (unreliable for coalesced demos) - Keep --mapping (recommended)
+  and capture API as screenshot resolution
+
+* feat(training): add JSONL training pipeline with bundle support
+
+Align convert_demos output with internal SFT format (images + messages), add train_from_jsonl()
+  loader, --jsonl flag to train.py, --bundle flag to convert_demos and Lambda Labs train command.
+  Enables training on annotated demo data without Episode objects.
+
+* fix(training): add TRL callback, 4-bit quantization, early stopping
+
+- Add OpenAdaptCallback for training_log.json output + early stop on loss - Fix _load_standard_model
+  to use BitsAndBytesConfig for 4-bit quantization - Use AutoModelForImageTextToText (supports
+  Qwen3-VL) instead of Qwen2VL class - Switch demo config to 2B model for fast iteration on A10 -
+  Hide Azure ML Jobs panel when cloud_provider is not azure - Fix Lambda setup: remove uv.sources
+  before uv sync on remote
+
+* fix(cloud): use git archive for code sync, fix callback MRO
+
+Replace rsync with `git archive HEAD | ssh tar` in sync_local_code() to send only committed tracked
+  files (~10MB vs ~1.8GB with binary artifacts).
+
+Fix callback class MRO: _OpenAdaptCallback must precede TrainerCallback so our on_log/on_train_begin
+  override the no-op base implementations.
+
+* refactor(training): consolidate duplicated SFTTrainer setup
+
+Extract _run_sft_training() shared by train_with_trl() and train_from_jsonl(), eliminating ~80 lines
+  of duplicated SFTConfig, SFTTrainer instantiation, and training loop code.
+
+* feat(training): add plateau-based early stopping
+
+Add early_stop_min_delta and early_stop_plateau_patience to stop training when loss stops improving
+  by at least min_delta for N consecutive steps. Works alongside the existing absolute threshold.
+
+* docs: add GPU hosting options and training pipeline gap analysis
+
+GPU hosting options covers 24 platforms ranked by value for open-source projects needing
+  free/credited GPU compute for VLM fine-tuning.
+
+* docs: add Qwen3-VL-2B training results analysis
+
+Detailed analysis of first fine-tuning run: 27.24 → 9.77 loss (64% reduction) over 50 steps on 20
+  annotated WAA demo samples. Includes per-epoch breakdown, compute efficiency metrics, and
+  recommendations for future training runs.
+
+* fix: remove absolute paths from repo, fix LoRA task_type, add tests
+
+- Remove screenshot_mapping.json (has absolute local paths), add to .gitignore, add
+  screenshot_mapping.example.json instead - Fix LoRA task_type: always use CAUSAL_LM (Qwen-VL is
+  decoder-only, not encoder-decoder like T5/BART that needs SEQ_2_SEQ_LM) - Add 57 tests for
+  convert_demos (action parsing, coordinate conversion, step conversion, validation, bundle
+  creation) and training callback (log writing, threshold early stopping, plateau detection)
+
+* fix: address self-review issues (config wiring, security, tests)
+
+- Wire lr_scheduler_type, weight_decay, max_grad_norm, target_modules from YAML config through to
+  SFTConfig (were silently ignored) - Fix command injection in lambda_labs.py via shlex.quote() -
+  Fix callback writing loss=0 on non-loss log events (track _last_loss) - Fix WAIT() mapping to
+  wait() instead of finished() in convert_demos - Fix CI: add --no-sources to uv sync for uv.sources
+  compatibility - Add test for non-loss log event callback behavior - Update SYSTEM_PROMPT comment
+  (remove stale cross-reference)
+
+* ci: fix uv.sources with UV_NO_SOURCES env var, skip integration tests
+
+UV_NO_SOURCES=1 covers uv sync, uv run ruff, and uv run pytest. Integration tests require
+  openadapt_evals which is not a dependency.
+
+* style: format annotate.py with ruff
+
+* feat: auto-generate training plots, persist data with checkpoint
+
+- Add plot_training.py: generates loss curve, LR schedule, and combined plots from training_log.json
+  using matplotlib - Copy training_log.json + plots into checkpoint directory after training so
+  artifacts are self-contained and never lost - Add periodic rsync of training_log.json during
+  Lambda training (every 5 min) so data survives instance interruption - Replace ASCII loss curve in
+  training results doc with real PNG plots - Add reconstructed training_log.json from Qwen3-VL-2B
+  demo run
+
+* test: add tests for plot generation and checkpoint co-location
+
+11 tests covering: - Loss plot generation (with/without LR data) - Output directory creation and
+  defaults - Empty data handling - Epoch boundary rendering - Real training log validation -
+  Checkpoint co-location of log + plots
+
+---------
+
+Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.7.1 (2026-02-18)
 
 ### Bug Fixes
