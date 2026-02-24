@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -557,6 +558,10 @@ else
 fi
 
 cd openadapt-ml
+
+# Remove uv.sources (local path deps that don't exist on remote)
+sed -i '/\\[tool.uv.sources\\]/,/^$/d' pyproject.toml 2>/dev/null || true
+
 uv sync
 echo "SETUP_COMPLETE"
 """
@@ -583,14 +588,15 @@ echo "SETUP_COMPLETE"
     def sync_local_code(
         self, instance: Instance, local_repo_path: str = ".", retries: int = 3
     ) -> bool:
-        """Sync local code changes to remote instance.
+        """Sync local code to remote instance via git archive.
 
-        Uses rsync to push local code, excluding .venv, .git, etc.
-        This ensures the remote has the same code as local.
+        Uses `git archive HEAD` to send only committed, tracked files (~10MB)
+        instead of rsync'ing the full working directory (~1.8GB with binary
+        artifacts, checkpoints, benchmark results, etc.).
 
         Args:
             instance: Instance to sync to
-            local_repo_path: Local repository path
+            local_repo_path: Local repository path (must be a git repo)
             retries: Number of retry attempts
 
         Returns:
@@ -599,42 +605,26 @@ echo "SETUP_COMPLETE"
         if not instance.ip:
             raise RuntimeError("Instance has no IP address")
 
-        print(f"Syncing local code to {instance.ip}...")
+        print(f"Syncing local code to {instance.ip} via git archive...")
 
-        # SSH options for more robust connection
-        ssh_opts = "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=60"
+        ssh_opts = (
+            "ssh -o StrictHostKeyChecking=no "
+            "-o ConnectTimeout=30 -o ServerAliveInterval=60"
+        )
 
-        rsync_cmd = [
-            "rsync",
-            "-avz",
-            "--progress",
-            "--timeout=120",  # 2 minute timeout per file
-            "--exclude",
-            ".venv",
-            "--exclude",
-            ".git",
-            "--exclude",
-            "__pycache__",
-            "--exclude",
-            "*.pyc",
-            "--exclude",
-            ".env",
-            "--exclude",
-            "training_output",
-            "--exclude",
-            "checkpoints",
-            "--exclude",
-            "synthetic*",
-            "-e",
-            ssh_opts,
-            f"{local_repo_path}/",
-            f"ubuntu@{instance.ip}:~/openadapt-ml/",
-        ]
+        # git archive HEAD produces a tarball of only committed tracked files,
+        # piped over SSH and extracted on the remote — clean and minimal.
+        cmd = (
+            f"cd {shlex.quote(local_repo_path)} && "
+            f"git archive HEAD | "
+            f"{ssh_opts} ubuntu@{instance.ip} "
+            f"'mkdir -p ~/openadapt-ml && tar -xf - -C ~/openadapt-ml/'"
+        )
 
         for attempt in range(retries):
-            result = subprocess.run(rsync_cmd)
+            result = subprocess.run(cmd, shell=True)
             if result.returncode == 0:
-                print("  Code synced")
+                print("  Code synced (git archive)")
                 return True
             if attempt < retries - 1:
                 print(f"  Sync failed, retrying ({attempt + 1}/{retries})...")
@@ -695,6 +685,7 @@ echo "SETUP_COMPLETE"
         config: str = "configs/qwen3vl_capture.yaml",
         capture: str | None = None,
         goal: str | None = None,
+        jsonl: str | None = None,
         background: bool = True,
     ) -> subprocess.Popen | subprocess.CompletedProcess:
         """Run training on instance.
@@ -704,6 +695,7 @@ echo "SETUP_COMPLETE"
             config: Config file path (relative to repo)
             capture: Remote capture path (if uploaded)
             goal: Task goal description
+            jsonl: Remote path to JSONL training data
             background: Run in background (returns Popen) or foreground
 
         Returns:
@@ -712,12 +704,14 @@ echo "SETUP_COMPLETE"
         if not instance.ip:
             raise RuntimeError("Instance has no IP address")
 
-        # Build training command
-        train_cmd = f"uv run python -m openadapt_ml.scripts.train --config {config}"
-        if capture:
-            train_cmd += f" --capture {capture}"
+        # Build training command (quote user-supplied values for shell safety)
+        train_cmd = f"uv run python -m openadapt_ml.scripts.train --config {shlex.quote(config)}"
+        if jsonl:
+            train_cmd += f" --jsonl {shlex.quote(jsonl)}"
+        elif capture:
+            train_cmd += f" --capture {shlex.quote(capture)}"
         if goal:
-            train_cmd += f' --goal "{goal}"'
+            train_cmd += f" --goal {shlex.quote(goal)}"
 
         # Full script with environment setup
         script = f"""
@@ -966,6 +960,11 @@ def main():
     )
     train_parser.add_argument(
         "--instance", "-i", help="Use existing instance ID instead of launching new"
+    )
+    train_parser.add_argument(
+        "--bundle",
+        "-b",
+        help="Local bundle directory (with training_data.jsonl + images/) to upload",
     )
     train_parser.add_argument(
         "--no-terminate",
@@ -1467,6 +1466,29 @@ def main():
                     )
                     return  # Don't terminate - let user debug
 
+            # Upload bundle if provided
+            remote_jsonl = None
+            if args.bundle:
+                setup_logs.append("Uploading training bundle...")
+                update_dashboard("installing", setup_logs)
+                if client.upload_capture(instance, args.bundle, "~/training_data"):
+                    remote_jsonl = "~/training_data/training_data.jsonl"
+                    setup_logs.append(
+                        f"Bundle uploaded to {instance.ip}:~/training_data"
+                    )
+                    update_dashboard("installing", setup_logs)
+                    print(f"Bundle uploaded to {instance.ip}:~/training_data")
+                else:
+                    setup_logs.append("ERROR: Failed to upload bundle after retries")
+                    update_dashboard("installing", setup_logs)
+                    print("\nError: Failed to upload bundle after retries")
+                    print(f"Instance still running: {instance.ip}")
+                    print("Debug via: ssh ubuntu@" + instance.ip)
+                    print(
+                        f"Terminate with: python -m openadapt_ml.cloud.lambda_labs terminate {instance.id}"
+                    )
+                    return  # Don't terminate - let user debug
+
             # Run training in background and poll for status
             setup_logs.append("Installing dependencies and starting training...")
             update_dashboard("training", setup_logs)
@@ -1479,13 +1501,16 @@ def main():
                 config=args.config,
                 capture=remote_capture,
                 goal=args.goal,
+                jsonl=remote_jsonl,
                 background=True,  # Run in background so we can poll
             )
 
             # Poll for training status and update dashboard
             poll_interval = 10  # seconds
+            sync_interval = 300  # sync training_log.json every 5 minutes
             last_step = 0
             last_epoch = 0
+            last_sync_time = time_module.time()
             print(
                 f"Polling training status every {poll_interval}s (Ctrl+C to stop)...\n"
             )
@@ -1570,6 +1595,26 @@ def main():
 
                 except Exception as e:
                     print(f"  Poll error: {e}")
+
+                # Periodic sync of training artifacts (every 5 min)
+                now = time_module.time()
+                if now - last_sync_time >= sync_interval:
+                    try:
+                        subprocess.run(
+                            [
+                                "rsync",
+                                "-az",
+                                "-e",
+                                "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10",
+                                f"ubuntu@{instance.ip}:~/openadapt-ml/training_output/training_log.json",
+                                str(log_path),
+                            ],
+                            capture_output=True,
+                            timeout=30,
+                        )
+                    except Exception:
+                        pass  # Non-critical — best-effort sync
+                    last_sync_time = now
 
                 time_module.sleep(poll_interval)
 

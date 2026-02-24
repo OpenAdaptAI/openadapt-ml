@@ -862,8 +862,8 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
         }}
         /* Shared header styles (injected from _get_shared_header_css) */
         {_get_shared_header_css()}
-        /* Azure ML Jobs panel styles */
-        {_get_azure_jobs_panel_css()}
+        /* Azure ML Jobs panel styles (only when using Azure) */
+        {_get_azure_jobs_panel_css() if state.cloud_provider in ("azure", "") else ""}
         .eval-panel {{
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
@@ -1205,7 +1205,7 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
             </div>
         </div>
 
-        {_get_azure_jobs_panel_html()}
+        {_get_azure_jobs_panel_html() if state.cloud_provider in ("azure", "") else ""}
 
         <div class="config-panel" id="config-panel">
             <div class="config-grid">

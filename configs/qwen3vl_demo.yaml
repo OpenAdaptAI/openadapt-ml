@@ -1,0 +1,32 @@
+model:
+  name: Qwen/Qwen3-VL-2B-Instruct  # 2B for fast iteration; upgrade to 8B once pipeline is validated
+  load_in_4bit: true
+
+lora:
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.0
+  bias: none
+  target_modules:
+    - q_proj
+    - v_proj
+    - k_proj
+    - o_proj
+  # task_type is always CAUSAL_LM (set in trl_trainer.py, not configurable)
+  weights_path: checkpoints/qwen3vl2b_demo_lora
+
+training:
+  num_train_epochs: 10  # 20 samples, need more passes
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 4
+  learning_rate: 5.0e-5
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.1
+  weight_decay: 0.01
+  max_grad_norm: 0.5
+  logging_steps: 1
+  save_strategy: epoch
+  early_stop_loss: 1.0
+  early_stop_patience: 5
+  early_stop_min_delta: 0.1  # Stop if loss doesn't improve by at least 0.1
+  early_stop_plateau_patience: 5  # for 5 consecutive steps
