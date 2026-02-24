@@ -289,11 +289,13 @@ def _build_inference_app(
 
     inference_image = modal.Image.debian_slim(python_version="3.12").pip_install(
         "torch",
-        "transformers",
+        "torchvision",
+        "transformers==4.57.3",
         "peft",
         "accelerate",
         "pillow",
         "qwen-vl-utils",
+        "av",
     )
 
     vol = volume
@@ -306,7 +308,7 @@ def _build_inference_app(
         volumes={VOLUME_MOUNT: vol},
         timeout=300,
         serialized=True,
-        container_idle_timeout=600,
+        scaledown_window=600,
     )
     def infer(
         messages_json: str,
@@ -329,16 +331,27 @@ def _build_inference_app(
 
         import torch
         from PIL import Image as _Image
-        from transformers import AutoModelForVision2Seq, AutoProcessor
+        from transformers import AutoProcessor
 
         # Load model (cached in container memory across calls)
         if not hasattr(infer, "_model"):
             print(f"Loading base model: {_base}")
-            infer._model = AutoModelForVision2Seq.from_pretrained(
-                _base,
-                torch_dtype=torch.bfloat16,
-                device_map="auto",
-            )
+            try:
+                from transformers import AutoModelForVision2Seq
+
+                infer._model = AutoModelForVision2Seq.from_pretrained(
+                    _base,
+                    torch_dtype=torch.bfloat16,
+                    device_map="auto",
+                )
+            except (ImportError, ValueError):
+                from transformers import Qwen2_5_VLForConditionalGeneration
+
+                infer._model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                    _base,
+                    torch_dtype=torch.bfloat16,
+                    device_map="auto",
+                )
 
             if _adapter:
                 from peft import PeftModel
@@ -347,7 +360,13 @@ def _build_inference_app(
                 vol.reload()
                 infer._model = PeftModel.from_pretrained(infer._model, _adapter)
 
-            infer._processor = AutoProcessor.from_pretrained(_base)
+            try:
+                infer._processor = AutoProcessor.from_pretrained(_base)
+            except TypeError:
+                # Fallback for transformers versions with video processor bug
+                from transformers import Qwen2_5_VLProcessor
+
+                infer._processor = Qwen2_5_VLProcessor.from_pretrained(_base)
             print("Model ready for inference")
 
         messages = _json.loads(messages_json)
@@ -357,6 +376,23 @@ def _build_inference_app(
         if image_base64:
             img_bytes = _base64.b64decode(image_base64)
             image = _Image.open(_BytesIO(img_bytes)).convert("RGB")
+
+        # Reconstruct multi-modal messages for the processor.
+        # The agent sends flattened text messages (image dicts stripped),
+        # but apply_chat_template needs {"type": "image"} placeholders
+        # to generate <|image_pad|> tokens for the vision encoder.
+        if image is not None:
+            for msg in messages:
+                if msg["role"] == "user":
+                    text_content = msg["content"]
+                    # Replace <image> tag in text with proper multi-modal format
+                    if "<image>" in text_content:
+                        text_content = text_content.replace("<image>\n", "").replace("<image>", "")
+                    msg["content"] = [
+                        {"type": "image"},
+                        {"type": "text", "text": text_content},
+                    ]
+                    break
 
         # Build inputs using the processor's chat template
         text = infer._processor.apply_chat_template(
