@@ -156,6 +156,25 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 
 **Rules**: Imperative mood, no period, max 50 chars, lowercase after type
 
+### PR Titles MUST Use Conventional Commit Format
+
+PR titles become the squash merge commit message on main. `python-semantic-release` parses these to decide version bumps. **If the PR title doesn't follow the format, no release is created.**
+
+```
+fix: short description          → patch bump (0.0.x)
+feat: short description         → minor bump (0.x.0)
+feat!: breaking change          → major bump (x.0.0)
+```
+
+**Examples**:
+- `fix: align PolicyAgent prompt with training format`
+- `feat: add Modal inference timeout config`
+
+**Wrong** (will NOT trigger a release):
+- `Align PolicyAgent prompt with training format` (no `fix:` prefix)
+
+When merging with `gh pr merge --squash`, GitHub uses the PR title as the commit message — so the title format is what matters.
+
 ---
 
 ## Don't Do
