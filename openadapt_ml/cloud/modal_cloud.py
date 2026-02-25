@@ -305,7 +305,7 @@ def _build_inference_app(
         gpu=gpu,
         image=inference_image,
         volumes={VOLUME_MOUNT: vol},
-        timeout=300,
+        timeout=600,
         serialized=True,
         scaledown_window=600,
     )
