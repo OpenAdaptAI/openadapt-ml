@@ -105,17 +105,20 @@ class PolicyAgent(BenchmarkAgent):
     ) -> dict:
         """Build SFT-style sample aligned with convert_demos.py training format.
 
-        Format matches training data exactly::
+        NOTE: No system message is included here because
+        ``QwenVLAdapter.generate()`` only extracts the user role message
+        and drops any system role.  The model was trained under the same
+        conditions (no system prompt), so omitting it at inference keeps
+        behaviour consistent.
 
-            system: SYSTEM_PROMPT
+        Format::
+
             user: <image>
                   Instruction: {instruction}
                   ...previous actions...
                   First reason about what you see in <think>...</think> tags,
                   then output exactly one action.
         """
-        from openadapt_ml.training.convert_demos import SYSTEM_PROMPT
-
         # Build user content matching training format
         parts = ["<image>"]
         parts.append(f"Instruction: {task.instruction}")
@@ -137,7 +140,6 @@ class PolicyAgent(BenchmarkAgent):
 
         sample = {
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": "\n".join(parts)},
             ],
         }
