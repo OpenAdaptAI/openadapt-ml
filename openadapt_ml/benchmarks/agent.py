@@ -52,21 +52,21 @@ class PolicyAgent(BenchmarkAgent):
     Converts between BenchmarkObservation/BenchmarkAction and the
     SFT sample format expected by AgentPolicy.
 
+    Prompt format is aligned with convert_demos.py training data.
+
     Args:
         policy: AgentPolicy instance to wrap.
-        use_accessibility_tree: Whether to include accessibility tree in prompt.
-        use_history: Whether to include action history in prompt.
+        use_thinking: Whether to include <think> instruction in prompts.
     """
 
     def __init__(
         self,
         policy: AgentPolicy,
-        use_accessibility_tree: bool = True,
-        use_history: bool = True,
+        use_thinking: bool = True,
     ):
         self.policy = policy
-        self.use_accessibility_tree = use_accessibility_tree
-        self.use_history = use_history
+        self.use_thinking = use_thinking
+        self._previous_actions: list[str] = []
 
     def act(
         self,
@@ -84,42 +84,63 @@ class PolicyAgent(BenchmarkAgent):
         Returns:
             BenchmarkAction from policy.
         """
-        # Build SFT-style sample
-        sample = self._build_sample(observation, task, history)
+        # Build SFT-style sample (aligned with training format)
+        sample = self._build_sample(observation, task)
 
         # Get action from policy
-        action, thought = self.policy.predict(sample)
+        action, thought, _state, _raw = self.policy.predict_action_from_sample(sample)
 
         # Convert to BenchmarkAction
-        return self._to_benchmark_action(action, thought)
+        benchmark_action = self._to_benchmark_action(action, thought)
+
+        # Track action for next step's "Previous actions" section
+        self._previous_actions.append(self._action_to_string(benchmark_action))
+
+        return benchmark_action
 
     def _build_sample(
         self,
         observation: BenchmarkObservation,
         task: BenchmarkTask,
-        history: list[tuple[BenchmarkObservation, BenchmarkAction]] | None,
     ) -> dict:
-        """Build SFT-style sample from benchmark observation."""
-        content_parts = [f"Goal: {task.instruction}"]
+        """Build SFT-style sample aligned with convert_demos.py training format.
 
-        if self.use_accessibility_tree and observation.accessibility_tree:
-            tree_str = self._format_accessibility_tree(observation.accessibility_tree)
-            content_parts.append(f"UI Elements:\n{tree_str}")
+        NOTE: No system message is included here because
+        ``QwenVLAdapter.generate()`` only extracts the user role message
+        and drops any system role.  The model was trained under the same
+        conditions (no system prompt), so omitting it at inference keeps
+        behaviour consistent.
 
-        if observation.url:
-            content_parts.append(f"URL: {observation.url}")
-        if observation.window_title:
-            content_parts.append(f"Window: {observation.window_title}")
+        Format::
 
-        if self.use_history and history:
-            history_str = self._format_history(history)
-            content_parts.append(f"Previous actions:\n{history_str}")
+            user: <image>
+                  Instruction: {instruction}
+                  ...previous actions...
+                  First reason about what you see in <think>...</think> tags,
+                  then output exactly one action.
+        """
+        # Build user content matching training format
+        parts = ["<image>"]
+        parts.append(f"Instruction: {task.instruction}")
 
-        content_parts.append("What action should be taken next?")
+        if self._previous_actions:
+            parts.append("")
+            parts.append("Previous actions:")
+            for i, act in enumerate(self._previous_actions):
+                parts.append(f"  Step {i}: {act}")
+
+        parts.append("")
+        if self.use_thinking:
+            parts.append(
+                "First reason about what you see in <think>...</think> "
+                "tags, then output exactly one action."
+            )
+        else:
+            parts.append("Output exactly one action.")
 
         sample = {
             "messages": [
-                {"role": "user", "content": "\n\n".join(content_parts)},
+                {"role": "user", "content": "\n".join(parts)},
             ],
         }
 
@@ -128,57 +149,39 @@ class PolicyAgent(BenchmarkAgent):
 
         return sample
 
-    def _format_accessibility_tree(self, tree: dict, indent: int = 0) -> str:
-        """Format accessibility tree for prompt."""
-        lines = []
-        prefix = "  " * indent
+    @staticmethod
+    def _action_to_string(action: BenchmarkAction) -> str:
+        """Format action matching convert_demos._format_action_qwen training format.
 
-        role = tree.get("role", "unknown")
-        name = tree.get("name", "")
-        node_id = tree.get("id", tree.get("node_id", ""))
+        Uses [0, 1000] coordinate range and lowercase function-call style
+        to match what the model was trained on.
+        """
 
-        line = f"{prefix}[{node_id}] {role}"
-        if name:
-            line += f": {name}"
-        lines.append(line)
+        def _to_1000(v: float | None) -> int:
+            return round((v or 0.0) * 1000)
 
-        for child in tree.get("children", []):
-            lines.append(self._format_accessibility_tree(child, indent + 1))
-
-        return "\n".join(lines)
-
-    def _format_history(
-        self, history: list[tuple[BenchmarkObservation, BenchmarkAction]]
-    ) -> str:
-        """Format action history for prompt."""
-        lines = []
-        for i, (obs, action) in enumerate(history[-5:], 1):
-            action_str = self._action_to_string(action)
-            lines.append(f"{i}. {action_str}")
-        return "\n".join(lines)
-
-    def _action_to_string(self, action: BenchmarkAction) -> str:
-        """Convert BenchmarkAction to string representation."""
         if action.type == "click":
-            if action.target_name:
-                return f"CLICK({action.target_name})"
-            return f"CLICK(x={action.x:.3f}, y={action.y:.3f})"
-        elif action.type == "type":
-            return f"TYPE({action.text!r})"
-        elif action.type == "key":
-            mods = "+".join(action.modifiers or [])
-            key = action.key
-            if mods:
-                return f"KEY({mods}+{key})"
-            return f"KEY({key})"
-        elif action.type == "scroll":
-            return f"SCROLL({action.scroll_direction})"
-        elif action.type == "done":
-            return "DONE()"
-        elif action.type == "answer":
-            return f"ANSWER({action.answer!r})"
-        else:
-            return f"{action.type.upper()}()"
+            return f"click(x={_to_1000(action.x)}, y={_to_1000(action.y)})"
+        if action.type == "double_click":
+            return f"double_click(x={_to_1000(action.x)}, y={_to_1000(action.y)})"
+        if action.type == "right_click":
+            return f"right_click(x={_to_1000(action.x)}, y={_to_1000(action.y)})"
+        if action.type == "type":
+            return f'type(text="{action.text or ""}")'
+        if action.type == "key":
+            keys = (action.modifiers or []) + ([action.key] if action.key else [])
+            keys_fmt = ", ".join(f'"{k}"' for k in keys)
+            return f"press(keys=[{keys_fmt}])"
+        if action.type == "scroll":
+            return f'scroll(direction="{action.scroll_direction or "down"}", amount=3)'
+        if action.type == "drag":
+            return (
+                f"drag(from_coord=[{_to_1000(action.x)}, {_to_1000(action.y)}], "
+                f"to_coord=[{_to_1000(action.end_x)}, {_to_1000(action.end_y)}])"
+            )
+        if action.type == "done":
+            return "finished()"
+        return f"# unknown: {action.type}"
 
     def _to_benchmark_action(
         self, action: Action, thought: str | None
@@ -233,7 +236,7 @@ class PolicyAgent(BenchmarkAgent):
 
     def reset(self) -> None:
         """Reset agent state."""
-        pass
+        self._previous_actions = []
 
 
 class APIBenchmarkAgent(BenchmarkAgent):
