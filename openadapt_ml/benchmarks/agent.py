@@ -88,7 +88,7 @@ class PolicyAgent(BenchmarkAgent):
         sample = self._build_sample(observation, task)
 
         # Get action from policy
-        action, thought = self.policy.predict(sample)
+        action, thought, _state, _raw = self.policy.predict_action_from_sample(sample)
 
         # Convert to BenchmarkAction
         benchmark_action = self._to_benchmark_action(action, thought)
