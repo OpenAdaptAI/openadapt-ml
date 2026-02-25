@@ -52,21 +52,21 @@ class PolicyAgent(BenchmarkAgent):
     Converts between BenchmarkObservation/BenchmarkAction and the
     SFT sample format expected by AgentPolicy.
 
+    Prompt format is aligned with convert_demos.py training data.
+
     Args:
         policy: AgentPolicy instance to wrap.
-        use_accessibility_tree: Whether to include accessibility tree in prompt.
-        use_history: Whether to include action history in prompt.
+        use_thinking: Whether to include <think> instruction in prompts.
     """
 
     def __init__(
         self,
         policy: AgentPolicy,
-        use_accessibility_tree: bool = True,
-        use_history: bool = True,
+        use_thinking: bool = True,
     ):
         self.policy = policy
-        self.use_accessibility_tree = use_accessibility_tree
-        self.use_history = use_history
+        self.use_thinking = use_thinking
+        self._previous_actions: list[str] = []
 
     def act(
         self,
@@ -84,42 +84,61 @@ class PolicyAgent(BenchmarkAgent):
         Returns:
             BenchmarkAction from policy.
         """
-        # Build SFT-style sample
-        sample = self._build_sample(observation, task, history)
+        # Build SFT-style sample (aligned with training format)
+        sample = self._build_sample(observation, task)
 
         # Get action from policy
         action, thought = self.policy.predict(sample)
 
         # Convert to BenchmarkAction
-        return self._to_benchmark_action(action, thought)
+        benchmark_action = self._to_benchmark_action(action, thought)
+
+        # Track action for next step's "Previous actions" section
+        self._previous_actions.append(self._action_to_string(benchmark_action))
+
+        return benchmark_action
 
     def _build_sample(
         self,
         observation: BenchmarkObservation,
         task: BenchmarkTask,
-        history: list[tuple[BenchmarkObservation, BenchmarkAction]] | None,
     ) -> dict:
-        """Build SFT-style sample from benchmark observation."""
-        content_parts = [f"Goal: {task.instruction}"]
+        """Build SFT-style sample aligned with convert_demos.py training format.
 
-        if self.use_accessibility_tree and observation.accessibility_tree:
-            tree_str = self._format_accessibility_tree(observation.accessibility_tree)
-            content_parts.append(f"UI Elements:\n{tree_str}")
+        Format matches training data exactly::
 
-        if observation.url:
-            content_parts.append(f"URL: {observation.url}")
-        if observation.window_title:
-            content_parts.append(f"Window: {observation.window_title}")
+            system: SYSTEM_PROMPT
+            user: <image>
+                  Instruction: {instruction}
+                  ...previous actions...
+                  First reason about what you see in <think>...</think> tags,
+                  then output exactly one action.
+        """
+        from openadapt_ml.training.convert_demos import SYSTEM_PROMPT
 
-        if self.use_history and history:
-            history_str = self._format_history(history)
-            content_parts.append(f"Previous actions:\n{history_str}")
+        # Build user content matching training format
+        parts = ["<image>"]
+        parts.append(f"Instruction: {task.instruction}")
 
-        content_parts.append("What action should be taken next?")
+        if self._previous_actions:
+            parts.append("")
+            parts.append("Previous actions:")
+            for i, act in enumerate(self._previous_actions):
+                parts.append(f"  Step {i}: {act}")
+
+        parts.append("")
+        if self.use_thinking:
+            parts.append(
+                "First reason about what you see in <think>...</think> "
+                "tags, then output exactly one action."
+            )
+        else:
+            parts.append("Output exactly one action.")
 
         sample = {
             "messages": [
-                {"role": "user", "content": "\n\n".join(content_parts)},
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": "\n".join(parts)},
             ],
         }
 
@@ -127,35 +146,6 @@ class PolicyAgent(BenchmarkAgent):
             sample["images"] = [observation.screenshot_path]
 
         return sample
-
-    def _format_accessibility_tree(self, tree: dict, indent: int = 0) -> str:
-        """Format accessibility tree for prompt."""
-        lines = []
-        prefix = "  " * indent
-
-        role = tree.get("role", "unknown")
-        name = tree.get("name", "")
-        node_id = tree.get("id", tree.get("node_id", ""))
-
-        line = f"{prefix}[{node_id}] {role}"
-        if name:
-            line += f": {name}"
-        lines.append(line)
-
-        for child in tree.get("children", []):
-            lines.append(self._format_accessibility_tree(child, indent + 1))
-
-        return "\n".join(lines)
-
-    def _format_history(
-        self, history: list[tuple[BenchmarkObservation, BenchmarkAction]]
-    ) -> str:
-        """Format action history for prompt."""
-        lines = []
-        for i, (obs, action) in enumerate(history[-5:], 1):
-            action_str = self._action_to_string(action)
-            lines.append(f"{i}. {action_str}")
-        return "\n".join(lines)
 
     def _action_to_string(self, action: BenchmarkAction) -> str:
         """Convert BenchmarkAction to string representation."""
@@ -233,7 +223,7 @@ class PolicyAgent(BenchmarkAgent):
 
     def reset(self) -> None:
         """Reset agent state."""
-        pass
+        self._previous_actions = []
 
 
 class APIBenchmarkAgent(BenchmarkAgent):
