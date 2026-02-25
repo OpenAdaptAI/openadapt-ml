@@ -147,28 +147,38 @@ class PolicyAgent(BenchmarkAgent):
 
         return sample
 
-    def _action_to_string(self, action: BenchmarkAction) -> str:
-        """Convert BenchmarkAction to string representation."""
+    @staticmethod
+    def _action_to_string(action: BenchmarkAction) -> str:
+        """Format action matching convert_demos._format_action_qwen training format.
+
+        Uses [0, 1000] coordinate range and lowercase function-call style
+        to match what the model was trained on.
+        """
+        def _to_1000(v: float | None) -> int:
+            return round((v or 0.0) * 1000)
+
         if action.type == "click":
-            if action.target_name:
-                return f"CLICK({action.target_name})"
-            return f"CLICK(x={action.x:.3f}, y={action.y:.3f})"
-        elif action.type == "type":
-            return f"TYPE({action.text!r})"
-        elif action.type == "key":
-            mods = "+".join(action.modifiers or [])
-            key = action.key
-            if mods:
-                return f"KEY({mods}+{key})"
-            return f"KEY({key})"
-        elif action.type == "scroll":
-            return f"SCROLL({action.scroll_direction})"
-        elif action.type == "done":
-            return "DONE()"
-        elif action.type == "answer":
-            return f"ANSWER({action.answer!r})"
-        else:
-            return f"{action.type.upper()}()"
+            return f"click(x={_to_1000(action.x)}, y={_to_1000(action.y)})"
+        if action.type == "double_click":
+            return f"double_click(x={_to_1000(action.x)}, y={_to_1000(action.y)})"
+        if action.type == "right_click":
+            return f"right_click(x={_to_1000(action.x)}, y={_to_1000(action.y)})"
+        if action.type == "type":
+            return f'type(text="{action.text or ""}")'
+        if action.type == "key":
+            keys = (action.modifiers or []) + ([action.key] if action.key else [])
+            keys_fmt = ", ".join(f'"{k}"' for k in keys)
+            return f"press(keys=[{keys_fmt}])"
+        if action.type == "scroll":
+            return f'scroll(direction="{action.scroll_direction or "down"}", amount=3)'
+        if action.type == "drag":
+            return (
+                f"drag(from_coord=[{_to_1000(action.x)}, {_to_1000(action.y)}], "
+                f"to_coord=[{_to_1000(action.end_x)}, {_to_1000(action.end_y)}])"
+            )
+        if action.type == "done":
+            return "finished()"
+        return f"# unknown: {action.type}"
 
     def _to_benchmark_action(
         self, action: Action, thought: str | None
