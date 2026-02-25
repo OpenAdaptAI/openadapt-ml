@@ -156,6 +156,7 @@ class PolicyAgent(BenchmarkAgent):
         Uses [0, 1000] coordinate range and lowercase function-call style
         to match what the model was trained on.
         """
+
         def _to_1000(v: float | None) -> int:
             return round((v or 0.0) * 1000)
 
