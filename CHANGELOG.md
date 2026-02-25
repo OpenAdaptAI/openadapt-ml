@@ -1,6 +1,40 @@
 # CHANGELOG
 
 
+## v0.11.2 (2026-02-25)
+
+### Bug Fixes
+
+- **docs**: Require conventional commit format for PR titles
+  ([#32](https://github.com/OpenAdaptAI/openadapt-ml/pull/32),
+  [`303f54f`](https://github.com/OpenAdaptAI/openadapt-ml/commit/303f54f64a342044fddd26ffdd835b006c2a48a5))
+
+PR titles become squash merge commit messages. Without the fix:/feat: prefix,
+  python-semantic-release skips the release. Document this requirement prominently in CLAUDE.md.
+
+Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
+
+### Documentation
+
+- Enforce branch protection rules ([#30](https://github.com/OpenAdaptAI/openadapt-ml/pull/30),
+  [`afad981`](https://github.com/OpenAdaptAI/openadapt-ml/commit/afad9810bc51909bc86237378b2fb5356c569790))
+
+* docs: add mandatory branch/PR rule to CLAUDE.md
+
+Adds explicit instruction that all changes must go through feature branches and pull requests.
+  enforce_admins has been enabled on GitHub to prevent admin bypass of branch protection.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+* fix(modal): remove unused os import
+
+Fixes ruff F401 lint error on modal_cloud.py.
+
+---------
+
+Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.11.1 (2026-02-24)
 
 ### Bug Fixes
