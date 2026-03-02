@@ -179,3 +179,31 @@ class ApiVLMAdapter(BaseVLMAdapter):
 
         # Should be unreachable because provider is validated in __init__.
         raise ValueError(f"Unsupported provider: {self.provider}")
+
+
+def get_api_adapter(model_name: str, **kwargs: Any) -> ApiVLMAdapter:
+    """Create an ApiVLMAdapter from a model name.
+
+    Maps common model name prefixes to providers:
+    - ``gpt-*``, ``o1-*``, ``o3-*``, ``o4-*`` → ``"openai"``
+    - ``claude-*`` → ``"anthropic"``
+    - Unknown prefixes default to ``"openai"``
+
+    Args:
+        model_name: Model identifier, e.g. ``"gpt-4o"`` or
+            ``"claude-sonnet-4-5-20250929"``.
+        **kwargs: Passed through to :class:`ApiVLMAdapter` (e.g. ``api_key``).
+
+    Returns:
+        Configured :class:`ApiVLMAdapter` instance.
+    """
+    name = model_name.lower()
+
+    if name.startswith("claude"):
+        provider = "anthropic"
+    elif any(name.startswith(p) for p in ("gpt-", "o1-", "o3-", "o4-")):
+        provider = "openai"
+    else:
+        provider = "openai"
+
+    return ApiVLMAdapter(provider=provider, **kwargs)
