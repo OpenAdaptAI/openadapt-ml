@@ -55,7 +55,8 @@ class GRPOTrainer:
         self._config = config
         self._model = None
         self._tokenizer = None
-        self._ref_model = None
+        self._is_unsloth: bool = False
+        self._ref_lora_state: dict[str, Any] = {}
         self._optimizer = None
         self._collector: GRPORolloutCollector | None = None
         self._step = 0
@@ -235,11 +236,8 @@ class GRPOTrainer:
             self._step = step
             step_start = time.time()
 
-            # Select task (round-robin)
-            if self._config.task_ids:
-                task_id = self._config.task_ids[step % len(self._config.task_ids)]
-            else:
-                task_id = None
+            # Select task (round-robin); task_ids is validated non-empty above
+            task_id = self._config.task_ids[step % len(self._config.task_ids)]
 
             # Collect group of rollouts (inference mode)
             self._model.eval()
@@ -335,7 +333,8 @@ class GRPOTrainer:
             }
 
         # Compute policy gradient loss with KL penalty
-        total_loss = torch.tensor(0.0, requires_grad=True)
+        device = next(self._model.parameters()).device
+        total_loss = torch.tensor(0.0, device=device)
         total_kl = 0.0
         num_terms = 0
 
@@ -380,52 +379,208 @@ class GRPOTrainer:
         rollout: Rollout,
         advantage: float,
     ) -> tuple[Any, float]:
-        """Compute policy gradient loss for a single rollout.
+        """Compute GRPO policy gradient loss for a single rollout.
 
-        TODO: Full implementation should tokenize each (observation, action)
-        pair and compute log-probabilities under the current and reference
-        policies. The GRPO loss is: -advantage * sum(log_prob) + kl_coef * KL.
+        For each step in the rollout:
+        1. Reconstruct the VLM prompt from the observation screenshot
+        2. Format the taken action as DSL text
+        3. Tokenize the full sequence (prompt + action)
+        4. Compute log-probability of action tokens under current policy
+        5. Compute log-probability under reference policy (disabled adapters)
+        6. Accumulate: -advantage * log_prob + kl_coef * KL
 
-        Current implementation: Computes a proxy loss using a dummy forward
-        pass through the model so that gradients flow to LoRA parameters.
-        This is a scaffold — the actual loss value is not meaningful until
-        the full log-probability computation is implemented.
+        The reference policy uses the base model (LoRA adapters disabled).
+        Since LoRA B-matrices are zero-initialized, this is equivalent to
+        the initial policy at the start of training.
 
         Args:
-            rollout: A completed rollout with steps.
-            advantage: The group-relative advantage for this rollout.
+            rollout: Rollout with steps containing observations and actions.
+            advantage: Group-relative advantage for this rollout.
 
         Returns:
-            Tuple of (loss_tensor, kl_value).
+            Tuple of (loss_tensor, mean_kl_float).
+        """
+        import io
+
+        import torch
+        from PIL import Image
+
+        device = next(self._model.parameters()).device
+        total_loss = torch.tensor(0.0, device=device)
+        total_kl = 0.0
+        num_steps = 0
+
+        # Determine screen size for action text reconstruction
+        screen_size = (1920, 1200)
+        if self._collector and hasattr(self._collector, "env"):
+            try:
+                screen_size = self._collector.env.screen_size
+            except Exception:
+                pass
+
+        for step in rollout.steps:
+            obs = getattr(step, "observation", None)
+            action = getattr(step, "action", None)
+            if obs is None or action is None:
+                continue
+
+            # Get screenshot bytes
+            screenshot = getattr(obs, "screenshot", None)
+            if not screenshot:
+                continue
+
+            try:
+                image = Image.open(io.BytesIO(screenshot)).convert("RGB")
+            except Exception:
+                continue
+
+            # Reconstruct the same prompt used during inference
+            instruction = ""
+            raw_obs = getattr(obs, "raw_observation", None)
+            if raw_obs and isinstance(raw_obs, dict):
+                instruction = raw_obs.get("instruction", "")
+
+            prompt = (
+                "You are a GUI automation agent. "
+                "Given the screenshot, predict the next action.\n\n"
+                f"Instruction: {instruction}\n\n"
+                "Respond with exactly one action:\n"
+                'CLICK(x=0.XX, y=0.XX) or TYPE(text="...") '
+                "or WAIT() or DONE()"
+            )
+
+            # Format action back to DSL text
+            action_text = _format_action_as_text(action, screen_size=screen_size)
+
+            # Tokenize prompt to determine prompt length
+            messages = [{"role": "user", "content": prompt}]
+            if hasattr(self._tokenizer, "apply_chat_template"):
+                text_input = self._tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
+            else:
+                text_input = prompt
+
+            prompt_inputs = self._tokenizer(
+                text_input, images=[image], return_tensors="pt"
+            )
+            prompt_len = prompt_inputs["input_ids"].shape[1]
+
+            # Tokenize full sequence (prompt + action)
+            full_text = text_input + action_text
+            full_inputs = self._tokenizer(
+                full_text, images=[image], return_tensors="pt"
+            )
+            full_inputs = {k: v.to(device) for k, v in full_inputs.items()}
+
+            action_len = full_inputs["input_ids"].shape[1] - prompt_len
+            if action_len <= 0:
+                continue
+
+            # --- Current policy log-probs (with gradient) ---
+            outputs = self._model(**full_inputs)
+            logits = outputs.logits  # [1, seq_len, vocab_size]
+
+            # Autoregressive: logits[:, t, :] predicts token at position t+1
+            action_logits = logits[
+                :, prompt_len - 1 : prompt_len - 1 + action_len, :
+            ]
+            action_token_ids = full_inputs["input_ids"][
+                :, prompt_len : prompt_len + action_len
+            ]
+
+            log_probs = torch.nn.functional.log_softmax(
+                action_logits, dim=-1
+            )
+            token_log_probs = log_probs.gather(
+                2, action_token_ids.unsqueeze(-1)
+            ).squeeze(-1)
+            step_log_prob = token_log_probs.sum()
+
+            # --- Reference policy log-probs (no gradient) ---
+            with torch.no_grad():
+                ref_step_log_prob = self._compute_ref_log_probs(
+                    full_inputs, prompt_len, action_len, action_token_ids
+                )
+
+            # --- Accumulate loss ---
+            # KL ≈ log π_θ - log π_ref (per-step sum over tokens)
+            step_kl = (step_log_prob - ref_step_log_prob).detach().item()
+            total_kl += step_kl
+
+            # Loss: -advantage * log π_θ + β * (log π_θ - log π_ref)
+            kl_penalty = step_log_prob - ref_step_log_prob.detach()
+            step_loss = (
+                -advantage * step_log_prob
+                + self._config.kl_coef * kl_penalty
+            )
+            total_loss = total_loss + step_loss
+            num_steps += 1
+
+        if num_steps == 0:
+            zero = torch.tensor(0.0, device=device, requires_grad=True)
+            return zero, 0.0
+
+        return total_loss / num_steps, total_kl / num_steps
+
+    def _compute_ref_log_probs(
+        self,
+        full_inputs: dict[str, Any],
+        prompt_len: int,
+        action_len: int,
+        action_token_ids: Any,
+    ) -> Any:
+        """Compute log-probabilities under the reference policy.
+
+        Uses PEFT's disable_adapter() context manager if available (cleanest
+        approach). Falls back to manual LoRA weight swapping otherwise.
+
+        Must be called inside torch.no_grad().
+
+        Args:
+            full_inputs: Tokenized full sequence (prompt + action).
+            prompt_len: Number of tokens in the prompt.
+            action_len: Number of action tokens.
+            action_token_ids: Token IDs of the action portion.
+
+        Returns:
+            Scalar tensor with sum of reference log-probs for action tokens.
         """
         import torch
 
-        device = next(self._model.parameters()).device
+        # Try PEFT's disable_adapter() context manager
+        if hasattr(self._model, "disable_adapter"):
+            with self._model.disable_adapter():
+                ref_outputs = self._model(**full_inputs)
+        elif self._ref_lora_state:
+            # Fallback: manually swap LoRA weights to reference values
+            saved_state: dict[str, Any] = {}
+            for name, param in self._model.named_parameters():
+                if name in self._ref_lora_state:
+                    saved_state[name] = param.data.clone()
+                    param.data.copy_(self._ref_lora_state[name])
 
-        # Proxy loss: run a dummy forward pass so gradients flow to LoRA
-        # params. In the full implementation, this would compute actual
-        # log-probabilities of the actions taken during the rollout.
-        dummy_input = torch.zeros(1, 1, dtype=torch.long, device=device)
-        try:
-            # Forward pass through the model to create a computation graph
-            # connected to LoRA parameters
-            outputs = self._model(input_ids=dummy_input)
-            logits = outputs.logits if hasattr(outputs, "logits") else outputs[0]
-            # Scale by advantage so positive advantages reinforce and negative
-            # advantages discourage (proxy for actual REINFORCE loss)
-            loss = -advantage * logits.sum() * 1e-6  # Small scale factor
-        except Exception:
-            # Fallback: leaf tensor (no gradient flow — model won't update)
-            logger.warning(
-                "Dummy forward pass failed; using leaf tensor loss. "
-                "Model weights will NOT update this step."
-            )
-            loss = torch.tensor(0.0, device=device, requires_grad=True)
+            ref_outputs = self._model(**full_inputs)
 
-        # KL penalty placeholder (requires reference model log-probs)
-        kl = 0.0
+            # Restore current weights
+            for name, param in self._model.named_parameters():
+                if name in saved_state:
+                    param.data.copy_(saved_state[name])
+        else:
+            # No reference available; use current model (KL = 0)
+            ref_outputs = self._model(**full_inputs)
 
-        return loss, kl
+        ref_logits = ref_outputs.logits
+        ref_action_logits = ref_logits[
+            :, prompt_len - 1 : prompt_len - 1 + action_len, :
+        ]
+        ref_log_probs = torch.nn.functional.log_softmax(
+            ref_action_logits, dim=-1
+        )
+        ref_token_log_probs = ref_log_probs.gather(
+            2, action_token_ids.unsqueeze(-1)
+        ).squeeze(-1)
+        return ref_token_log_probs.sum()
 
     def save_checkpoint(self, step: int) -> str:
         """Save LoRA adapter weights.
@@ -443,14 +598,18 @@ class GRPOTrainer:
             self._model.save_pretrained(str(checkpoint_dir))
             logger.info("Saved checkpoint to %s", checkpoint_dir)
         else:
-            # Fallback: save state dict
+            # Fallback: save only LoRA adapter weights (not the full model)
             import torch
 
-            torch.save(
-                self._model.state_dict(),
-                str(checkpoint_dir / "model.pt"),
+            lora_state = {
+                k: v
+                for k, v in self._model.state_dict().items()
+                if "lora" in k.lower()
+            }
+            torch.save(lora_state, str(checkpoint_dir / "lora_weights.pt"))
+            logger.info(
+                "Saved %d LoRA tensors to %s", len(lora_state), checkpoint_dir
             )
-            logger.info("Saved state dict to %s", checkpoint_dir)
 
         # Copy training log alongside checkpoint
         import shutil
@@ -464,6 +623,47 @@ class GRPOTrainer:
         """Write training log to disk."""
         self._log_path.parent.mkdir(parents=True, exist_ok=True)
         self._log_path.write_text(json.dumps(self._log_entries, indent=2))
+
+
+def _format_action_as_text(
+    action: Any,
+    screen_size: tuple[int, int] = (1920, 1200),
+) -> str:
+    """Convert a BenchmarkAction back to DSL text for log-prob computation.
+
+    Reconstructs the action DSL string that the VLM would have generated.
+    This is used by _compute_rollout_loss to compute log-probabilities of
+    the actions taken during rollout collection.
+
+    Args:
+        action: BenchmarkAction (or compatible dataclass) with type, x, y,
+            text, key fields.
+        screen_size: (width, height) used to convert absolute pixel
+            coordinates back to normalized fractions (0.0-1.0).
+
+    Returns:
+        DSL text string, e.g. ``CLICK(x=0.50, y=0.25)`` or ``TYPE(text="hello")``.
+    """
+    action_type = getattr(action, "type", "done")
+    width, height = screen_size
+
+    if action_type == "click":
+        x_px = getattr(action, "x", 0) or 0
+        y_px = getattr(action, "y", 0) or 0
+        x_frac = x_px / width if width > 0 else 0.0
+        y_frac = y_px / height if height > 0 else 0.0
+        return f"CLICK(x={x_frac:.2f}, y={y_frac:.2f})"
+
+    if action_type == "type":
+        text = getattr(action, "text", "") or ""
+        escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+        return f'TYPE(text="{escaped}")'
+
+    if action_type == "wait":
+        return "WAIT()"
+
+    # Default: DONE
+    return "DONE()"
 
 
 def _parse_vlm_output_to_action(
@@ -516,10 +716,10 @@ def _parse_vlm_output_to_action(
             y=int(y_frac * height),
         )
 
-    # TYPE(text="...")
-    m = re.search(r'TYPE\(text="([^"\\]*(?:\\.[^"\\]*)*)"\)', text)
+    # TYPE(text="...") or TYPE(text='...')
+    m = re.search(r"""TYPE\(text=["']([^"'\\]*(?:\\.[^"'\\]*)*)["']\)""", text)
     if m:
-        typed_text = m.group(1).replace('\\"', '"').replace("\\\\", "\\")
+        typed_text = m.group(1).replace('\\"', '"').replace("\\'", "'").replace("\\\\", "\\")
         return BenchmarkAction(type="type", text=typed_text)
 
     # WAIT()

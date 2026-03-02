@@ -29,7 +29,6 @@ def test_import_grpo_config():
     assert config.lora_alpha == 32
     assert config.learning_rate == 5e-6
     assert config.num_training_steps == 1000
-    assert config.num_training_steps == 1000
     assert config.save_every_steps == 50
     assert config.output_dir == "checkpoints/grpo"
     assert config.stuck_window == 3
@@ -428,6 +427,15 @@ def test_parse_type_action():
     assert action.text == "hello world"
 
 
+def test_parse_type_action_single_quotes():
+    """_parse_vlm_output_to_action parses TYPE with single quotes."""
+    from openadapt_ml.training.grpo.trainer import _parse_vlm_output_to_action
+
+    action = _parse_vlm_output_to_action("TYPE(text='hello world')")
+    assert action.type == "type"
+    assert action.text == "hello world"
+
+
 def test_parse_wait_action():
     """_parse_vlm_output_to_action correctly parses WAIT actions."""
     from openadapt_ml.training.grpo.trainer import _parse_vlm_output_to_action
@@ -450,3 +458,169 @@ def test_parse_fallback_to_done():
 
     action = _parse_vlm_output_to_action("I don't know what to do")
     assert action.type == "done"
+
+
+# ---------------------------------------------------------------------------
+# Action formatting tests (_format_action_as_text)
+# ---------------------------------------------------------------------------
+
+
+def test_format_click_action():
+    """_format_action_as_text formats CLICK with normalized coordinates."""
+    from dataclasses import dataclass
+
+    from openadapt_ml.training.grpo.trainer import _format_action_as_text
+
+    @dataclass
+    class FakeAction:
+        type: str = "click"
+        x: float = 960
+        y: float = 600
+        text: str = None
+        key: str = None
+
+    result = _format_action_as_text(FakeAction(), screen_size=(1920, 1200))
+    assert result == "CLICK(x=0.50, y=0.50)"
+
+
+def test_format_click_custom_screen_size():
+    """_format_action_as_text normalizes coordinates to screen size."""
+    from dataclasses import dataclass
+
+    from openadapt_ml.training.grpo.trainer import _format_action_as_text
+
+    @dataclass
+    class FakeAction:
+        type: str = "click"
+        x: float = 500
+        y: float = 200
+        text: str = None
+        key: str = None
+
+    result = _format_action_as_text(FakeAction(), screen_size=(1000, 800))
+    assert result == "CLICK(x=0.50, y=0.25)"
+
+
+def test_format_type_action():
+    """_format_action_as_text formats TYPE with quoted text."""
+    from dataclasses import dataclass
+
+    from openadapt_ml.training.grpo.trainer import _format_action_as_text
+
+    @dataclass
+    class FakeAction:
+        type: str = "type"
+        x: float = None
+        y: float = None
+        text: str = "hello world"
+        key: str = None
+
+    result = _format_action_as_text(FakeAction())
+    assert result == 'TYPE(text="hello world")'
+
+
+def test_format_type_escapes_quotes():
+    """_format_action_as_text escapes double quotes in TYPE text."""
+    from dataclasses import dataclass
+
+    from openadapt_ml.training.grpo.trainer import _format_action_as_text
+
+    @dataclass
+    class FakeAction:
+        type: str = "type"
+        x: float = None
+        y: float = None
+        text: str = 'say "hi"'
+        key: str = None
+
+    result = _format_action_as_text(FakeAction())
+    assert result == 'TYPE(text="say \\"hi\\"")'
+
+
+def test_format_wait_action():
+    """_format_action_as_text formats WAIT."""
+    from dataclasses import dataclass
+
+    from openadapt_ml.training.grpo.trainer import _format_action_as_text
+
+    @dataclass
+    class FakeAction:
+        type: str = "wait"
+        x: float = None
+        y: float = None
+        text: str = None
+        key: str = None
+
+    assert _format_action_as_text(FakeAction()) == "WAIT()"
+
+
+def test_format_done_action():
+    """_format_action_as_text formats DONE."""
+    from dataclasses import dataclass
+
+    from openadapt_ml.training.grpo.trainer import _format_action_as_text
+
+    @dataclass
+    class FakeAction:
+        type: str = "done"
+        x: float = None
+        y: float = None
+        text: str = None
+        key: str = None
+
+    assert _format_action_as_text(FakeAction()) == "DONE()"
+
+
+def test_format_unknown_defaults_to_done():
+    """_format_action_as_text defaults to DONE for unknown types."""
+    from dataclasses import dataclass
+
+    from openadapt_ml.training.grpo.trainer import _format_action_as_text
+
+    @dataclass
+    class FakeAction:
+        type: str = "scroll"
+        x: float = None
+        y: float = None
+        text: str = None
+        key: str = None
+
+    assert _format_action_as_text(FakeAction()) == "DONE()"
+
+
+def test_format_roundtrip_click():
+    """parse -> format -> parse roundtrip preserves CLICK semantics."""
+    from openadapt_ml.training.grpo.trainer import (
+        _format_action_as_text,
+        _parse_vlm_output_to_action,
+    )
+
+    original = "CLICK(x=0.50, y=0.25)"
+    action = _parse_vlm_output_to_action(original, screen_size=(1920, 1200))
+    reconstructed = _format_action_as_text(action, screen_size=(1920, 1200))
+    assert reconstructed == original
+
+
+def test_format_roundtrip_type():
+    """parse -> format -> parse roundtrip preserves TYPE semantics."""
+    from openadapt_ml.training.grpo.trainer import (
+        _format_action_as_text,
+        _parse_vlm_output_to_action,
+    )
+
+    original = 'TYPE(text="hello world")'
+    action = _parse_vlm_output_to_action(original)
+    reconstructed = _format_action_as_text(action)
+    assert reconstructed == original
+
+
+# ---------------------------------------------------------------------------
+# get_api_adapter tests
+# ---------------------------------------------------------------------------
+
+
+def test_get_api_adapter_exists():
+    """get_api_adapter is importable from api_adapter module."""
+    from openadapt_ml.models.api_adapter import get_api_adapter
+
+    assert callable(get_api_adapter)
