@@ -1,0 +1,365 @@
+"""Tests for the GRPO training module.
+
+All tests must pass without a GPU or live WAA server. GPU-dependent
+and network-dependent tests are skipped with appropriate markers.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+
+# ---------------------------------------------------------------------------
+# Config tests
+# ---------------------------------------------------------------------------
+
+
+def test_import_grpo_config():
+    """GRPOConfig is importable and has correct defaults."""
+    from openadapt_ml.training.grpo import GRPOConfig
+
+    config = GRPOConfig()
+    assert config.num_rollouts_per_step == 8
+    assert config.max_steps_per_episode == 15
+    assert config.temperature == 0.7
+    assert config.kl_coef == 0.01
+    assert config.model_name == "unsloth/Qwen2.5-VL-7B-Instruct"
+    assert config.load_in_4bit is True
+    assert config.lora_r == 16
+    assert config.lora_alpha == 32
+    assert config.learning_rate == 5e-6
+    assert config.gradient_accumulation_steps == 8
+    assert config.num_training_steps == 1000
+    assert config.save_every_steps == 50
+    assert config.output_dir == "checkpoints/grpo"
+    assert config.stuck_window == 3
+    assert config.task_ids == []
+    assert config.server_url == "http://localhost:5001"
+
+
+def test_grpo_config_custom_values():
+    """GRPOConfig accepts custom values."""
+    from openadapt_ml.training.grpo import GRPOConfig
+
+    config = GRPOConfig(
+        model_name="custom/model",
+        num_rollouts_per_step=4,
+        task_ids=["task_a", "task_b"],
+        learning_rate=1e-5,
+        output_dir="/tmp/grpo_test",
+    )
+    assert config.model_name == "custom/model"
+    assert config.num_rollouts_per_step == 4
+    assert config.task_ids == ["task_a", "task_b"]
+    assert config.learning_rate == 1e-5
+    assert config.output_dir == "/tmp/grpo_test"
+
+
+def test_grpo_config_task_ids_independent():
+    """Each GRPOConfig instance has its own task_ids list."""
+    from openadapt_ml.training.grpo import GRPOConfig
+
+    config1 = GRPOConfig()
+    config2 = GRPOConfig()
+    config1.task_ids.append("task_1")
+    assert config2.task_ids == []
+
+
+# ---------------------------------------------------------------------------
+# Reward tests
+# ---------------------------------------------------------------------------
+
+
+def test_binary_reward_success():
+    """binary_task_success returns 1.0 for scores >= threshold."""
+    from openadapt_ml.training.grpo.reward import binary_task_success
+
+    assert binary_task_success(1.0) == 1.0
+    assert binary_task_success(0.5) == 1.0
+    assert binary_task_success(0.75) == 1.0
+
+
+def test_binary_reward_failure():
+    """binary_task_success returns 0.0 for scores < threshold."""
+    from openadapt_ml.training.grpo.reward import binary_task_success
+
+    assert binary_task_success(0.0) == 0.0
+    assert binary_task_success(0.49) == 0.0
+    assert binary_task_success(0.1) == 0.0
+
+
+def test_binary_reward_custom_threshold():
+    """binary_task_success respects custom threshold."""
+    from openadapt_ml.training.grpo.reward import binary_task_success
+
+    assert binary_task_success(0.3, threshold=0.3) == 1.0
+    assert binary_task_success(0.29, threshold=0.3) == 0.0
+
+
+def test_group_advantages_mixed():
+    """Mixed rewards produce positive/negative advantages."""
+    from openadapt_ml.training.grpo.reward import compute_group_advantages
+
+    advantages = compute_group_advantages([1.0, 0.0, 1.0, 0.0])
+    # Successes should get positive advantage
+    assert advantages[0] > 0
+    assert advantages[2] > 0
+    # Failures should get negative advantage
+    assert advantages[1] < 0
+    assert advantages[3] < 0
+
+
+def test_group_advantages_all_zero():
+    """All-zero rewards produce all-zero advantages."""
+    from openadapt_ml.training.grpo.reward import compute_group_advantages
+
+    advantages = compute_group_advantages([0.0, 0.0, 0.0, 0.0])
+    assert all(a == 0.0 for a in advantages)
+
+
+def test_group_advantages_all_one():
+    """All-success rewards produce all-zero advantages (no variance)."""
+    from openadapt_ml.training.grpo.reward import compute_group_advantages
+
+    advantages = compute_group_advantages([1.0, 1.0, 1.0, 1.0])
+    assert all(a == 0.0 for a in advantages)
+
+
+def test_group_advantages_empty():
+    """Empty rewards list produces empty advantages."""
+    from openadapt_ml.training.grpo.reward import compute_group_advantages
+
+    assert compute_group_advantages([]) == []
+
+
+def test_group_advantages_single():
+    """Single reward produces zero advantage (no variance)."""
+    from openadapt_ml.training.grpo.reward import compute_group_advantages
+
+    assert compute_group_advantages([1.0]) == [0.0]
+
+
+def test_group_advantages_normalized():
+    """Advantages are approximately mean-zero with unit variance."""
+    from openadapt_ml.training.grpo.reward import compute_group_advantages
+
+    rewards = [1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0]
+    advantages = compute_group_advantages(rewards)
+    mean_adv = sum(advantages) / len(advantages)
+    assert abs(mean_adv) < 1e-6  # Mean should be ~0
+
+
+# ---------------------------------------------------------------------------
+# Rollout dataclass tests
+# ---------------------------------------------------------------------------
+
+
+def test_rollout_dataclass():
+    """Rollout dataclass initializes correctly."""
+    from openadapt_ml.training.grpo.rollout_collector import Rollout
+
+    rollout = Rollout(
+        task_id="test_task",
+        steps=[{"obs": "mock"}],
+        reward=1.0,
+        num_steps=5,
+    )
+    assert rollout.task_id == "test_task"
+    assert rollout.reward == 1.0
+    assert rollout.num_steps == 5
+    assert len(rollout.steps) == 1
+
+
+def test_rollout_defaults():
+    """Rollout has sensible defaults."""
+    from openadapt_ml.training.grpo.rollout_collector import Rollout
+
+    rollout = Rollout(task_id="t1")
+    assert rollout.steps == []
+    assert rollout.reward == 0.0
+    assert rollout.num_steps == 0
+
+
+# ---------------------------------------------------------------------------
+# Rollout collector tests (no live VM)
+# ---------------------------------------------------------------------------
+
+
+def test_rollout_collector_requires_evals():
+    """GRPORolloutCollector raises ImportError without openadapt-evals."""
+    from openadapt_ml.training.grpo.rollout_collector import (
+        GRPORolloutCollector,
+        RLEnvironment,
+    )
+    from openadapt_ml.training.grpo import GRPOConfig
+
+    # If openadapt-evals is not installed, this should raise ImportError.
+    # If it IS installed, the constructor will try to connect (which we skip).
+    config = GRPOConfig(server_url="http://localhost:99999")
+    if RLEnvironment is None:
+        with pytest.raises(ImportError, match="openadapt-evals"):
+            GRPORolloutCollector(config)
+
+
+# ---------------------------------------------------------------------------
+# CoT warmup tests
+# ---------------------------------------------------------------------------
+
+
+def test_cot_sample_format():
+    """build_cot_sft_samples produces correctly structured samples."""
+    from openadapt_ml.training.grpo.cot_warmup import build_cot_sft_samples
+    from openadapt_ml.schema import (
+        Action,
+        ActionType,
+        Episode,
+        Observation,
+        Step,
+    )
+
+    episode = Episode(
+        episode_id="test_ep",
+        instruction="Click the button",
+        steps=[
+            Step(
+                step_index=0,
+                observation=Observation(screenshot_path="/tmp/test.png"),
+                action=Action(
+                    type=ActionType.CLICK,
+                    normalized_coordinates=(0.5, 0.5),
+                ),
+                reasoning="I see a button in the center of the screen.",
+            ),
+            Step(
+                step_index=1,
+                observation=Observation(screenshot_path="/tmp/test2.png"),
+                action=Action(type=ActionType.DONE),
+                reasoning="The task is complete.",
+            ),
+        ],
+        success=True,
+    )
+
+    samples = build_cot_sft_samples([episode])
+
+    assert len(samples) == 2
+
+    # Check structure of first sample
+    sample = samples[0]
+    assert "images" in sample
+    assert "messages" in sample
+    assert len(sample["messages"]) == 3  # system, user, assistant
+
+    roles = [m["role"] for m in sample["messages"]]
+    assert roles == ["system", "user", "assistant"]
+
+    # Assistant content should have <think> block
+    assistant_msg = sample["messages"][2]["content"]
+    assert "<think>" in assistant_msg
+    assert "</think>" in assistant_msg
+    assert "CLICK" in assistant_msg
+
+
+def test_cot_skips_unsuccessful_episodes():
+    """build_cot_sft_samples skips episodes where success=False."""
+    from openadapt_ml.training.grpo.cot_warmup import build_cot_sft_samples
+    from openadapt_ml.schema import (
+        Action,
+        ActionType,
+        Episode,
+        Observation,
+        Step,
+    )
+
+    episode = Episode(
+        episode_id="failed_ep",
+        instruction="Do something",
+        steps=[
+            Step(
+                step_index=0,
+                observation=Observation(screenshot_path="/tmp/x.png"),
+                action=Action(type=ActionType.CLICK, normalized_coordinates=(0.1, 0.1)),
+            ),
+        ],
+        success=False,
+    )
+
+    samples = build_cot_sft_samples([episode])
+    assert samples == []
+
+
+def test_cot_no_reasoning_still_works():
+    """Samples without reasoning omit <think> block."""
+    from openadapt_ml.training.grpo.cot_warmup import build_cot_sft_samples
+    from openadapt_ml.schema import (
+        Action,
+        ActionType,
+        Episode,
+        Observation,
+        Step,
+    )
+
+    episode = Episode(
+        episode_id="no_cot",
+        instruction="Click button",
+        steps=[
+            Step(
+                step_index=0,
+                observation=Observation(screenshot_path="/tmp/y.png"),
+                action=Action(
+                    type=ActionType.CLICK,
+                    normalized_coordinates=(0.5, 0.5),
+                ),
+                # No reasoning field set
+            ),
+        ],
+        success=True,
+    )
+
+    samples = build_cot_sft_samples([episode])
+    assert len(samples) == 1
+
+    assistant_msg = samples[0]["messages"][2]["content"]
+    assert "<think>" not in assistant_msg
+    assert "CLICK" in assistant_msg
+
+
+# ---------------------------------------------------------------------------
+# Package-level imports
+# ---------------------------------------------------------------------------
+
+
+def test_package_exports():
+    """All expected names are exported from the grpo package."""
+    from openadapt_ml.training.grpo import (
+        GRPOConfig,
+        GRPORolloutCollector,
+        GRPOTrainer,
+        Rollout,
+        binary_task_success,
+        compute_group_advantages,
+    )
+
+    # Just verify they are importable and are the right types
+    assert callable(binary_task_success)
+    assert callable(compute_group_advantages)
+    assert isinstance(GRPOConfig(), GRPOConfig)
+
+
+# ---------------------------------------------------------------------------
+# Trainer tests (no GPU required)
+# ---------------------------------------------------------------------------
+
+
+def test_trainer_init():
+    """GRPOTrainer can be instantiated with a config."""
+    from openadapt_ml.training.grpo import GRPOConfig, GRPOTrainer
+
+    config = GRPOConfig(
+        num_training_steps=0,
+        task_ids=["test_task"],
+    )
+    trainer = GRPOTrainer(config)
+    assert trainer._config is config
+    assert trainer._step == 0
+    assert trainer._model is None
