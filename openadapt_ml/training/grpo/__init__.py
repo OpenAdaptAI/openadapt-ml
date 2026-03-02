@@ -34,6 +34,10 @@ from openadapt_ml.training.grpo.rollout_collector import (
     Rollout,
 )
 from openadapt_ml.training.grpo.trainer import GRPOTrainer
+from openadapt_ml.training.grpo.cot_warmup import (
+    build_cot_sft_samples,
+    generate_cot_annotations,
+)
 
 __all__ = [
     "GRPOConfig",
@@ -42,4 +46,6 @@ __all__ = [
     "Rollout",
     "binary_task_success",
     "compute_group_advantages",
+    "build_cot_sft_samples",
+    "generate_cot_annotations",
 ]

@@ -80,13 +80,22 @@ class GRPOTrainer:
             trl_config
         )
 
-        # Store reference model weights for KL penalty
-        # We clone the initial LoRA params (before training begins)
-        import copy
+        # Store reference LoRA weights for KL penalty.
+        # Instead of deep-copying the entire model (which would OOM for
+        # quantized VLMs), we snapshot the initial LoRA adapter state dict.
+        # During KL computation, we can swap adapter weights or use
+        # disable_adapter_layers() to get base model log-probs.
+        import torch
 
-        self._ref_model = copy.deepcopy(self._model)
-        for param in self._ref_model.parameters():
-            param.requires_grad = False
+        self._ref_lora_state = {
+            k: v.detach().clone()
+            for k, v in self._model.state_dict().items()
+            if "lora" in k.lower()
+        }
+        logger.info(
+            "Saved reference LoRA weights: %d tensors",
+            len(self._ref_lora_state),
+        )
 
     def _setup_optimizer(self) -> None:
         """Initialize the optimizer for LoRA parameters."""
@@ -114,6 +123,9 @@ class GRPOTrainer:
         Returns a callable that takes a BenchmarkObservation and returns
         a BenchmarkAction. The function encodes the observation as a VLM
         prompt and decodes the model's output into an action.
+
+        The closure captures the model by reference, so weight updates
+        during training are automatically reflected in subsequent rollouts.
         """
         # Deferred import to avoid circular dependency
         from openadapt_evals.adapters.base import BenchmarkAction
@@ -121,6 +133,7 @@ class GRPOTrainer:
         model = self._model
         tokenizer = self._tokenizer
         temperature = self._config.temperature
+        collector = self._collector
 
         def agent_fn(obs: Any) -> BenchmarkAction:
             """Predict an action from an observation using the VLM."""
@@ -179,8 +192,14 @@ class GRPOTrainer:
                 skip_special_tokens=True,
             )
 
-            # Parse into BenchmarkAction
-            return _parse_vlm_output_to_action(decoded)
+            # Parse into BenchmarkAction, using actual screen size
+            screen_size = (1920, 1200)  # default
+            if collector and hasattr(collector.env, "screen_size"):
+                try:
+                    screen_size = collector.env.screen_size
+                except Exception:
+                    pass
+            return _parse_vlm_output_to_action(decoded, screen_size=screen_size)
 
         return agent_fn
 
@@ -190,6 +209,12 @@ class GRPOTrainer:
         Returns:
             Path to the final checkpoint directory.
         """
+        if not self._config.task_ids:
+            raise ValueError(
+                "config.task_ids must be non-empty. Provide at least one "
+                "WAA task ID to train on."
+            )
+
         logger.info("Starting GRPO training")
         logger.info("  Model: %s", self._config.model_name)
         logger.info("  Tasks: %s", self._config.task_ids)
@@ -216,13 +241,15 @@ class GRPOTrainer:
             else:
                 task_id = None
 
-            # Collect group of rollouts
+            # Collect group of rollouts (inference mode)
+            self._model.eval()
             rollouts = self._collector.collect_group(
                 agent_fn=agent_fn,
                 task_id=task_id,
             )
 
-            # Training step
+            # Training step (training mode)
+            self._model.train()
             metrics = self._training_step(rollouts)
 
             # Logging
@@ -355,9 +382,14 @@ class GRPOTrainer:
     ) -> tuple[Any, float]:
         """Compute policy gradient loss for a single rollout.
 
-        For each action in the trajectory, computes log-probability under
-        the current policy and the reference policy, then assembles the
-        GRPO loss: -advantage * log_prob + kl_coef * KL.
+        TODO: Full implementation should tokenize each (observation, action)
+        pair and compute log-probabilities under the current and reference
+        policies. The GRPO loss is: -advantage * sum(log_prob) + kl_coef * KL.
+
+        Current implementation: Computes a proxy loss using a dummy forward
+        pass through the model so that gradients flow to LoRA parameters.
+        This is a scaffold — the actual loss value is not meaningful until
+        the full log-probability computation is implemented.
 
         Args:
             rollout: A completed rollout with steps.
@@ -368,21 +400,29 @@ class GRPOTrainer:
         """
         import torch
 
-        # Placeholder: in the full implementation, we would tokenize each
-        # step's (observation, action) pair and compute log-probs. For now,
-        # we use a simplified version that computes a proxy loss.
         device = next(self._model.parameters()).device
 
-        # Compute a proxy loss that encourages/discourages the policy
-        # based on the advantage sign. The full implementation would use
-        # actual log-probabilities from the VLM.
-        loss = torch.tensor(
-            -advantage * 0.1,  # Scaled proxy loss
-            device=device,
-            requires_grad=True,
-        )
+        # Proxy loss: run a dummy forward pass so gradients flow to LoRA
+        # params. In the full implementation, this would compute actual
+        # log-probabilities of the actions taken during the rollout.
+        dummy_input = torch.zeros(1, 1, dtype=torch.long, device=device)
+        try:
+            # Forward pass through the model to create a computation graph
+            # connected to LoRA parameters
+            outputs = self._model(input_ids=dummy_input)
+            logits = outputs.logits if hasattr(outputs, "logits") else outputs[0]
+            # Scale by advantage so positive advantages reinforce and negative
+            # advantages discourage (proxy for actual REINFORCE loss)
+            loss = -advantage * logits.sum() * 1e-6  # Small scale factor
+        except Exception:
+            # Fallback: leaf tensor (no gradient flow — model won't update)
+            logger.warning(
+                "Dummy forward pass failed; using leaf tensor loss. "
+                "Model weights will NOT update this step."
+            )
+            loss = torch.tensor(0.0, device=device, requires_grad=True)
 
-        # KL penalty (simplified: would normally compare log-prob distributions)
+        # KL penalty placeholder (requires reference model log-probs)
         kl = 0.0
 
         return loss, kl
@@ -426,7 +466,10 @@ class GRPOTrainer:
         self._log_path.write_text(json.dumps(self._log_entries, indent=2))
 
 
-def _parse_vlm_output_to_action(text: str) -> Any:
+def _parse_vlm_output_to_action(
+    text: str,
+    screen_size: tuple[int, int] = (1920, 1200),
+) -> Any:
     """Parse VLM output text into a BenchmarkAction.
 
     Supports the coordinate-based DSL:
@@ -437,26 +480,40 @@ def _parse_vlm_output_to_action(text: str) -> Any:
 
     Args:
         text: Raw text output from the VLM.
+        screen_size: (width, height) for converting normalized fractions
+            to absolute pixels.
 
     Returns:
         BenchmarkAction instance.
     """
     import re
 
-    from openadapt_evals.adapters.base import BenchmarkAction
+    try:
+        from openadapt_evals.adapters.base import BenchmarkAction
+    except ImportError:
+        # Fallback when openadapt-evals is not installed (e.g. in tests)
+        from dataclasses import dataclass as _dc
+
+        @_dc
+        class BenchmarkAction:  # type: ignore[no-redef]
+            type: str = "done"
+            x: float | None = None
+            y: float | None = None
+            text: str | None = None
+            key: str | None = None
 
     text = text.strip()
+    width, height = screen_size
 
     # CLICK(x=..., y=...)
     m = re.search(r"CLICK\(x=(-?[\d.]+),\s*y=(-?[\d.]+)\)", text)
     if m:
-        x_frac = float(m.group(1))
-        y_frac = float(m.group(2))
-        # Convert fractions to pixel coords (assume 1920x1200 default)
+        x_frac = max(0.0, min(1.0, float(m.group(1))))
+        y_frac = max(0.0, min(1.0, float(m.group(2))))
         return BenchmarkAction(
             type="click",
-            x=int(x_frac * 1920),
-            y=int(y_frac * 1200),
+            x=int(x_frac * width),
+            y=int(y_frac * height),
         )
 
     # TYPE(text="...")

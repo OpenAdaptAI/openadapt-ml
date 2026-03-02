@@ -28,7 +28,6 @@ class GRPOConfig:
         server_url: URL of the WAA server for live environment interaction.
         task_ids: List of WAA task IDs to train on.
         learning_rate: Optimizer learning rate for LoRA parameter updates.
-        gradient_accumulation_steps: Number of gradient accumulation steps.
         num_training_steps: Total number of GRPO training steps (outer loop).
         save_every_steps: Checkpoint frequency.
         output_dir: Directory for saving checkpoints and logs.
@@ -56,7 +55,6 @@ class GRPOConfig:
 
     # Training
     learning_rate: float = 5e-6
-    gradient_accumulation_steps: int = 8
     num_training_steps: int = 1000
     save_every_steps: int = 50
     output_dir: str = "checkpoints/grpo"
