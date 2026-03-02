@@ -34,6 +34,8 @@ from openadapt_ml.training.grpo.rollout_collector import (
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_SCREEN_SIZE: tuple[int, int] = (1920, 1200)
+
 
 def _build_agent_messages(instruction: str) -> list[dict[str, str]]:
     """Build the chat messages for the GRPO agent.
@@ -213,13 +215,21 @@ class GRPOTrainer:
             )
 
             # Parse into BenchmarkAction, using actual screen size
-            screen_size = (1920, 1200)  # default
-            if collector and hasattr(collector.env, "screen_size"):
+            screen_size = DEFAULT_SCREEN_SIZE
+            if collector and hasattr(collector, "env") and hasattr(collector.env, "screen_size"):
                 try:
                     screen_size = collector.env.screen_size
                 except Exception:
                     pass
-            return _parse_vlm_output_to_action(decoded, screen_size=screen_size)
+            action = _parse_vlm_output_to_action(decoded, screen_size=screen_size)
+
+            # C-01: Store raw model output for accurate loss computation.
+            # _compute_rollout_loss uses this instead of reconstructing DSL text.
+            try:
+                action._grpo_raw_text = decoded
+            except AttributeError:
+                pass  # __slots__ dataclass; loss will reconstruct from DSL
+            return action
 
         return agent_fn
 
@@ -351,32 +361,39 @@ class GRPOTrainer:
                 "num_rollouts": len(rollouts),
             }
 
-        # Compute policy gradient loss with KL penalty
-        device = next(self._model.parameters()).device
-        total_loss = torch.tensor(0.0, device=device)
-        total_kl = 0.0
-        num_terms = 0
+        # Compute policy gradient loss with KL penalty.
+        # I-03: Per-step gradient accumulation. Zero gradients once,
+        # accumulate through all rollouts+steps, then clip and step.
+        # This prevents OOM from building a computation graph over all
+        # steps in all rollouts before calling backward().
+        valid_pairs = [
+            (r, a) for r, a in zip(rollouts, advantages) if abs(a) >= 1e-8
+        ]
+        num_terms = len(valid_pairs)
 
-        for rollout, advantage in zip(rollouts, advantages):
-            if abs(advantage) < 1e-8:
-                continue
+        if num_terms == 0:
+            return {
+                "reward_mean": reward_mean,
+                "reward_std": reward_std,
+                "loss": 0.0,
+                "kl": 0.0,
+                "skipped": True,
+                "num_rollouts": len(rollouts),
+            }
 
-            # For each step in the rollout, compute log-prob under current
-            # and reference policies. This is a simplified version; full
-            # implementation would process the full action sequence.
-            step_loss, step_kl = self._compute_rollout_loss(
-                rollout, advantage
-            )
-            total_loss = total_loss + step_loss
-            total_kl += step_kl
-            num_terms += 1
-
-        if num_terms > 0:
-            total_loss = total_loss / num_terms
-
-        # Gradient step
         self._optimizer.zero_grad()
-        total_loss.backward()
+
+        total_loss_value = 0.0
+        total_kl = 0.0
+
+        for rollout, advantage in valid_pairs:
+            loss_val, kl_val = self._compute_rollout_loss(
+                rollout, advantage, loss_scale=1.0 / num_terms
+            )
+            total_loss_value += loss_val
+            total_kl += kl_val
+
+        # Clip gradients and step
         torch.nn.utils.clip_grad_norm_(
             [p for p in self._model.parameters() if p.requires_grad],
             max_norm=1.0,
@@ -386,7 +403,7 @@ class GRPOTrainer:
         return {
             "reward_mean": reward_mean,
             "reward_std": reward_std,
-            "loss": total_loss.item(),
+            "loss": total_loss_value / max(num_terms, 1),
             "kl": total_kl / max(num_terms, 1),
             "skipped": False,
             "num_rollouts": len(rollouts),
@@ -397,27 +414,26 @@ class GRPOTrainer:
         self,
         rollout: Rollout,
         advantage: float,
-    ) -> tuple[Any, float]:
+        loss_scale: float = 1.0,
+    ) -> tuple[float, float]:
         """Compute GRPO policy gradient loss for a single rollout.
 
         For each step in the rollout:
         1. Reconstruct the VLM prompt from the observation screenshot
-        2. Format the taken action as DSL text
-        3. Tokenize the full sequence (prompt + action)
+        2. Use raw model output text if available (C-01), else reconstruct DSL
+        3. Tokenize prompt and action *separately* then concatenate (C-02)
         4. Compute log-probability of action tokens under current policy
-        5. Compute log-probability under reference policy (disabled adapters)
-        6. Accumulate: -advantage * log_prob + kl_coef * KL
-
-        The reference policy uses the base model (LoRA adapters disabled).
-        Since LoRA B-matrices are zero-initialized, this is equivalent to
-        the initial policy at the start of training.
+        5. Compute log-probability under reference policy (weight swap)
+        6. Backward immediately per-step to avoid OOM (I-03)
 
         Args:
             rollout: Rollout with steps containing observations and actions.
             advantage: Group-relative advantage for this rollout.
+            loss_scale: Multiplier for gradient scaling (1/num_rollouts).
 
         Returns:
-            Tuple of (loss_tensor, mean_kl_float).
+            Tuple of (mean_loss_scalar, mean_kl_scalar) for logging only.
+            Gradients are accumulated via per-step backward() calls.
         """
         import io
 
@@ -425,29 +441,34 @@ class GRPOTrainer:
         from PIL import Image
 
         device = next(self._model.parameters()).device
-        total_loss = torch.tensor(0.0, device=device)
+        total_loss_value = 0.0
         total_kl = 0.0
-        num_steps = 0
 
         # Determine screen size for action text reconstruction
-        screen_size = (1920, 1200)
+        screen_size = DEFAULT_SCREEN_SIZE
         if self._collector and hasattr(self._collector, "env"):
             try:
                 screen_size = self._collector.env.screen_size
             except Exception:
                 pass
 
+        # First pass: collect valid steps
+        valid_steps = []
         for step in rollout.steps:
             obs = getattr(step, "observation", None)
             action = getattr(step, "action", None)
             if obs is None or action is None:
                 continue
-
-            # Get screenshot bytes
             screenshot = getattr(obs, "screenshot", None)
             if not screenshot:
                 continue
+            valid_steps.append((obs, action, screenshot))
 
+        num_steps = len(valid_steps)
+        if num_steps == 0:
+            return 0.0, 0.0
+
+        for obs, action, screenshot in valid_steps:
             try:
                 image = Image.open(io.BytesIO(screenshot)).convert("RGB")
             except Exception:
@@ -462,10 +483,14 @@ class GRPOTrainer:
             # Use shared prompt builder (must match _make_agent_fn exactly)
             messages = _build_agent_messages(instruction)
 
-            # Format action back to DSL text
-            action_text = _format_action_as_text(action, screen_size=screen_size)
+            # C-01: Use raw model output if available, else reconstruct DSL
+            raw_text = getattr(action, "_grpo_raw_text", None)
+            action_text = (
+                raw_text if raw_text
+                else _format_action_as_text(action, screen_size=screen_size)
+            )
 
-            # Tokenize prompt to determine prompt length
+            # Tokenize prompt (with image)
             if hasattr(self._tokenizer, "apply_chat_template"):
                 text_input = self._tokenizer.apply_chat_template(
                     messages, tokenize=False, add_generation_prompt=True
@@ -476,18 +501,30 @@ class GRPOTrainer:
             prompt_inputs = self._tokenizer(
                 text_input, images=[image], return_tensors="pt"
             )
-            prompt_len = prompt_inputs["input_ids"].shape[1]
+            prompt_ids = prompt_inputs["input_ids"]
+            prompt_len = prompt_ids.shape[1]
 
-            # Tokenize full sequence (prompt + action)
-            full_text = text_input + action_text
-            full_inputs = self._tokenizer(
-                full_text, images=[image], return_tensors="pt"
-            )
-            full_inputs = {k: v.to(device) for k, v in full_inputs.items()}
-
-            action_len = full_inputs["input_ids"].shape[1] - prompt_len
+            # C-02: Tokenize action text separately and concatenate.
+            # This guarantees correct token boundary alignment regardless
+            # of BPE merges that differ when text is tokenized jointly.
+            inner_tok = getattr(self._tokenizer, "tokenizer", self._tokenizer)
+            action_ids = inner_tok(
+                action_text, return_tensors="pt", add_special_tokens=False
+            )["input_ids"]
+            action_len = action_ids.shape[1]
             if action_len <= 0:
                 continue
+
+            # Build full input by concatenating prompt + action token IDs
+            full_ids = torch.cat(
+                [prompt_ids, action_ids.to(prompt_ids.device)], dim=1
+            )
+            full_inputs = dict(prompt_inputs)
+            full_inputs["input_ids"] = full_ids
+            full_inputs["attention_mask"] = torch.ones_like(full_ids)
+            full_inputs = {k: v.to(device) for k, v in full_inputs.items()}
+
+            action_token_ids = full_ids[:, prompt_len:prompt_len + action_len]
 
             # --- Current policy log-probs (with gradient) ---
             outputs = self._model(**full_inputs)
@@ -495,10 +532,7 @@ class GRPOTrainer:
 
             # Autoregressive: logits[:, t, :] predicts token at position t+1
             action_logits = logits[
-                :, prompt_len - 1 : prompt_len - 1 + action_len, :
-            ]
-            action_token_ids = full_inputs["input_ids"][
-                :, prompt_len : prompt_len + action_len
+                :, prompt_len - 1:prompt_len - 1 + action_len, :
             ]
 
             log_probs = torch.nn.functional.log_softmax(
@@ -515,8 +549,7 @@ class GRPOTrainer:
                     full_inputs, prompt_len, action_len, action_token_ids
                 )
 
-            # --- Accumulate loss ---
-            # KL ≈ log π_θ - log π_ref (per-step sum over tokens)
+            # --- Per-step loss + immediate backward (I-03) ---
             step_kl = (step_log_prob - ref_step_log_prob).detach().item()
             total_kl += step_kl
 
@@ -526,14 +559,17 @@ class GRPOTrainer:
                 -advantage * step_log_prob
                 + self._config.kl_coef * kl_penalty
             )
-            total_loss = total_loss + step_loss
-            num_steps += 1
+
+            # Scale and backward immediately to free the computation graph
+            scaled_loss = step_loss * loss_scale / num_steps
+            scaled_loss.backward()
+
+            total_loss_value += step_loss.detach().item()
 
         if num_steps == 0:
-            zero = torch.tensor(0.0, device=device, requires_grad=True)
-            return zero, 0.0
+            return 0.0, 0.0
 
-        return total_loss / num_steps, total_kl / num_steps
+        return total_loss_value / num_steps, total_kl / num_steps
 
     def _compute_ref_log_probs(
         self,
@@ -544,10 +580,12 @@ class GRPOTrainer:
     ) -> Any:
         """Compute log-probabilities under the reference policy.
 
-        Uses PEFT's disable_adapter() context manager if available (cleanest
-        approach). Falls back to manual LoRA weight swapping otherwise.
+        I-01: Prefers weight swapping (captures initial LoRA after SFT
+        warm-start). ``disable_adapter()`` gives base model log-probs (no
+        LoRA at all), which is wrong after SFT warm-up because the
+        reference should be the initial LoRA weights, not the base model.
 
-        Must be called inside torch.no_grad().
+        Must be called inside ``torch.no_grad()``.
 
         Args:
             full_inputs: Tokenized full sequence (prompt + action).
@@ -560,12 +598,9 @@ class GRPOTrainer:
         """
         import torch
 
-        # Try PEFT's disable_adapter() context manager
-        if hasattr(self._model, "disable_adapter"):
-            with self._model.disable_adapter():
-                ref_outputs = self._model(**full_inputs)
-        elif self._ref_lora_state:
-            # Fallback: manually swap LoRA weights to reference values
+        # Primary: swap LoRA weights to reference snapshot.
+        # This captures the initial LoRA state after SFT warm-start.
+        if self._ref_lora_state:
             saved_state: dict[str, Any] = {}
             for name, param in self._model.named_parameters():
                 if name in self._ref_lora_state:
@@ -578,13 +613,18 @@ class GRPOTrainer:
             for name, param in self._model.named_parameters():
                 if name in saved_state:
                     param.data.copy_(saved_state[name])
+        elif hasattr(self._model, "disable_adapter"):
+            # Fallback: disable adapters (gives base model, only correct
+            # before any SFT warm-start has been applied).
+            with self._model.disable_adapter():
+                ref_outputs = self._model(**full_inputs)
         else:
             # No reference available; use current model (KL = 0)
             ref_outputs = self._model(**full_inputs)
 
         ref_logits = ref_outputs.logits
         ref_action_logits = ref_logits[
-            :, prompt_len - 1 : prompt_len - 1 + action_len, :
+            :, prompt_len - 1:prompt_len - 1 + action_len, :
         ]
         ref_log_probs = torch.nn.functional.log_softmax(
             ref_action_logits, dim=-1
@@ -639,7 +679,7 @@ class GRPOTrainer:
 
 def _format_action_as_text(
     action: Any,
-    screen_size: tuple[int, int] = (1920, 1200),
+    screen_size: tuple[int, int] = DEFAULT_SCREEN_SIZE,
 ) -> str:
     """Convert a BenchmarkAction back to DSL text for log-prob computation.
 
@@ -680,7 +720,7 @@ def _format_action_as_text(
 
 def _parse_vlm_output_to_action(
     text: str,
-    screen_size: tuple[int, int] = (1920, 1200),
+    screen_size: tuple[int, int] = DEFAULT_SCREEN_SIZE,
 ) -> Any:
     """Parse VLM output text into a BenchmarkAction.
 
@@ -717,8 +757,8 @@ def _parse_vlm_output_to_action(
     text = text.strip()
     width, height = screen_size
 
-    # CLICK(x=..., y=...)
-    m = re.search(r"CLICK\(x=(-?[\d.]+),\s*y=(-?[\d.]+)\)", text)
+    # CLICK(x=..., y=...) — M-07: case-insensitive
+    m = re.search(r"CLICK\(x=(-?[\d.]+),\s*y=(-?[\d.]+)\)", text, re.IGNORECASE)
     if m:
         x_frac = max(0.0, min(1.0, float(m.group(1))))
         y_frac = max(0.0, min(1.0, float(m.group(2))))
@@ -728,10 +768,15 @@ def _parse_vlm_output_to_action(
             y=int(y_frac * height),
         )
 
-    # TYPE(text="...") or TYPE(text='...')
-    m = re.search(r"""TYPE\(text=["']([^"'\\]*(?:\\.[^"'\\]*)*)["']\)""", text)
+    # TYPE(text="...") or TYPE(text='...') — M-07: case-insensitive
+    m = re.search(
+        r"""TYPE\(text=["']([^"'\\]*(?:\\.[^"'\\]*)*)["']\)""",
+        text,
+        re.IGNORECASE,
+    )
     if m:
-        typed_text = m.group(1).replace('\\"', '"').replace("\\'", "'").replace("\\\\", "\\")
+        # I-04: Unescape backslash first, then quotes
+        typed_text = m.group(1).replace("\\\\", "\\").replace('\\"', '"').replace("\\'", "'")
         return BenchmarkAction(type="type", text=typed_text)
 
     # WAIT()
