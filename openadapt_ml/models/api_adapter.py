@@ -23,6 +23,7 @@ class ApiVLMAdapter(BaseVLMAdapter):
         provider: str,
         device: Optional[torch.device] = None,
         api_key: Optional[str] = None,
+        model_name: Optional[str] = None,
     ) -> None:
         """Initialize an API-backed adapter.
 
@@ -37,9 +38,14 @@ class ApiVLMAdapter(BaseVLMAdapter):
             1. Settings (.env file)
             2. Environment variables (ANTHROPIC_API_KEY / OPENAI_API_KEY)
             3. Error if not found
+        model_name:
+            Override the default model for this provider.
+            Defaults to ``claude-sonnet-4-5-20250929`` (Anthropic) or
+            ``gpt-4.1`` (OpenAI).
         """
 
         self.provider = provider
+        self._model_name = model_name
 
         if provider == "anthropic":
             try:
@@ -136,7 +142,7 @@ class ApiVLMAdapter(BaseVLMAdapter):
             )
 
             resp = client.messages.create(
-                model="claude-sonnet-4-5-20250929",
+                model=self._model_name or "claude-sonnet-4-5-20250929",
                 max_tokens=max_new_tokens,
                 system=system_text or None,
                 messages=[{"role": "user", "content": content}],
@@ -171,7 +177,7 @@ class ApiVLMAdapter(BaseVLMAdapter):
             messages_payload.append({"role": "user", "content": user_content})
 
             resp = client.chat.completions.create(
-                model="gpt-5.1",
+                model=self._model_name or "gpt-4.1",
                 messages=messages_payload,
                 max_completion_tokens=max_new_tokens,
             )
@@ -206,4 +212,4 @@ def get_api_adapter(model_name: str, **kwargs: Any) -> ApiVLMAdapter:
     else:
         provider = "openai"
 
-    return ApiVLMAdapter(provider=provider, **kwargs)
+    return ApiVLMAdapter(provider=provider, model_name=model_name, **kwargs)

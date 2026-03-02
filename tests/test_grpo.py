@@ -615,7 +615,61 @@ def test_format_roundtrip_type():
 
 
 # ---------------------------------------------------------------------------
-# get_api_adapter tests
+# Case-insensitive parsing tests (M-07)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_click_case_insensitive():
+    """_parse_vlm_output_to_action parses lowercase click."""
+    from openadapt_ml.training.grpo.trainer import _parse_vlm_output_to_action
+
+    action = _parse_vlm_output_to_action("click(x=0.5, y=0.25)")
+    assert action.type == "click"
+    assert action.x == int(0.5 * 1920)
+    assert action.y == int(0.25 * 1200)
+
+
+def test_parse_type_case_insensitive():
+    """_parse_vlm_output_to_action parses lowercase type."""
+    from openadapt_ml.training.grpo.trainer import _parse_vlm_output_to_action
+
+    action = _parse_vlm_output_to_action('type(text="hello")')
+    assert action.type == "type"
+    assert action.text == "hello"
+
+
+# ---------------------------------------------------------------------------
+# Unescape order test (I-04)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_type_unescape_order():
+    r"""Unescape order: backslash first, then quotes.
+
+    Input contains literal \\\" which should become \" (not \").
+    """
+    from openadapt_ml.training.grpo.trainer import _parse_vlm_output_to_action
+
+    # Escaped: \\\" means literal backslash + escaped quote
+    action = _parse_vlm_output_to_action(r'TYPE(text="hello\\")')
+    assert action.type == "type"
+    assert action.text == "hello\\"
+
+
+# ---------------------------------------------------------------------------
+# DEFAULT_SCREEN_SIZE constant test (L-01)
+# ---------------------------------------------------------------------------
+
+
+def test_default_screen_size_constant():
+    """DEFAULT_SCREEN_SIZE is exported from trainer module."""
+    from openadapt_ml.training.grpo.trainer import DEFAULT_SCREEN_SIZE
+
+    assert DEFAULT_SCREEN_SIZE == (1920, 1200)
+
+
+# ---------------------------------------------------------------------------
+# get_api_adapter tests (M-03)
 # ---------------------------------------------------------------------------
 
 
