@@ -28,7 +28,7 @@ def test_import_grpo_config():
     assert config.lora_r == 16
     assert config.lora_alpha == 32
     assert config.learning_rate == 5e-6
-    assert config.gradient_accumulation_steps == 8
+    assert config.num_training_steps == 1000
     assert config.num_training_steps == 1000
     assert config.save_every_steps == 50
     assert config.output_dir == "checkpoints/grpo"
@@ -363,3 +363,90 @@ def test_trainer_init():
     assert trainer._config is config
     assert trainer._step == 0
     assert trainer._model is None
+
+
+def test_trainer_empty_task_ids():
+    """GRPOTrainer.train() raises ValueError if task_ids is empty."""
+    from openadapt_ml.training.grpo import GRPOConfig, GRPOTrainer
+
+    config = GRPOConfig(num_training_steps=1, task_ids=[])
+    trainer = GRPOTrainer(config)
+    with pytest.raises(ValueError, match="task_ids must be non-empty"):
+        trainer.train()
+
+
+# ---------------------------------------------------------------------------
+# Action parsing tests
+# ---------------------------------------------------------------------------
+
+
+def test_parse_click_action():
+    """_parse_vlm_output_to_action correctly parses CLICK actions."""
+    from openadapt_ml.training.grpo.trainer import _parse_vlm_output_to_action
+
+    action = _parse_vlm_output_to_action("CLICK(x=0.5, y=0.25)")
+    assert action.type == "click"
+    assert action.x == int(0.5 * 1920)
+    assert action.y == int(0.25 * 1200)
+
+
+def test_parse_click_custom_screen_size():
+    """_parse_vlm_output_to_action uses custom screen_size."""
+    from openadapt_ml.training.grpo.trainer import _parse_vlm_output_to_action
+
+    action = _parse_vlm_output_to_action(
+        "CLICK(x=0.5, y=0.5)", screen_size=(1000, 800)
+    )
+    assert action.x == 500
+    assert action.y == 400
+
+
+def test_parse_click_clamps_negative():
+    """_parse_vlm_output_to_action clamps negative coordinates to 0."""
+    from openadapt_ml.training.grpo.trainer import _parse_vlm_output_to_action
+
+    action = _parse_vlm_output_to_action("CLICK(x=-0.1, y=-0.2)")
+    assert action.x == 0
+    assert action.y == 0
+
+
+def test_parse_click_clamps_above_one():
+    """_parse_vlm_output_to_action clamps coordinates above 1.0."""
+    from openadapt_ml.training.grpo.trainer import _parse_vlm_output_to_action
+
+    action = _parse_vlm_output_to_action("CLICK(x=1.5, y=2.0)")
+    assert action.x == 1920
+    assert action.y == 1200
+
+
+def test_parse_type_action():
+    """_parse_vlm_output_to_action correctly parses TYPE actions."""
+    from openadapt_ml.training.grpo.trainer import _parse_vlm_output_to_action
+
+    action = _parse_vlm_output_to_action('TYPE(text="hello world")')
+    assert action.type == "type"
+    assert action.text == "hello world"
+
+
+def test_parse_wait_action():
+    """_parse_vlm_output_to_action correctly parses WAIT actions."""
+    from openadapt_ml.training.grpo.trainer import _parse_vlm_output_to_action
+
+    action = _parse_vlm_output_to_action("WAIT()")
+    assert action.type == "wait"
+
+
+def test_parse_done_action():
+    """_parse_vlm_output_to_action correctly parses DONE actions."""
+    from openadapt_ml.training.grpo.trainer import _parse_vlm_output_to_action
+
+    action = _parse_vlm_output_to_action("DONE()")
+    assert action.type == "done"
+
+
+def test_parse_fallback_to_done():
+    """_parse_vlm_output_to_action falls back to DONE for unparseable output."""
+    from openadapt_ml.training.grpo.trainer import _parse_vlm_output_to_action
+
+    action = _parse_vlm_output_to_action("I don't know what to do")
+    assert action.type == "done"

@@ -29,11 +29,13 @@ try:
         WAALiveAdapter,
         WAALiveConfig,
     )
+    from openadapt_evals.adapters.rl_env import ResetConfig
 except ImportError:
     RLEnvironment = None  # type: ignore[assignment, misc]
     RolloutStep = None  # type: ignore[assignment, misc]
     WAALiveAdapter = None  # type: ignore[assignment, misc]
     WAALiveConfig = None  # type: ignore[assignment, misc]
+    ResetConfig = None  # type: ignore[assignment, misc]
 
 
 @dataclass
@@ -54,10 +56,11 @@ class Rollout:
 
 
 class GRPORolloutCollector:
-    """Collects parallel rollouts using openadapt-evals RLEnvironment.
+    """Collects groups of rollouts using openadapt-evals RLEnvironment.
 
     Creates a WAALiveAdapter and RLEnvironment from the config, then
     provides methods to collect groups of N rollouts for GRPO training.
+    Currently sequential (single VM); parallel VM support is future work.
 
     Args:
         config: GRPO training configuration.
@@ -123,6 +126,8 @@ class GRPORolloutCollector:
                 task_id,
             )
 
+            # collect_rollout resets the environment internally with the
+            # given task_id before running the agent
             steps = self._env.collect_rollout(
                 agent_fn=agent_fn,
                 max_steps=self._config.max_steps_per_episode,
