@@ -24,6 +24,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from openadapt_ml.datasets.next_action import SYSTEM_PROMPT
 from openadapt_ml.training.grpo.config import GRPOConfig
 from openadapt_ml.training.grpo.reward import compute_group_advantages
 from openadapt_ml.training.grpo.rollout_collector import (
@@ -32,6 +33,35 @@ from openadapt_ml.training.grpo.rollout_collector import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _build_agent_messages(instruction: str) -> list[dict[str, str]]:
+    """Build the chat messages for the GRPO agent.
+
+    Uses the same SYSTEM_PROMPT as SFT training (from next_action.py)
+    so that the GRPO policy operates in the same prompt distribution
+    the model was warm-started on.
+
+    This function is the **single source of truth** for prompt
+    construction during both rollout collection and loss computation.
+    Any change here is automatically reflected in both paths.
+
+    Args:
+        instruction: The task instruction from the environment.
+
+    Returns:
+        List of message dicts with ``role`` and ``content`` keys,
+        ready for ``apply_chat_template``.
+    """
+    user_content = (
+        f"Goal: {instruction}\n\n"
+        "Look at the screenshot and determine the NEXT action.\n\n"
+        'Action: [CLICK(x=..., y=...) or TYPE(text="...") or WAIT() or DONE()]'
+    )
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
 
 
 class GRPOTrainer:
@@ -153,19 +183,8 @@ class GRPOTrainer:
             if hasattr(obs, "raw_observation") and obs.raw_observation:
                 instruction = obs.raw_observation.get("instruction", "")
 
-            prompt = (
-                "You are a GUI automation agent. "
-                "Given the screenshot, predict the next action.\n\n"
-                f"Instruction: {instruction}\n\n"
-                "Respond with exactly one action:\n"
-                "CLICK(x=0.XX, y=0.XX) or TYPE(text=\"...\") "
-                "or WAIT() or DONE()"
-            )
-
-            # Tokenize (processor handles image + text for VLMs)
-            messages = [
-                {"role": "user", "content": prompt},
-            ]
+            # Use shared prompt builder (single source of truth)
+            messages = _build_agent_messages(instruction)
 
             # Use processor for VLM models
             if hasattr(tokenizer, "apply_chat_template"):
@@ -173,7 +192,7 @@ class GRPOTrainer:
                     messages, tokenize=False, add_generation_prompt=True
                 )
             else:
-                text_input = prompt
+                text_input = messages[-1]["content"]
 
             inputs = tokenizer(
                 text_input, images=[image], return_tensors="pt"
@@ -440,26 +459,19 @@ class GRPOTrainer:
             if raw_obs and isinstance(raw_obs, dict):
                 instruction = raw_obs.get("instruction", "")
 
-            prompt = (
-                "You are a GUI automation agent. "
-                "Given the screenshot, predict the next action.\n\n"
-                f"Instruction: {instruction}\n\n"
-                "Respond with exactly one action:\n"
-                'CLICK(x=0.XX, y=0.XX) or TYPE(text="...") '
-                "or WAIT() or DONE()"
-            )
+            # Use shared prompt builder (must match _make_agent_fn exactly)
+            messages = _build_agent_messages(instruction)
 
             # Format action back to DSL text
             action_text = _format_action_as_text(action, screen_size=screen_size)
 
             # Tokenize prompt to determine prompt length
-            messages = [{"role": "user", "content": prompt}]
             if hasattr(self._tokenizer, "apply_chat_template"):
                 text_input = self._tokenizer.apply_chat_template(
                     messages, tokenize=False, add_generation_prompt=True
                 )
             else:
-                text_input = prompt
+                text_input = messages[-1]["content"]
 
             prompt_inputs = self._tokenizer(
                 text_input, images=[image], return_tensors="pt"
