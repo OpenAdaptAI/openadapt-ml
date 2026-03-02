@@ -23,7 +23,7 @@ because:
 
 | | No Retrieval | With Retrieval |
 |---|---|---|
-| **No Fine-tuning** | 33–47% (baseline) | **100%** (validated) |
+| **No Fine-tuning** | 46.7% (baseline) | **100%** (validated) |
 | **Fine-tuning** | Standard SFT (baseline) | **Demo-conditioned FT** (unique value) |
 
 Phase 2 (retrieval-only) is validated. Phase 3 (demo-conditioned fine-tuning — training models to *use* demonstrations they haven't seen) is the core planned work.
