@@ -34,7 +34,7 @@ from openadapt_ml.training.grpo.rollout_collector import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SCREEN_SIZE: tuple[int, int] = (1920, 1200)
+DEFAULT_SCREEN_SIZE: tuple[int, int] = (1920, 1080)
 
 
 def _build_agent_messages(instruction: str) -> list[dict[str, str]]:
@@ -167,6 +167,7 @@ class GRPOTrainer:
         tokenizer = self._tokenizer
         temperature = self._config.temperature
         collector = self._collector
+        config_screen_size = self._config.screen_size
 
         def agent_fn(obs: Any) -> BenchmarkAction:
             """Predict an action from an observation using the VLM."""
@@ -181,9 +182,20 @@ class GRPOTrainer:
                 # Fallback: 1x1 black image
                 image = Image.new("RGB", (1, 1))
 
+            # CR-01: Get instruction from the environment's current task.
+            # WAALiveAdapter._get_observation() does NOT populate
+            # raw_observation, so we read instruction directly from
+            # the task object set during reset().
             instruction = ""
-            if hasattr(obs, "raw_observation") and obs.raw_observation:
-                instruction = obs.raw_observation.get("instruction", "")
+            if collector and hasattr(collector, "env"):
+                task = getattr(collector.env, "_current_task", None)
+                if task is not None:
+                    instruction = getattr(task, "instruction", "") or ""
+            # Fallback: try obs.raw_observation (for future compatibility)
+            if not instruction:
+                raw_obs = getattr(obs, "raw_observation", None)
+                if raw_obs and isinstance(raw_obs, dict):
+                    instruction = raw_obs.get("instruction", "")
 
             # Use shared prompt builder (single source of truth)
             messages = _build_agent_messages(instruction)
@@ -214,8 +226,8 @@ class GRPOTrainer:
                 skip_special_tokens=True,
             )
 
-            # Parse into BenchmarkAction, using actual screen size
-            screen_size = DEFAULT_SCREEN_SIZE
+            # IM-01: Use config screen_size, override from live env if available
+            screen_size = config_screen_size
             if collector and hasattr(collector, "env") and hasattr(collector.env, "screen_size"):
                 try:
                     screen_size = collector.env.screen_size
@@ -444,8 +456,8 @@ class GRPOTrainer:
         total_loss_value = 0.0
         total_kl = 0.0
 
-        # Determine screen size for action text reconstruction
-        screen_size = DEFAULT_SCREEN_SIZE
+        # IM-01: Use config screen_size, override from live env if available
+        screen_size = self._config.screen_size
         if self._collector and hasattr(self._collector, "env"):
             try:
                 screen_size = self._collector.env.screen_size
@@ -468,17 +480,17 @@ class GRPOTrainer:
         if num_steps == 0:
             return 0.0, 0.0
 
+        # CR-01: Use rollout.instruction (populated by collector from
+        # env._current_task.instruction) instead of trying to extract
+        # from each observation's raw_observation (which is never set
+        # by WAALiveAdapter).
+        instruction = getattr(rollout, "instruction", "") or ""
+
         for obs, action, screenshot in valid_steps:
             try:
                 image = Image.open(io.BytesIO(screenshot)).convert("RGB")
             except Exception:
                 continue
-
-            # Reconstruct the same prompt used during inference
-            instruction = ""
-            raw_obs = getattr(obs, "raw_observation", None)
-            if raw_obs and isinstance(raw_obs, dict):
-                instruction = raw_obs.get("instruction", "")
 
             # Use shared prompt builder (must match _make_agent_fn exactly)
             messages = _build_agent_messages(instruction)
@@ -607,12 +619,16 @@ class GRPOTrainer:
                     saved_state[name] = param.data.clone()
                     param.data.copy_(self._ref_lora_state[name])
 
-            ref_outputs = self._model(**full_inputs)
-
-            # Restore current weights
-            for name, param in self._model.named_parameters():
-                if name in saved_state:
-                    param.data.copy_(saved_state[name])
+            # IM-02: try/finally ensures weights are restored even if
+            # the forward pass raises (e.g., OOM). Without this, the
+            # model would be permanently left in the reference state.
+            try:
+                ref_outputs = self._model(**full_inputs)
+            finally:
+                for name, param in self._model.named_parameters():
+                    if name in saved_state:
+                        param.data.copy_(saved_state[name])
+                del saved_state
         elif hasattr(self._model, "disable_adapter"):
             # Fallback: disable adapters (gives base model, only correct
             # before any SFT warm-start has been applied).
