@@ -52,6 +52,7 @@ class GRPOConfig:
     # Environment
     server_url: str = "http://localhost:5001"
     task_ids: list[str] = field(default_factory=list)
+    screen_size: tuple[int, int] = (1920, 1080)  # (width, height)
 
     # Training
     learning_rate: float = 5e-6

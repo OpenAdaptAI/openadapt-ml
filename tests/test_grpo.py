@@ -34,6 +34,7 @@ def test_import_grpo_config():
     assert config.stuck_window == 3
     assert config.task_ids == []
     assert config.server_url == "http://localhost:5001"
+    assert config.screen_size == (1920, 1080)
 
 
 def test_grpo_config_custom_values():
@@ -386,7 +387,7 @@ def test_parse_click_action():
     action = _parse_vlm_output_to_action("CLICK(x=0.5, y=0.25)")
     assert action.type == "click"
     assert action.x == int(0.5 * 1920)
-    assert action.y == int(0.25 * 1200)
+    assert action.y == int(0.25 * 1080)
 
 
 def test_parse_click_custom_screen_size():
@@ -415,7 +416,7 @@ def test_parse_click_clamps_above_one():
 
     action = _parse_vlm_output_to_action("CLICK(x=1.5, y=2.0)")
     assert action.x == 1920
-    assert action.y == 1200
+    assert action.y == 1080
 
 
 def test_parse_type_action():
@@ -626,7 +627,7 @@ def test_parse_click_case_insensitive():
     action = _parse_vlm_output_to_action("click(x=0.5, y=0.25)")
     assert action.type == "click"
     assert action.x == int(0.5 * 1920)
-    assert action.y == int(0.25 * 1200)
+    assert action.y == int(0.25 * 1080)
 
 
 def test_parse_type_case_insensitive():
@@ -665,7 +666,7 @@ def test_default_screen_size_constant():
     """DEFAULT_SCREEN_SIZE is exported from trainer module."""
     from openadapt_ml.training.grpo.trainer import DEFAULT_SCREEN_SIZE
 
-    assert DEFAULT_SCREEN_SIZE == (1920, 1200)
+    assert DEFAULT_SCREEN_SIZE == (1920, 1080)
 
 
 # ---------------------------------------------------------------------------

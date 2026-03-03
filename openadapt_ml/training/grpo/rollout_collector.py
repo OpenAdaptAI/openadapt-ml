@@ -47,12 +47,16 @@ class Rollout:
         steps: List of RolloutStep objects from the RLEnvironment.
         reward: Binary reward (0.0 or 1.0) from the evaluator.
         num_steps: Number of steps taken in the episode.
+        instruction: Task instruction text for prompt reconstruction
+            during loss computation. Populated from the environment's
+            current task after rollout collection.
     """
 
     task_id: str
     steps: list[Any] = field(default_factory=list)  # list[RolloutStep]
     reward: float = 0.0
     num_steps: int = 0
+    instruction: str = ""
 
 
 class GRPORolloutCollector:
@@ -139,11 +143,19 @@ class GRPORolloutCollector:
             raw_score = steps[-1].reward if steps else 0.0
             reward = binary_task_success(raw_score)
 
+            # CR-01: Extract task instruction from the environment's
+            # current task (set during reset inside collect_rollout).
+            instruction = ""
+            task = getattr(self._env, "_current_task", None)
+            if task is not None:
+                instruction = getattr(task, "instruction", "") or ""
+
             rollout = Rollout(
                 task_id=task_id,
                 steps=steps,
                 reward=reward,
                 num_steps=len(steps),
+                instruction=instruction,
             )
             rollouts.append(rollout)
 
