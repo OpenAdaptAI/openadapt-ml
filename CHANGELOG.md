@@ -1,6 +1,149 @@
 # CHANGELOG
 
 
+## v0.12.0 (2026-03-03)
+
+### Features
+
+- Add GRPO training module with minimal TRL bridge
+  ([#34](https://github.com/OpenAdaptAI/openadapt-ml/pull/34),
+  [`339e5d3`](https://github.com/OpenAdaptAI/openadapt-ml/commit/339e5d35f8c7d0c9880ad3bed9cc748ee7e77945))
+
+* docs: add experimental roadmap and evidence context to vision
+
+- Add 2x2 experimental matrix (retrieval × fine-tuning) to Core Thesis - Add evidence context to
+  benchmark table: note it's an internal synthetic benchmark (~3 UI elements) that validates the
+  pipeline, not real-world performance. Link to openadapt-evals for ongoing WAA/OSWorld evaluation.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+* fix: use 46.7% consistently in 2x2 matrix
+
+Was showing 33-47% range which conflated preliminary (n=3) and full (n=45) results. The validated
+  number is 46.7%.
+
+* feat: add GRPO training module for online RL
+
+Add openadapt_ml/training/grpo/ package with: - GRPOConfig for training hyperparameters -
+  GRPORolloutCollector connecting to openadapt-evals RLEnvironment - GRPOTrainer implementing custom
+  GRPO loop for multimodal VLMs - Binary reward function and group-relative advantage computation -
+  Chain-of-thought warm-up pipeline for SFT pre-training - 20 unit tests passing without GPU
+
+* fix: address review findings in GRPO module
+
+- Replace copy.deepcopy(model) with LoRA state dict snapshot (prevents OOM) - Mark
+  _compute_rollout_loss as scaffold with dummy forward pass for grad flow - Fix collect_rollout call
+  to match RLEnvironment API (task_id in signature) - Add model.eval()/model.train() toggling around
+  rollout/training phases - Remove unused gradient_accumulation_steps config field - Use actual
+  screen_size from RLEnvironment instead of hardcoded 1920x1200 - Clamp CLICK coordinates to [0.0,
+  1.0] to prevent invalid pixel values - Validate task_ids non-empty at start of train() - Export
+  CoT warmup functions from package __init__ - Add BenchmarkAction fallback when openadapt-evals not
+  installed - Add 9 new tests: action parser (8) + empty task_ids validation (1) - All 29 tests
+  passing
+
+* feat: implement GRPO loss computation and fix cot_warmup dependency
+
+Implement the core _compute_rollout_loss method that was previously a NotImplementedError scaffold.
+  The implementation:
+
+- Reconstructs VLM prompts from rollout observations - Formats actions back to DSL text via new
+  _format_action_as_text helper - Computes log-probabilities of action tokens under current policy -
+  Computes reference policy log-probs via PEFT disable_adapter() with fallback to manual LoRA weight
+  swapping - Returns GRPO loss: -advantage * log_prob + kl_coef * KL penalty
+
+Also adds get_api_adapter() factory function to api_adapter.py, fixing the broken import in
+  cot_warmup.py's generate_cot_annotations().
+
+Additional review fixes from prior session: - Initialize _is_unsloth and _ref_lora_state in __init__
+  - Remove dead else branch for task_id selection - Fix total_loss device placement - LoRA-only
+  fallback save in checkpoint - TYPE regex accepts single quotes - Coordinate clamping in
+  _parse_vlm_output_to_action
+
+40 tests passing (10 new: 8 format_action + 1 roundtrip + 1 api_adapter).
+
+* refactor: deduplicate GRPO prompts via shared _build_agent_messages
+
+Extract prompt construction into _build_agent_messages() which imports SYSTEM_PROMPT from
+  next_action.py (the SFT training prompt). This ensures the GRPO agent uses the same prompt
+  distribution the model was warm-started on, and guarantees _make_agent_fn and
+  _compute_rollout_loss use identical prompts (critical for correct log-prob computation).
+
+* fix(grpo): address critical review findings in GRPO loss computation
+
+- C-01: Store raw model output on action._grpo_raw_text for accurate loss - C-02: Separate
+  tokenization of prompt/action with concatenation to fix BPE boundary alignment - I-01: Prefer LoRA
+  weight swapping over disable_adapter() for reference policy (captures initial LoRA state after SFT
+  warm-start) - I-03: Per-step gradient accumulation via immediate backward() to prevent OOM from
+  building computation graph over all rollout steps - I-04: Fix unescape order in TYPE parser
+  (backslash before quotes) - M-03: Pass model_name through get_api_adapter to ApiVLMAdapter - M-07:
+  Case-insensitive CLICK/TYPE regex in _parse_vlm_output_to_action - L-01: Extract
+  DEFAULT_SCREEN_SIZE constant, replace all hardcoded values
+
+* fix(grpo): fix instruction propagation, screen size, weight swap safety
+
+- CR-01: Task instruction was never populated during GRPO rollouts.
+  WAALiveAdapter._get_observation() does not populate raw_observation, so the agent prompt said
+  "Goal: " with nothing after it. Fix: store instruction on Rollout dataclass (populated from
+  env._current_task in collector), use it in both agent_fn and _compute_rollout_loss. - IM-01:
+  Change DEFAULT_SCREEN_SIZE from 1920x1200 to 1920x1080 for consistency with baselines module and
+  standard VM configurations. Add screen_size field to GRPOConfig so it is configurable. - IM-02:
+  Add try/finally around LoRA weight swap in _compute_ref_log_probs. Without this, an exception
+  during the reference forward pass permanently corrupts the model state.
+
+* fix(grpo): remove unused torch import in _setup_model
+
+The import torch at line 121 was flagged by ruff (F401) as unused. The surrounding code only calls
+  .detach().clone() on tensor objects, which does not require the torch module directly.
+
+* style(grpo): apply ruff formatting to GRPO module files
+
+Run ruff format on cot_warmup.py, rollout_collector.py, and trainer.py to satisfy the CI ruff
+  formatter check.
+
+* refactor(grpo): replace custom trainer with minimal TRL bridge
+
+Replace 809-line custom GRPO trainer with ~280 lines that: - Use standard HuggingFace
+  AutoModelForVision2Seq + AutoProcessor + PEFT LoraConfig instead of Unsloth monkey-patching -
+  Implement standalone GRPO loss in ~15 lines of PyTorch (clipped surrogate) instead of custom
+  policy gradient + KL penalty - Use beta=0.0 (no KL penalty, no reference model) per DAPO/Open-
+  Reasoner-Zero literature, eliminating weight-swap complexity - Keep per-step backward to avoid OOM
+  on long trajectories - Use standard model.save_pretrained() for checkpointing - Document WHY
+  standalone GRPO math vs TRL GRPOTrainer (VLM multi-turn image pixel_values not stored in token
+  IDs) and WHEN to switch
+
+Preserves all public API: GRPOTrainer, _parse_vlm_output_to_action, _format_action_as_text,
+  _build_agent_messages, DEFAULT_SCREEN_SIZE. All 50 tests pass (44 existing + 6 new for grpo_loss
+  and trainer internals).
+
+* feat(grpo): add E2E tests with artifact generation and architecture docs
+
+- tests/test_grpo_e2e.py: 5 E2E tests (training loop, rollout collection, loss convergence, weight
+  diff, mathematical properties) using tiny mock VLM. Produces 65+ artifacts (JSON traces, PNGs,
+  checkpoints, summaries). - scripts/grpo_e2e_report.py: CLI report generator for test artifacts
+  (text + optional HTML output). - docs/grpo_e2e_test_design.md: design rationale for E2E test
+  approach - docs/grpo_architecture_analysis.md: analysis of custom vs TRL-based GRPO -
+  docs/grpo_trl_rewrite_draft.py: TRL v0.29.0 integration research -
+  docs/strategic_analysis_evals_ml_synergy.md: business/economics analysis
+
+* fix(grpo): address self-review findings (BUG-01, CLEAN-01 through -05)
+
+- Rename grpo_loss to policy_gradient_loss with honest docstring: single-epoch on-policy means
+  ratio=1.0, clipping never fires, this is REINFORCE with group-relative advantages. Keep grpo_loss
+  as backwards-compatible alias. - Add public aliases: parse_vlm_output_to_action,
+  format_action_as_text (drop underscore prefix for public API) - Export policy_gradient_loss and
+  public functions from __init__.py - Remove unused config fields: kl_coef (was 0.01 but never used
+  with beta=0), max_seq_length (never referenced) - Fix model_name default:
+  Qwen/Qwen2.5-VL-7B-Instruct (not unsloth variant) - Fix trivial test assertion: grad_norm > 0 (was
+  >= 0, always true) - Update loss tests to verify gradient direction, not just loss sign - Add
+  test_public_api_exports for new public names
+
+56 tests pass (51 unit + 5 E2E).
+
+---------
+
+Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.11.2 (2026-02-25)
 
 ### Bug Fixes
