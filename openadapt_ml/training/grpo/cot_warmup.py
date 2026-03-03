@@ -107,15 +107,11 @@ def generate_cot_annotations(
                     step.reasoning[:80],
                 )
             except Exception as e:
-                logger.warning(
-                    "Failed to annotate step %d: %s", step_idx, e
-                )
+                logger.warning("Failed to annotate step %d: %s", step_idx, e)
 
         annotated.append(episode)
 
-    logger.info(
-        "CoT annotation complete: %d episodes processed", len(annotated)
-    )
+    logger.info("CoT annotation complete: %d episodes processed", len(annotated))
     return annotated
 
 
@@ -178,17 +174,12 @@ def build_cot_sft_samples(annotated_episodes: list[Any]) -> list[dict]:
             for prev_step in steps:
                 prev_idx = getattr(prev_step, "step_index", 0)
                 if prev_idx < step_index:
-                    prev_actions.append(
-                        format_action(prev_step.action)
-                    )
+                    prev_actions.append(format_action(prev_step.action))
 
             # Build user content
             parts = [f"Instruction: {instruction}"]
             if prev_actions:
-                parts.append(
-                    "Previous actions: "
-                    + " -> ".join(prev_actions)
-                )
+                parts.append("Previous actions: " + " -> ".join(prev_actions))
             user_content = "\n".join(parts)
 
             # Build assistant content with CoT

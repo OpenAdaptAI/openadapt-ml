@@ -109,9 +109,7 @@ class GRPOTrainer:
             lora_r=self._config.lora_r,
             lora_alpha=self._config.lora_alpha,
         )
-        self._model, self._tokenizer, self._is_unsloth = _load_unsloth_model(
-            trl_config
-        )
+        self._model, self._tokenizer, self._is_unsloth = _load_unsloth_model(trl_config)
 
         # Store reference LoRA weights for KL penalty.
         # Instead of deep-copying the entire model (which would OOM for
@@ -132,9 +130,7 @@ class GRPOTrainer:
         """Initialize the optimizer for LoRA parameters."""
         import torch
 
-        trainable_params = [
-            p for p in self._model.parameters() if p.requires_grad
-        ]
+        trainable_params = [p for p in self._model.parameters() if p.requires_grad]
         self._optimizer = torch.optim.AdamW(
             trainable_params,
             lr=self._config.learning_rate,
@@ -206,9 +202,7 @@ class GRPOTrainer:
             else:
                 text_input = messages[-1]["content"]
 
-            inputs = tokenizer(
-                text_input, images=[image], return_tensors="pt"
-            )
+            inputs = tokenizer(text_input, images=[image], return_tensors="pt")
             inputs = {k: v.to(model.device) for k, v in inputs.items()}
 
             with torch.no_grad():
@@ -220,13 +214,17 @@ class GRPOTrainer:
                 )
 
             decoded = tokenizer.decode(
-                outputs[0][inputs["input_ids"].shape[1]:],
+                outputs[0][inputs["input_ids"].shape[1] :],
                 skip_special_tokens=True,
             )
 
             # IM-01: Use config screen_size, override from live env if available
             screen_size = config_screen_size
-            if collector and hasattr(collector, "env") and hasattr(collector.env, "screen_size"):
+            if (
+                collector
+                and hasattr(collector, "env")
+                and hasattr(collector.env, "screen_size")
+            ):
                 try:
                     screen_size = collector.env.screen_size
                 except Exception:
@@ -324,8 +322,7 @@ class GRPOTrainer:
             self._collector.close()
 
         final_path = str(
-            Path(self._config.output_dir)
-            / f"step_{self._config.num_training_steps}"
+            Path(self._config.output_dir) / f"step_{self._config.num_training_steps}"
         )
         logger.info("Training complete. Final checkpoint: %s", final_path)
         return final_path
@@ -358,8 +355,7 @@ class GRPOTrainer:
         # If no variance in advantages, skip gradient update
         if all(a == 0.0 for a in advantages):
             logger.info(
-                "All advantages are zero (reward_mean=%.2f). "
-                "Skipping gradient step.",
+                "All advantages are zero (reward_mean=%.2f). Skipping gradient step.",
                 reward_mean,
             )
             return {
@@ -376,9 +372,7 @@ class GRPOTrainer:
         # accumulate through all rollouts+steps, then clip and step.
         # This prevents OOM from building a computation graph over all
         # steps in all rollouts before calling backward().
-        valid_pairs = [
-            (r, a) for r, a in zip(rollouts, advantages) if abs(a) >= 1e-8
-        ]
+        valid_pairs = [(r, a) for r, a in zip(rollouts, advantages) if abs(a) >= 1e-8]
         num_terms = len(valid_pairs)
 
         if num_terms == 0:
@@ -496,7 +490,8 @@ class GRPOTrainer:
             # C-01: Use raw model output if available, else reconstruct DSL
             raw_text = getattr(action, "_grpo_raw_text", None)
             action_text = (
-                raw_text if raw_text
+                raw_text
+                if raw_text
                 else _format_action_as_text(action, screen_size=screen_size)
             )
 
@@ -526,28 +521,22 @@ class GRPOTrainer:
                 continue
 
             # Build full input by concatenating prompt + action token IDs
-            full_ids = torch.cat(
-                [prompt_ids, action_ids.to(prompt_ids.device)], dim=1
-            )
+            full_ids = torch.cat([prompt_ids, action_ids.to(prompt_ids.device)], dim=1)
             full_inputs = dict(prompt_inputs)
             full_inputs["input_ids"] = full_ids
             full_inputs["attention_mask"] = torch.ones_like(full_ids)
             full_inputs = {k: v.to(device) for k, v in full_inputs.items()}
 
-            action_token_ids = full_ids[:, prompt_len:prompt_len + action_len]
+            action_token_ids = full_ids[:, prompt_len : prompt_len + action_len]
 
             # --- Current policy log-probs (with gradient) ---
             outputs = self._model(**full_inputs)
             logits = outputs.logits  # [1, seq_len, vocab_size]
 
             # Autoregressive: logits[:, t, :] predicts token at position t+1
-            action_logits = logits[
-                :, prompt_len - 1:prompt_len - 1 + action_len, :
-            ]
+            action_logits = logits[:, prompt_len - 1 : prompt_len - 1 + action_len, :]
 
-            log_probs = torch.nn.functional.log_softmax(
-                action_logits, dim=-1
-            )
+            log_probs = torch.nn.functional.log_softmax(action_logits, dim=-1)
             token_log_probs = log_probs.gather(
                 2, action_token_ids.unsqueeze(-1)
             ).squeeze(-1)
@@ -565,10 +554,7 @@ class GRPOTrainer:
 
             # Loss: -advantage * log π_θ + β * (log π_θ - log π_ref)
             kl_penalty = step_log_prob - ref_step_log_prob.detach()
-            step_loss = (
-                -advantage * step_log_prob
-                + self._config.kl_coef * kl_penalty
-            )
+            step_loss = -advantage * step_log_prob + self._config.kl_coef * kl_penalty
 
             # Scale and backward immediately to free the computation graph
             scaled_loss = step_loss * loss_scale / num_steps
@@ -638,11 +624,9 @@ class GRPOTrainer:
 
         ref_logits = ref_outputs.logits
         ref_action_logits = ref_logits[
-            :, prompt_len - 1:prompt_len - 1 + action_len, :
+            :, prompt_len - 1 : prompt_len - 1 + action_len, :
         ]
-        ref_log_probs = torch.nn.functional.log_softmax(
-            ref_action_logits, dim=-1
-        )
+        ref_log_probs = torch.nn.functional.log_softmax(ref_action_logits, dim=-1)
         ref_token_log_probs = ref_log_probs.gather(
             2, action_token_ids.unsqueeze(-1)
         ).squeeze(-1)
@@ -668,14 +652,10 @@ class GRPOTrainer:
             import torch
 
             lora_state = {
-                k: v
-                for k, v in self._model.state_dict().items()
-                if "lora" in k.lower()
+                k: v for k, v in self._model.state_dict().items() if "lora" in k.lower()
             }
             torch.save(lora_state, str(checkpoint_dir / "lora_weights.pt"))
-            logger.info(
-                "Saved %d LoRA tensors to %s", len(lora_state), checkpoint_dir
-            )
+            logger.info("Saved %d LoRA tensors to %s", len(lora_state), checkpoint_dir)
 
         # Copy training log alongside checkpoint
         import shutil
@@ -790,7 +770,9 @@ def _parse_vlm_output_to_action(
     )
     if m:
         # I-04: Unescape backslash first, then quotes
-        typed_text = m.group(1).replace("\\\\", "\\").replace('\\"', '"').replace("\\'", "'")
+        typed_text = (
+            m.group(1).replace("\\\\", "\\").replace('\\"', '"').replace("\\'", "'")
+        )
         return BenchmarkAction(type="type", text=typed_text)
 
     # WAIT()
