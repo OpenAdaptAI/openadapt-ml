@@ -81,9 +81,7 @@ class GRPORolloutCollector:
             )
 
         self._config = config
-        self._adapter = WAALiveAdapter(
-            WAALiveConfig(server_url=config.server_url)
-        )
+        self._adapter = WAALiveAdapter(WAALiveConfig(server_url=config.server_url))
         self._env = RLEnvironment(self._adapter)
 
     @property
@@ -115,9 +113,7 @@ class GRPORolloutCollector:
         """
         if task_id is None:
             if not self._config.task_ids:
-                raise ValueError(
-                    "No task_id provided and config.task_ids is empty."
-                )
+                raise ValueError("No task_id provided and config.task_ids is empty.")
             task_id = random.choice(self._config.task_ids)
 
         rollouts: list[Rollout] = []
