@@ -23,6 +23,7 @@ class ApiVLMAdapter(BaseVLMAdapter):
         provider: str,
         device: Optional[torch.device] = None,
         api_key: Optional[str] = None,
+        model_name: Optional[str] = None,
     ) -> None:
         """Initialize an API-backed adapter.
 
@@ -37,9 +38,14 @@ class ApiVLMAdapter(BaseVLMAdapter):
             1. Settings (.env file)
             2. Environment variables (ANTHROPIC_API_KEY / OPENAI_API_KEY)
             3. Error if not found
+        model_name:
+            Override the default model for this provider.
+            Defaults to ``claude-sonnet-4-5-20250929`` (Anthropic) or
+            ``gpt-4.1`` (OpenAI).
         """
 
         self.provider = provider
+        self._model_name = model_name
 
         if provider == "anthropic":
             try:
@@ -136,7 +142,7 @@ class ApiVLMAdapter(BaseVLMAdapter):
             )
 
             resp = client.messages.create(
-                model="claude-sonnet-4-5-20250929",
+                model=self._model_name or "claude-sonnet-4-5-20250929",
                 max_tokens=max_new_tokens,
                 system=system_text or None,
                 messages=[{"role": "user", "content": content}],
@@ -171,7 +177,7 @@ class ApiVLMAdapter(BaseVLMAdapter):
             messages_payload.append({"role": "user", "content": user_content})
 
             resp = client.chat.completions.create(
-                model="gpt-5.1",
+                model=self._model_name or "gpt-4.1",
                 messages=messages_payload,
                 max_completion_tokens=max_new_tokens,
             )
@@ -179,3 +185,31 @@ class ApiVLMAdapter(BaseVLMAdapter):
 
         # Should be unreachable because provider is validated in __init__.
         raise ValueError(f"Unsupported provider: {self.provider}")
+
+
+def get_api_adapter(model_name: str, **kwargs: Any) -> ApiVLMAdapter:
+    """Create an ApiVLMAdapter from a model name.
+
+    Maps common model name prefixes to providers:
+    - ``gpt-*``, ``o1-*``, ``o3-*``, ``o4-*`` → ``"openai"``
+    - ``claude-*`` → ``"anthropic"``
+    - Unknown prefixes default to ``"openai"``
+
+    Args:
+        model_name: Model identifier, e.g. ``"gpt-4o"`` or
+            ``"claude-sonnet-4-5-20250929"``.
+        **kwargs: Passed through to :class:`ApiVLMAdapter` (e.g. ``api_key``).
+
+    Returns:
+        Configured :class:`ApiVLMAdapter` instance.
+    """
+    name = model_name.lower()
+
+    if name.startswith("claude"):
+        provider = "anthropic"
+    elif any(name.startswith(p) for p in ("gpt-", "o1-", "o3-", "o4-")):
+        provider = "openai"
+    else:
+        provider = "openai"
+
+    return ApiVLMAdapter(provider=provider, model_name=model_name, **kwargs)
