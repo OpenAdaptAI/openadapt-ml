@@ -197,7 +197,10 @@ def report(artifact_dir: str, html: bool = False) -> None:
     # ---------------------------------------------------------------------------
     # GRPO loss properties
     # ---------------------------------------------------------------------------
-    loss_props = _load_json(base / "grpo_loss_properties.json")
+    # Try both old and new filename for backwards compatibility
+    loss_props = _load_json(base / "policy_gradient_loss_properties.json")
+    if not loss_props:
+        loss_props = _load_json(base / "grpo_loss_properties.json")
     if loss_props:
         lines.append(_section("GRPO Loss Mathematical Properties", "-"))
         tests = loss_props.get("tests", [])

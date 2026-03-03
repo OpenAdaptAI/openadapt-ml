@@ -1,10 +1,14 @@
 """Minimal GRPO trainer bridging TRL/HuggingFace and openadapt-evals RLEnvironment.
 
-Implements standalone GRPO math (~15 lines of PyTorch) rather than using TRL's
-GRPOTrainer directly. Why: TRL v0.29.0 recomputes log-probs during training via
-a forward pass that needs image pixel_values, but only stores token IDs from
-rollout_func. Until TRL resolves this for VLM multi-turn trajectories, we use
-standalone GRPO math while reusing everything else from the HF/PEFT ecosystem.
+Uses REINFORCE with group-relative advantages (equivalent to single-epoch GRPO).
+The policy_gradient_loss function includes PPO-style clipping for future multi-epoch
+support, but with the current single-epoch design (old_logps == current_logps),
+the ratio is always 1.0 and clipping does not activate.
+
+Why not TRL's GRPOTrainer directly: TRL v0.29.0 recomputes log-probs during
+training via a forward pass that needs image pixel_values, but only stores token
+IDs from rollout_func. Until TRL resolves this for VLM multi-turn trajectories,
+we use standalone loss math while reusing HF/PEFT for everything else.
 
 When to switch to full TRL GRPOTrainer:
     - TRL supports passing pixel_values through rollout_func -> training
@@ -45,23 +49,28 @@ DEFAULT_SCREEN_SIZE: tuple[int, int] = (1920, 1080)
 
 
 # ---------------------------------------------------------------------------
-# GRPO loss (standalone, ~15 lines)
+# Policy gradient loss
 # ---------------------------------------------------------------------------
 
 
-def grpo_loss(
+def policy_gradient_loss(
     current_logps: torch.Tensor,
     old_logps: torch.Tensor,
     advantages: torch.Tensor,
     epsilon: float = 0.2,
 ) -> torch.Tensor:
-    """Clipped surrogate GRPO loss (PPO-style).
+    """Policy gradient loss with optional PPO-style clipping.
+
+    When old_logps == current_logps (single-epoch, on-policy), this reduces
+    to REINFORCE: loss = -advantage * log_prob. The clipping only activates
+    when old_logps differ from current_logps (multi-epoch off-policy updates).
 
     Args:
         current_logps: Log-probs under current policy.
-        old_logps: Log-probs under rollout policy (detached).
+        old_logps: Log-probs under rollout policy (detached). Pass
+            current_logps.detach() for single-epoch (REINFORCE).
         advantages: Group-relative advantages.
-        epsilon: Clipping range.
+        epsilon: Clipping range for importance-sampling ratio.
 
     Returns:
         Scalar loss (to minimize).
@@ -69,6 +78,10 @@ def grpo_loss(
     ratio = torch.exp(current_logps - old_logps)
     clipped = torch.clamp(ratio, 1 - epsilon, 1 + epsilon)
     return -torch.min(ratio * advantages, clipped * advantages).mean()
+
+
+# Backwards-compatible alias
+grpo_loss = policy_gradient_loss
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +191,11 @@ def _format_action_as_text(
         return "WAIT()"
 
     return "DONE()"
+
+
+# Public aliases (the underscore-prefixed versions are kept for backwards compat)
+parse_vlm_output_to_action = _parse_vlm_output_to_action
+format_action_as_text = _format_action_as_text
 
 
 # ---------------------------------------------------------------------------
@@ -512,14 +530,13 @@ class GRPOTrainer:
             ).squeeze(-1)
             step_log_prob = token_log_probs.sum()
 
-            # GRPO loss: with beta=0 and single-sample old_logps=current,
-            # this simplifies to -advantage * log_prob (REINFORCE).
-            # We use the clipped surrogate for when old_logps differ
-            # (e.g., if we add multiple epochs over the same rollouts).
+            # Single-epoch policy gradient: old_logps == current_logps,
+            # so ratio=1.0 and this is REINFORCE with group-relative
+            # advantages. Clipping activates if we add multi-epoch support.
             adv_tensor = torch.tensor(
                 advantage, device=device, dtype=step_log_prob.dtype
             )
-            step_loss = grpo_loss(
+            step_loss = policy_gradient_loss(
                 step_log_prob.unsqueeze(0),
                 step_log_prob.detach().unsqueeze(0),
                 adv_tensor.unsqueeze(0),

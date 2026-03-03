@@ -26,8 +26,8 @@ from openadapt_ml.training.grpo.config import GRPOConfig
 from openadapt_ml.training.grpo.reward import compute_group_advantages
 from openadapt_ml.training.grpo.rollout_collector import Rollout
 from openadapt_ml.training.grpo.trainer import (
-    _format_action_as_text,
-    grpo_loss,
+    format_action_as_text,
+    policy_gradient_loss,
 )
 
 # ---------------------------------------------------------------------------
@@ -433,7 +433,7 @@ def test_e2e_training_loop_mock(
                 action = getattr(rstep, "action", None)
                 action_text = (
                     getattr(action, "_grpo_raw_text", None)
-                    or _format_action_as_text(action, screen_size=config.screen_size)
+                    or format_action_as_text(action, screen_size=config.screen_size)
                     if action
                     else "NONE"
                 )
@@ -510,7 +510,7 @@ def test_e2e_training_loop_mock(
                 step_log_prob = token_log_probs.sum()
 
                 adv_tensor = torch.tensor(advantage, dtype=step_log_prob.dtype)
-                step_loss = grpo_loss(
+                step_loss = policy_gradient_loss(
                     step_log_prob.unsqueeze(0),
                     step_log_prob.detach().unsqueeze(0),
                     adv_tensor.unsqueeze(0),
@@ -668,7 +668,9 @@ def test_e2e_training_loop_mock(
         assert math.isfinite(m["loss"]), (
             f"Loss is not finite at step {m['step']}: {m['loss']}"
         )
-        assert m["grad_norm"] >= 0, f"Grad norm is negative at step {m['step']}"
+        assert m["grad_norm"] > 0, (
+            f"Grad norm is zero at step {m['step']} (no gradient flow)"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -801,7 +803,7 @@ def test_e2e_rollout_collection_mock(artifact_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_e2e_grpo_loss_convergence(artifact_dir: Path) -> None:
+def test_e2e_policy_gradient_loss_convergence(artifact_dir: Path) -> None:
     """Verify GRPO loss drives policy toward high-reward trajectories.
 
     Creates a synthetic scenario:
@@ -838,8 +840,8 @@ def test_e2e_grpo_loss_convergence(artifact_dir: Path) -> None:
         total_loss = torch.tensor(0.0)
         for i in range(num_actions):
             # Each action's contribution: -advantage * log_prob
-            # Using grpo_loss with ratio=1 (old=current for simplicity)
-            step_loss = grpo_loss(
+            # Using policy_gradient_loss with ratio=1 (old=current for simplicity)
+            step_loss = policy_gradient_loss(
                 log_probs[i].unsqueeze(0),
                 log_probs[i].detach().unsqueeze(0),
                 torch.tensor([advantages[i]]),
@@ -857,7 +859,7 @@ def test_e2e_grpo_loss_convergence(artifact_dir: Path) -> None:
 
     # Save artifacts
     convergence_data = {
-        "test_name": "test_e2e_grpo_loss_convergence",
+        "test_name": "test_e2e_policy_gradient_loss_convergence",
         "num_steps": num_steps,
         "rewards": rewards,
         "advantages": advantages,
@@ -1011,7 +1013,7 @@ def test_e2e_model_weight_diff(
             step_log_prob = token_log_probs.sum()
 
             adv_tensor = torch.tensor(advantage, dtype=step_log_prob.dtype)
-            step_loss = grpo_loss(
+            step_loss = policy_gradient_loss(
                 step_log_prob.unsqueeze(0),
                 step_log_prob.detach().unsqueeze(0),
                 adv_tensor.unsqueeze(0),
@@ -1093,11 +1095,11 @@ def test_e2e_model_weight_diff(
 
 
 # ---------------------------------------------------------------------------
-# Test 5: grpo_loss mathematical properties
+# Test 5: policy_gradient_loss mathematical properties
 # ---------------------------------------------------------------------------
 
 
-def test_e2e_grpo_loss_mathematical_properties(artifact_dir: Path) -> None:
+def test_e2e_policy_gradient_loss_mathematical_properties(artifact_dir: Path) -> None:
     """Verify mathematical properties of the GRPO loss function.
 
     Tests:
@@ -1111,7 +1113,7 @@ def test_e2e_grpo_loss_mathematical_properties(artifact_dir: Path) -> None:
 
     # Test 1: Gradient direction for positive advantage
     logp = torch.tensor([-1.0], requires_grad=True)
-    loss = grpo_loss(logp, logp.detach(), torch.tensor([1.0]))
+    loss = policy_gradient_loss(logp, logp.detach(), torch.tensor([1.0]))
     loss.backward()
     # With positive advantage, loss = -ratio * advantage at ratio=1
     # Gradient w.r.t. logp should be negative (decreasing logp increases loss,
@@ -1130,7 +1132,7 @@ def test_e2e_grpo_loss_mathematical_properties(artifact_dir: Path) -> None:
 
     # Test 2: Gradient direction for negative advantage
     logp = torch.tensor([-1.0], requires_grad=True)
-    loss = grpo_loss(logp, logp.detach(), torch.tensor([-1.0]))
+    loss = policy_gradient_loss(logp, logp.detach(), torch.tensor([-1.0]))
     loss.backward()
     grad_negative = logp.grad.item()
     results["tests"].append(
@@ -1146,7 +1148,7 @@ def test_e2e_grpo_loss_mathematical_properties(artifact_dir: Path) -> None:
 
     # Test 3: Zero advantage -> zero gradient
     logp = torch.tensor([-1.0], requires_grad=True)
-    loss = grpo_loss(logp, logp.detach(), torch.tensor([0.0]))
+    loss = policy_gradient_loss(logp, logp.detach(), torch.tensor([0.0]))
     loss.backward()
     grad_zero = logp.grad.item()
     results["tests"].append(
@@ -1164,7 +1166,7 @@ def test_e2e_grpo_loss_mathematical_properties(artifact_dir: Path) -> None:
     current = torch.tensor([-0.1], requires_grad=True)
     old = torch.tensor([-3.0])
     advantage = torch.tensor([1.0])
-    loss = grpo_loss(current, old, advantage, epsilon=0.2)
+    loss = policy_gradient_loss(current, old, advantage, epsilon=0.2)
     # Ratio = exp(-0.1 - (-3.0)) = exp(2.9) ~ 18.17, clipped to 1.2
     # Loss = -min(18.17, 1.2) = -1.2
     results["tests"].append(
@@ -1180,14 +1182,14 @@ def test_e2e_grpo_loss_mathematical_properties(artifact_dir: Path) -> None:
 
     # Test 5: Batch consistency
     logps_single = [
-        grpo_loss(
+        policy_gradient_loss(
             torch.tensor([lp]),
             torch.tensor([lp]),
             torch.tensor([a]),
         ).item()
         for lp, a in [(-1.0, 1.0), (-2.0, -0.5), (-0.5, 0.0)]
     ]
-    batch_loss = grpo_loss(
+    batch_loss = policy_gradient_loss(
         torch.tensor([-1.0, -2.0, -0.5]),
         torch.tensor([-1.0, -2.0, -0.5]),
         torch.tensor([1.0, -0.5, 0.0]),
@@ -1208,7 +1210,7 @@ def test_e2e_grpo_loss_mathematical_properties(artifact_dir: Path) -> None:
     results["all_passed"] = all_passed
     _write_artifact(
         artifact_dir,
-        "grpo_loss_properties.json",
+        "policy_gradient_loss_properties.json",
         json.dumps(results, indent=2),
     )
 

@@ -18,13 +18,11 @@ class GRPOConfig:
     Attributes:
         model_name: HuggingFace model identifier.
         load_in_4bit: Whether to use 4-bit quantization.
-        max_seq_length: Maximum sequence length for the model.
         lora_r: LoRA rank.
         lora_alpha: LoRA alpha scaling factor.
         num_rollouts_per_step: Group size N for GRPO advantage computation.
         max_steps_per_episode: Maximum actions per rollout episode.
         temperature: Sampling temperature for action generation during rollouts.
-        kl_coef: KL divergence penalty coefficient against reference policy.
         server_url: URL of the WAA server for live environment interaction.
         task_ids: List of WAA task IDs to train on.
         learning_rate: Optimizer learning rate for LoRA parameter updates.
@@ -34,10 +32,9 @@ class GRPOConfig:
         stuck_window: Number of identical screenshots before early termination.
     """
 
-    # Model (same defaults as TRLTrainingConfig)
-    model_name: str = "unsloth/Qwen2.5-VL-7B-Instruct"
+    # Model
+    model_name: str = "Qwen/Qwen2.5-VL-7B-Instruct"
     load_in_4bit: bool = True
-    max_seq_length: int = 4096
 
     # LoRA
     lora_r: int = 16
@@ -47,7 +44,6 @@ class GRPOConfig:
     num_rollouts_per_step: int = 8  # Group size N
     max_steps_per_episode: int = 15
     temperature: float = 0.7  # Sampling temperature for rollouts
-    kl_coef: float = 0.01  # KL divergence penalty
 
     # Environment
     server_url: str = "http://localhost:5001"
