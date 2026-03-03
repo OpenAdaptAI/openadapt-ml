@@ -116,9 +116,7 @@ def train_with_verl(config: GRPOConfig) -> None:
         "To train with verl-agent, use the VAGEN training script with "
         "a config derived from the above. Example:"
     )
-    logger.info(
-        "  python -m vagen.train --config configs/train_waa_vagen.yaml"
-    )
+    logger.info("  python -m vagen.train --config configs/train_waa_vagen.yaml")
 
     raise NotImplementedError(
         "verl-agent training requires running via VAGEN's training script. "
