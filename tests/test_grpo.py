@@ -22,8 +22,7 @@ def test_import_grpo_config():
     assert config.num_rollouts_per_step == 8
     assert config.max_steps_per_episode == 15
     assert config.temperature == 0.7
-    assert config.kl_coef == 0.01
-    assert config.model_name == "unsloth/Qwen2.5-VL-7B-Instruct"
+    assert config.model_name == "Qwen/Qwen2.5-VL-7B-Instruct"
     assert config.load_in_4bit is True
     assert config.lora_r == 16
     assert config.lora_alpha == 32
@@ -669,66 +668,88 @@ def test_default_screen_size_constant():
 # ---------------------------------------------------------------------------
 
 
-def test_grpo_loss_positive_advantage():
-    """grpo_loss returns negative loss for positive advantage (reward signal)."""
+def test_policy_gradient_loss_positive_advantage():
+    """Positive advantage produces gradient that increases log-prob."""
     import torch
 
-    from openadapt_ml.training.grpo.trainer import grpo_loss
+    from openadapt_ml.training.grpo.trainer import policy_gradient_loss
 
-    logps = torch.tensor([-1.0])
+    logps = torch.tensor([-1.0], requires_grad=True)
     advantages = torch.tensor([1.0])
-    loss = grpo_loss(logps, logps.detach(), advantages)
-    # With ratio=1 and positive advantage, loss = -1 * advantage = -1.0
-    # (negative because we want to maximize log-prob for positive advantage)
+    loss = policy_gradient_loss(logps, logps.detach(), advantages)
+    loss.backward()
+    # Gradient should be negative (minimizing loss = increasing log-prob)
+    assert logps.grad.item() < 0
     assert loss.item() < 0
 
 
-def test_grpo_loss_negative_advantage():
-    """grpo_loss returns positive loss for negative advantage."""
+def test_policy_gradient_loss_negative_advantage():
+    """Negative advantage produces gradient that decreases log-prob."""
     import torch
 
-    from openadapt_ml.training.grpo.trainer import grpo_loss
+    from openadapt_ml.training.grpo.trainer import policy_gradient_loss
 
-    logps = torch.tensor([-1.0])
+    logps = torch.tensor([-1.0], requires_grad=True)
     advantages = torch.tensor([-1.0])
-    loss = grpo_loss(logps, logps.detach(), advantages)
+    loss = policy_gradient_loss(logps, logps.detach(), advantages)
+    loss.backward()
+    # Gradient should be positive (minimizing loss = decreasing log-prob)
+    assert logps.grad.item() > 0
     assert loss.item() > 0
 
 
-def test_grpo_loss_zero_advantage():
-    """grpo_loss returns zero when advantage is zero."""
+def test_policy_gradient_loss_zero_advantage():
+    """Zero advantage produces zero gradient."""
     import torch
 
-    from openadapt_ml.training.grpo.trainer import grpo_loss
+    from openadapt_ml.training.grpo.trainer import policy_gradient_loss
 
-    logps = torch.tensor([-1.0])
+    logps = torch.tensor([-1.0], requires_grad=True)
     advantages = torch.tensor([0.0])
-    loss = grpo_loss(logps, logps.detach(), advantages)
+    loss = policy_gradient_loss(logps, logps.detach(), advantages)
+    loss.backward()
+    assert abs(logps.grad.item()) < 1e-6
     assert abs(loss.item()) < 1e-6
 
 
-def test_grpo_loss_clipping():
-    """grpo_loss clips the ratio when it diverges from old policy."""
+def test_policy_gradient_loss_clipping():
+    """Clipping activates when ratio diverges from 1.0 (off-policy)."""
     import torch
 
-    from openadapt_ml.training.grpo.trainer import grpo_loss
+    from openadapt_ml.training.grpo.trainer import policy_gradient_loss
 
     # Large ratio (current much higher than old)
     current = torch.tensor([-0.5])
     old = torch.tensor([-2.0])
     advantages = torch.tensor([1.0])
 
-    loss = grpo_loss(current, old, advantages, epsilon=0.2)
+    loss = policy_gradient_loss(current, old, advantages, epsilon=0.2)
     # Ratio = exp(-0.5 - (-2.0)) = exp(1.5) ~ 4.48, clipped to 1.2
     # Loss should be -min(4.48 * 1.0, 1.2 * 1.0) = -1.2
     assert abs(loss.item() - (-1.2)) < 1e-4
 
 
-def test_grpo_loss_is_importable():
-    """grpo_loss is importable from the trainer module."""
-    from openadapt_ml.training.grpo.trainer import grpo_loss
+def test_policy_gradient_loss_importable():
+    """policy_gradient_loss and grpo_loss alias are importable."""
+    from openadapt_ml.training.grpo.trainer import grpo_loss, policy_gradient_loss
 
-    assert callable(grpo_loss)
+    assert callable(policy_gradient_loss)
+    assert grpo_loss is policy_gradient_loss
+
+
+def test_public_api_exports():
+    """Public API exports include parse/format functions and loss."""
+    from openadapt_ml.training.grpo import (
+        format_action_as_text,
+        grpo_loss,
+        parse_vlm_output_to_action,
+        policy_gradient_loss,
+    )
+
+    assert callable(parse_vlm_output_to_action)
+    assert callable(format_action_as_text)
+    assert callable(policy_gradient_loss)
+    assert grpo_loss is policy_gradient_loss
 
 
 # ---------------------------------------------------------------------------

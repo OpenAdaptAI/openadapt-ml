@@ -33,7 +33,13 @@ from openadapt_ml.training.grpo.rollout_collector import (
     GRPORolloutCollector,
     Rollout,
 )
-from openadapt_ml.training.grpo.trainer import GRPOTrainer
+from openadapt_ml.training.grpo.trainer import (
+    GRPOTrainer,
+    policy_gradient_loss,
+    grpo_loss,
+    parse_vlm_output_to_action,
+    format_action_as_text,
+)
 from openadapt_ml.training.grpo.cot_warmup import (
     build_cot_sft_samples,
     generate_cot_annotations,
@@ -46,6 +52,10 @@ __all__ = [
     "Rollout",
     "binary_task_success",
     "compute_group_advantages",
+    "policy_gradient_loss",
+    "grpo_loss",
+    "parse_vlm_output_to_action",
+    "format_action_as_text",
     "build_cot_sft_samples",
     "generate_cot_annotations",
 ]
