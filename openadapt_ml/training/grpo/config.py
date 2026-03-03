@@ -2,6 +2,11 @@
 
 Follows the same pattern as TRLTrainingConfig in trl_trainer.py, with
 additional fields for GRPO-specific hyperparameters and environment setup.
+
+Supports two training backends:
+    - "standalone" (default): Built-in GRPO trainer using HuggingFace + PEFT.
+    - "verl": Integration point for verl-agent/VAGEN, which provides GiGPO
+      and multi-GPU support. See verl_backend.py for details.
 """
 
 from __future__ import annotations
@@ -16,6 +21,9 @@ class GRPOConfig:
     Groups model/LoRA defaults with TRLTrainingConfig for consistency.
 
     Attributes:
+        backend: Training backend to use. "standalone" for the built-in
+            HuggingFace + PEFT trainer, or "verl" for verl-agent/VAGEN
+            integration (requires separate installation).
         model_name: HuggingFace model identifier.
         load_in_4bit: Whether to use 4-bit quantization.
         lora_r: LoRA rank.
@@ -31,6 +39,9 @@ class GRPOConfig:
         output_dir: Directory for saving checkpoints and logs.
         stuck_window: Number of identical screenshots before early termination.
     """
+
+    # Backend: "standalone" (built-in HF+PEFT) or "verl" (verl-agent/VAGEN)
+    backend: str = "standalone"
 
     # Model
     model_name: str = "Qwen/Qwen2.5-VL-7B-Instruct"
