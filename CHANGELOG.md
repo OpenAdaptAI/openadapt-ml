@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.13.0 (2026-03-03)
+
+### Features
+
+- Add docs sync trigger ([#52](https://github.com/OpenAdaptAI/openadapt-ml/pull/52),
+  [`dff678a`](https://github.com/OpenAdaptAI/openadapt-ml/commit/dff678ac7a217fb76e2a17eadd9d946d40fde59a))
+
+
 ## v0.12.0 (2026-03-03)
 
 ### Features
