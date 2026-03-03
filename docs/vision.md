@@ -19,6 +19,15 @@ because:
 2. Specialization compounds: the model learns *your* apps, *your* patterns
 3. The workflow structure is known — the model just navigates it
 
+**The experimental roadmap** (see [research thesis](research_thesis.md)):
+
+| | No Retrieval | With Retrieval |
+|---|---|---|
+| **No Fine-tuning** | 46.7% (baseline) | **100%** (validated) |
+| **Fine-tuning** | Standard SFT (baseline) | **Demo-conditioned FT** (unique value) |
+
+Phase 2 (retrieval-only) is validated. Phase 3 (demo-conditioned fine-tuning — training models to *use* demonstrations they haven't seen) is the core planned work.
+
 ## Architecture
 
 OpenAdapt treats workflows as **state machines**, not pixel sequences:
@@ -37,11 +46,15 @@ abstract states in visual reality.
 
 ## Why Specialization Wins
 
+Results on an internal synthetic login benchmark (~3 UI elements, ~20-30 training examples):
+
 | Model | Action Accuracy | Click Hit Rate |
 |-------|-----------------|----------------|
 | Qwen 2B Fine-tuned | 42.9% | 100% |
 | Claude Sonnet 4.5 | 11.2% | 0% |
 | GPT-5.1 | 23.2% | 66.7% |
+
+> **Note**: These results validate that the training pipeline works and that specialization provides signal. They do not yet represent real-world performance — evaluation on standard benchmarks (WAA, OSWorld) is ongoing via [openadapt-evals](https://github.com/OpenAdaptAI/openadapt-evals).
 
 General-purpose models must infer workflow structure from scratch on every query.
 OpenAdapt agents *know* the structure — they just navigate it.
