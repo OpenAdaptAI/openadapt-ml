@@ -118,8 +118,6 @@ class GRPOTrainer:
         # quantized VLMs), we snapshot the initial LoRA adapter state dict.
         # During KL computation, we can swap adapter weights or use
         # disable_adapter_layers() to get base model log-probs.
-        import torch
-
         self._ref_lora_state = {
             k: v.detach().clone()
             for k, v in self._model.state_dict().items()
