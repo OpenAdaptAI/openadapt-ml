@@ -333,9 +333,6 @@ def test_package_exports():
     """All expected names are exported from the grpo package."""
     from openadapt_ml.training.grpo import (
         GRPOConfig,
-        GRPORolloutCollector,
-        GRPOTrainer,
-        Rollout,
         binary_task_success,
         compute_group_advantages,
     )
@@ -394,9 +391,7 @@ def test_parse_click_custom_screen_size():
     """_parse_vlm_output_to_action uses custom screen_size."""
     from openadapt_ml.training.grpo.trainer import _parse_vlm_output_to_action
 
-    action = _parse_vlm_output_to_action(
-        "CLICK(x=0.5, y=0.5)", screen_size=(1000, 800)
-    )
+    action = _parse_vlm_output_to_action("CLICK(x=0.5, y=0.5)", screen_size=(1000, 800))
     assert action.x == 500
     assert action.y == 400
 
@@ -667,6 +662,89 @@ def test_default_screen_size_constant():
     from openadapt_ml.training.grpo.trainer import DEFAULT_SCREEN_SIZE
 
     assert DEFAULT_SCREEN_SIZE == (1920, 1080)
+
+
+# ---------------------------------------------------------------------------
+# grpo_loss tests
+# ---------------------------------------------------------------------------
+
+
+def test_grpo_loss_positive_advantage():
+    """grpo_loss returns negative loss for positive advantage (reward signal)."""
+    import torch
+
+    from openadapt_ml.training.grpo.trainer import grpo_loss
+
+    logps = torch.tensor([-1.0])
+    advantages = torch.tensor([1.0])
+    loss = grpo_loss(logps, logps.detach(), advantages)
+    # With ratio=1 and positive advantage, loss = -1 * advantage = -1.0
+    # (negative because we want to maximize log-prob for positive advantage)
+    assert loss.item() < 0
+
+
+def test_grpo_loss_negative_advantage():
+    """grpo_loss returns positive loss for negative advantage."""
+    import torch
+
+    from openadapt_ml.training.grpo.trainer import grpo_loss
+
+    logps = torch.tensor([-1.0])
+    advantages = torch.tensor([-1.0])
+    loss = grpo_loss(logps, logps.detach(), advantages)
+    assert loss.item() > 0
+
+
+def test_grpo_loss_zero_advantage():
+    """grpo_loss returns zero when advantage is zero."""
+    import torch
+
+    from openadapt_ml.training.grpo.trainer import grpo_loss
+
+    logps = torch.tensor([-1.0])
+    advantages = torch.tensor([0.0])
+    loss = grpo_loss(logps, logps.detach(), advantages)
+    assert abs(loss.item()) < 1e-6
+
+
+def test_grpo_loss_clipping():
+    """grpo_loss clips the ratio when it diverges from old policy."""
+    import torch
+
+    from openadapt_ml.training.grpo.trainer import grpo_loss
+
+    # Large ratio (current much higher than old)
+    current = torch.tensor([-0.5])
+    old = torch.tensor([-2.0])
+    advantages = torch.tensor([1.0])
+
+    loss = grpo_loss(current, old, advantages, epsilon=0.2)
+    # Ratio = exp(-0.5 - (-2.0)) = exp(1.5) ~ 4.48, clipped to 1.2
+    # Loss should be -min(4.48 * 1.0, 1.2 * 1.0) = -1.2
+    assert abs(loss.item() - (-1.2)) < 1e-4
+
+
+def test_grpo_loss_is_importable():
+    """grpo_loss is importable from the trainer module."""
+    from openadapt_ml.training.grpo.trainer import grpo_loss
+
+    assert callable(grpo_loss)
+
+
+# ---------------------------------------------------------------------------
+# Trainer internals: no legacy attributes
+# ---------------------------------------------------------------------------
+
+
+def test_trainer_uses_processor_not_tokenizer():
+    """New trainer uses _processor (HF AutoProcessor), not _tokenizer."""
+    from openadapt_ml.training.grpo import GRPOConfig, GRPOTrainer
+
+    trainer = GRPOTrainer(GRPOConfig(task_ids=["t"]))
+    assert hasattr(trainer, "_processor")
+    assert not hasattr(trainer, "_tokenizer")
+    assert not hasattr(trainer, "_is_unsloth")
+    assert not hasattr(trainer, "_ref_lora_state")
 
 
 # ---------------------------------------------------------------------------
