@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.14.1 (2026-03-04)
+
+### Bug Fixes
+
+- Lower PyTorch minimum to 2.8.0 for vLLM compatibility
+  ([#53](https://github.com/OpenAdaptAI/openadapt-ml/pull/53),
+  [`c0bc069`](https://github.com/OpenAdaptAI/openadapt-ml/commit/c0bc0698dfd4e1ac0423116f63d16e6d98f5e861))
+
+vLLM 0.11.0 pins torch==2.8.0. The GPU E2E validation (openadapt-evals PR #87) confirmed the full ML
+  stack works with PyTorch 2.8.0+cu128. The previous >=2.9.1 constraint prevented installing
+  openadapt-ml alongside vLLM in the same environment.
+
+Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.14.0 (2026-03-04)
 
 ### Features
