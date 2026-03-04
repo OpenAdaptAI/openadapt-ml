@@ -1,5 +1,9 @@
 """Minimal GRPO trainer bridging TRL/HuggingFace and openadapt-evals RLEnvironment.
 
+Note: This is the "standalone" backend. For the verl-agent backend (recommended
+for production training with GiGPO and multi-GPU support), see verl_backend.py
+or use the VAGEN training config in openadapt-evals/configs/train_waa_vagen.yaml.
+
 Uses REINFORCE with group-relative advantages (equivalent to single-epoch GRPO).
 The policy_gradient_loss function includes PPO-style clipping for future multi-epoch
 support, but with the current single-epoch design (old_logps == current_logps),
