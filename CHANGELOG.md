@@ -1,6 +1,36 @@
 # CHANGELOG
 
 
+## v0.14.0 (2026-03-04)
+
+### Features
+
+- Add dual training backend support (standalone + verl-agent)
+  ([#51](https://github.com/OpenAdaptAI/openadapt-ml/pull/51),
+  [`4419b21`](https://github.com/OpenAdaptAI/openadapt-ml/commit/4419b21eaae9ee2e984d27cc7f2f877a03182b54))
+
+* feat: add dual training backend support (standalone + verl-agent)
+
+Add `backend` field to GRPOConfig ("standalone" or "verl") to support switching between training
+  backends:
+
+- standalone: existing trainer.py (single-GPU, episode-level rewards) - verl: verl-agent/VAGEN
+  integration (multi-GPU, GiGPO per-step credit)
+
+New verl_backend.py provides build_vagen_config() to map GRPOConfig to VAGEN-compatible config, and
+  train_with_verl() as the integration point (placeholder until full end-to-end is wired up).
+
+No existing function signatures or behavior modified.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+* style: format verl_backend.py with ruff
+
+---------
+
+Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.13.0 (2026-03-03)
 
 ### Features
