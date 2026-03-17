@@ -81,12 +81,12 @@ def phase2_single_rollout(
         )
 
     from openadapt_evals.adapters.base import BenchmarkAction
-    from openadapt_evals.adapters.rl_env import RLEnvironment
+    from openadapt_evals.adapters.rl_env import RLEnvironment, ResetConfig
 
     env = RLEnvironment(adapter)
 
     # Reset
-    obs = env.reset(task_id=task_id)
+    obs = env.reset(config=ResetConfig(task_id=task_id))
     if obs is None or obs.screenshot is None:
         logger.error("  Reset returned no observation or screenshot")
         return False
