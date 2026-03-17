@@ -210,10 +210,14 @@ format_action_as_text = _format_action_as_text
 def _load_model_and_processor(config: GRPOConfig) -> tuple[Any, Any]:
     """Load a VLM with LoRA using standard HuggingFace + PEFT.
 
+    If config.lora_checkpoint is set, loads an existing LoRA adapter via
+    PeftModel.from_pretrained() instead of creating a fresh one. This
+    enables GRPO fine-tuning on top of an SFT-trained LoRA.
+
     Returns:
         (model, processor) tuple. Model has LoRA adapters attached.
     """
-    from peft import LoraConfig, get_peft_model
+    from peft import LoraConfig, PeftModel, get_peft_model
     from transformers import AutoModelForVision2Seq, AutoProcessor
 
     processor = AutoProcessor.from_pretrained(config.model_name)
@@ -233,13 +237,22 @@ def _load_model_and_processor(config: GRPOConfig) -> tuple[Any, Any]:
 
     model = AutoModelForVision2Seq.from_pretrained(config.model_name, **load_kwargs)
 
-    lora_config = LoraConfig(
-        r=config.lora_r,
-        lora_alpha=config.lora_alpha,
-        target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],
-        task_type="CAUSAL_LM",
-    )
-    model = get_peft_model(model, lora_config)
+    if config.lora_checkpoint:
+        logger.info("Loading existing LoRA from %s", config.lora_checkpoint)
+        model = PeftModel.from_pretrained(
+            model,
+            config.lora_checkpoint,
+            is_trainable=True,
+        )
+    else:
+        lora_config = LoraConfig(
+            r=config.lora_r,
+            lora_alpha=config.lora_alpha,
+            target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],
+            task_type="CAUSAL_LM",
+        )
+        model = get_peft_model(model, lora_config)
+
     model.print_trainable_parameters()
 
     return model, processor

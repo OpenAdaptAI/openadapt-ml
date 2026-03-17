@@ -81,7 +81,12 @@ class GRPORolloutCollector:
             )
 
         self._config = config
-        self._adapter = WAALiveAdapter(WAALiveConfig(server_url=config.server_url))
+        self._adapter = WAALiveAdapter(
+            WAALiveConfig(
+                server_url=config.server_url,
+                evaluate_url=config.evaluate_url,
+            )
+        )
         self._env = RLEnvironment(self._adapter)
 
     @property
