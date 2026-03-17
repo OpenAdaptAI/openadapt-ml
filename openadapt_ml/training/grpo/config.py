@@ -30,8 +30,12 @@ class GRPOConfig:
         lora_alpha: LoRA alpha scaling factor.
         num_rollouts_per_step: Group size N for GRPO advantage computation.
         max_steps_per_episode: Maximum actions per rollout episode.
+        lora_checkpoint: Path to an existing LoRA adapter to resume from.
+            If set, loads the adapter via PeftModel.from_pretrained() instead
+            of creating a fresh LoRA. Useful for GRPO on top of an SFT LoRA.
         temperature: Sampling temperature for action generation during rollouts.
         server_url: URL of the WAA server for live environment interaction.
+        evaluate_url: URL of the evaluate server. If None, defaults to server_url.
         task_ids: List of WAA task IDs to train on.
         learning_rate: Optimizer learning rate for LoRA parameter updates.
         num_training_steps: Total number of GRPO training steps (outer loop).
@@ -50,6 +54,7 @@ class GRPOConfig:
     # LoRA
     lora_r: int = 16
     lora_alpha: int = 32
+    lora_checkpoint: str | None = None  # Path to existing LoRA adapter to resume from
 
     # GRPO-specific
     num_rollouts_per_step: int = 8  # Group size N
@@ -58,6 +63,7 @@ class GRPOConfig:
 
     # Environment
     server_url: str = "http://localhost:5001"
+    evaluate_url: str | None = None  # Separate evaluate endpoint; defaults to server_url
     task_ids: list[str] = field(default_factory=list)
     screen_size: tuple[int, int] = (1920, 1080)  # (width, height)
 

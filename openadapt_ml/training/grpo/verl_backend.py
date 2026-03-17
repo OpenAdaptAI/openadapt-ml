@@ -119,7 +119,20 @@ def train_with_verl(config: GRPOConfig) -> None:
     logger.info("  python -m vagen.train --config configs/train_waa_vagen.yaml")
 
     raise NotImplementedError(
-        "verl-agent training requires running via VAGEN's training script. "
-        "See docs/verl_agent_decision.md for setup instructions. "
-        "Use build_vagen_config() to generate a compatible config dict."
+        "verl-agent training runs out-of-process via VAGEN's training script, "
+        "not through this function. Use the E2E orchestration script:\n"
+        "\n"
+        "  python openadapt-evals/scripts/train_verl_e2e.py \\\n"
+        "    --server-url http://localhost:5000 \\\n"
+        "    --task-ids <TASK_ID> \\\n"
+        "    --model Qwen/Qwen2.5-VL-7B-Instruct\n"
+        "\n"
+        "Or build a VAGEN config from GRPOConfig:\n"
+        "  config_dict = build_vagen_config(config)\n"
+        "\n"
+        "See also:\n"
+        "  - openadapt-evals/scripts/train_verl_e2e.py (573-line E2E script)\n"
+        "  - openadapt-evals/configs/train_waa_vagen.yaml (Hydra config)\n"
+        "  - openadapt-evals/scripts/setup_gpu_training.sh (GPU VM setup)\n"
+        "  - docs/verl_agent_decision.md (architecture rationale)"
     )
