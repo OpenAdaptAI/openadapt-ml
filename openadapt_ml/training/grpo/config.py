@@ -63,7 +63,9 @@ class GRPOConfig:
 
     # Environment
     server_url: str = "http://localhost:5001"
-    evaluate_url: str | None = None  # Separate evaluate endpoint; defaults to server_url
+    evaluate_url: str | None = (
+        None  # Separate evaluate endpoint; defaults to server_url
+    )
     task_ids: list[str] = field(default_factory=list)
     screen_size: tuple[int, int] = (1920, 1080)  # (width, height)
 

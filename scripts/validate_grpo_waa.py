@@ -43,7 +43,9 @@ def phase1_connectivity(server_url: str, evaluate_url: str | None) -> bool:
         if r.status_code == 200 and len(r.content) > 100:
             logger.info("  /screenshot OK (%d bytes)", len(r.content))
         else:
-            logger.error("  /screenshot failed: status=%d, len=%d", r.status_code, len(r.content))
+            logger.error(
+                "  /screenshot failed: status=%d, len=%d", r.status_code, len(r.content)
+            )
             return False
     except Exception as e:
         logger.error("  /screenshot unreachable: %s", e)
@@ -61,15 +63,19 @@ def phase1_connectivity(server_url: str, evaluate_url: str | None) -> bool:
     return True
 
 
-def phase2_single_rollout(server_url: str, evaluate_url: str | None, task_id: str, mock: bool) -> bool:
+def phase2_single_rollout(
+    server_url: str, evaluate_url: str | None, task_id: str, mock: bool
+) -> bool:
     """Phase 2: Reset env, take one action, get reward."""
     logger.info("=== Phase 2: Single Rollout ===")
 
     if mock:
         from openadapt_evals.adapters.waa.mock import WAAMockAdapter
+
         adapter = WAAMockAdapter()
     else:
         from openadapt_evals.adapters.waa.live import WAALiveAdapter, WAALiveConfig
+
         adapter = WAALiveAdapter(
             WAALiveConfig(server_url=server_url, evaluate_url=evaluate_url)
         )
@@ -101,7 +107,9 @@ def phase2_single_rollout(server_url: str, evaluate_url: str | None, task_id: st
     return True
 
 
-def phase3_model_inference(server_url: str, evaluate_url: str | None, model_name: str, task_id: str, mock: bool) -> bool:
+def phase3_model_inference(
+    server_url: str, evaluate_url: str | None, model_name: str, task_id: str, mock: bool
+) -> bool:
     """Phase 3: Load model, generate action from screenshot."""
     logger.info("=== Phase 3: Model Inference ===")
 
@@ -133,6 +141,7 @@ def phase3_model_inference(server_url: str, evaluate_url: str | None, model_name
         screenshot = Image.new("RGB", (1920, 1080), color=(50, 50, 80))
     else:
         import requests
+
         r = requests.get(f"{server_url}/screenshot", timeout=10)
         screenshot = Image.open(io.BytesIO(r.content))
 
@@ -151,10 +160,12 @@ def phase3_model_inference(server_url: str, evaluate_url: str | None, model_name
     inputs = {k: v.to(model.device) for k, v in inputs.items()}
 
     with torch.no_grad():
-        outputs = model.generate(**inputs, max_new_tokens=100, temperature=0.7, do_sample=True)
+        outputs = model.generate(
+            **inputs, max_new_tokens=100, temperature=0.7, do_sample=True
+        )
 
     decoded = processor.decode(
-        outputs[0][inputs["input_ids"].shape[1]:],
+        outputs[0][inputs["input_ids"].shape[1] :],
         skip_special_tokens=True,
     )
     logger.info("  Model output: %s", decoded.strip()[:200])
@@ -197,7 +208,11 @@ def phase4_single_training_step(
         )
 
         trainer = GRPOTrainer(config)
-        logger.info("  Config: rollouts=%d, max_steps=%d", config.num_rollouts_per_step, config.max_steps_per_episode)
+        logger.info(
+            "  Config: rollouts=%d, max_steps=%d",
+            config.num_rollouts_per_step,
+            config.max_steps_per_episode,
+        )
 
         t0 = time.time()
         checkpoint_path = trainer.train()
@@ -208,6 +223,7 @@ def phase4_single_training_step(
 
         # Verify checkpoint exists
         from pathlib import Path
+
         ckpt = Path(checkpoint_path)
         if not ckpt.exists():
             logger.error("  Checkpoint directory missing!")
@@ -283,10 +299,44 @@ def main() -> int:
 
     phases = [
         (1, lambda: phase1_connectivity(args.server_url, args.evaluate_url)),
-        (2, lambda: phase2_single_rollout(args.server_url, args.evaluate_url, args.task_id, args.mock)),
-        (3, lambda: phase3_model_inference(args.server_url, args.evaluate_url, args.model_name, args.task_id, args.mock)),
-        (4, lambda: phase4_single_training_step(args.server_url, args.evaluate_url, args.model_name, args.task_id, args.lora_checkpoint, args.mock)),
-        (5, lambda: phase5_multi_step_training(args.server_url, args.evaluate_url, args.model_name, args.task_id, args.lora_checkpoint, args.mock)),
+        (
+            2,
+            lambda: phase2_single_rollout(
+                args.server_url, args.evaluate_url, args.task_id, args.mock
+            ),
+        ),
+        (
+            3,
+            lambda: phase3_model_inference(
+                args.server_url,
+                args.evaluate_url,
+                args.model_name,
+                args.task_id,
+                args.mock,
+            ),
+        ),
+        (
+            4,
+            lambda: phase4_single_training_step(
+                args.server_url,
+                args.evaluate_url,
+                args.model_name,
+                args.task_id,
+                args.lora_checkpoint,
+                args.mock,
+            ),
+        ),
+        (
+            5,
+            lambda: phase5_multi_step_training(
+                args.server_url,
+                args.evaluate_url,
+                args.model_name,
+                args.task_id,
+                args.lora_checkpoint,
+                args.mock,
+            ),
+        ),
     ]
 
     # Skip phase 1 when using mock (no server to connect to)
