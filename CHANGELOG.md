@@ -1,13 +1,89 @@
 # CHANGELOG
 
 
+## v0.15.0 (2026-03-19)
+
+### Bug Fixes
+
+- Make heavy ML dependencies optional for lightweight installs
+  ([#57](https://github.com/OpenAdaptAI/openadapt-ml/pull/57),
+  [`aa954ba`](https://github.com/OpenAdaptAI/openadapt-ml/commit/aa954ba9b49024b834d4c6bbc33e16acf2ad51e7))
+
+* fix: make heavy ML dependencies optional for lightweight installs
+
+Move torch, torchvision, bitsandbytes, peft, and transformers from required dependencies to
+  [project.optional-dependencies.training]. Wrap all top-level imports of these packages in
+  try/except ImportError so the package can be imported without them installed.
+
+This unblocks lightweight consumers (e.g. Wright worker installing openadapt-evals) that don't need
+  local model training/inference. Users who need training can install with: pip install
+  openadapt-ml[training]
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+* style: fix ruff formatting in qwen_vl.py
+
+---------
+
+Co-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+- Use ResetConfig for RLEnvironment.reset() in validation script
+  ([#56](https://github.com/OpenAdaptAI/openadapt-ml/pull/56),
+  [`942a2f3`](https://github.com/OpenAdaptAI/openadapt-ml/commit/942a2f3b8c3654e4b4d4bf59977f4015e856e8e5))
+
+The validation script called env.reset(task_id=...) but the actual API is
+  env.reset(config=ResetConfig(task_id=...)). This caused Phase 2 to fail with TypeError.
+
+Co-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+### Chores
+
+- Trigger release
+  ([`c9da079`](https://github.com/OpenAdaptAI/openadapt-ml/commit/c9da0791ab05051582096041bda9973d30f9f657))
+
+### Documentation
+
+- Add LoRA-per-task design document ([#54](https://github.com/OpenAdaptAI/openadapt-ml/pull/54),
+  [`d6d63b6`](https://github.com/OpenAdaptAI/openadapt-ml/commit/d6d63b63a34446bfc87ac0a7b934079a185f6874))
+
+Literature-backed design for task-specific LoRA adapters with runtime routing. Covers architecture,
+  training pipeline, data collection (including correction flywheel as training data source), update
+  economics, and validation plan. Positioned as one experiment track within the broader OpenAdapt
+  experimentation framework.
+
+Co-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+### Features
+
+- Add GRPO validation infrastructure and LoRA checkpoint support
+  ([#55](https://github.com/OpenAdaptAI/openadapt-ml/pull/55),
+  [`1b8ae78`](https://github.com/OpenAdaptAI/openadapt-ml/commit/1b8ae78dd1ba0a996b0dd6e9f21727cd049e5864))
+
+* feat: add evaluate_url, lora_checkpoint, validation script, and CLI for GRPO training
+
+- Add evaluate_url field to GRPOConfig for separate evaluate endpoint - Add lora_checkpoint field to
+  resume GRPO from existing SFT LoRA adapter - Pass evaluate_url through rollout collector to
+  WAALiveConfig - Load existing LoRA via PeftModel.from_pretrained() when lora_checkpoint set -
+  Update verl_backend.py error message with actionable instructions - Add 5-phase validation script
+  (connectivity → rollout → inference → train → multi-step) - Add CLI entry point
+  (scripts/run_grpo.py) for running GRPO without writing Python
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+* style: fix ruff formatting in config and validation script
+
+---------
+
+Co-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+
 ## v0.14.1 (2026-03-04)
 
 ### Bug Fixes
 
 - Lower PyTorch minimum to 2.8.0 for vLLM compatibility
   ([#53](https://github.com/OpenAdaptAI/openadapt-ml/pull/53),
-  [`c0bc069`](https://github.com/OpenAdaptAI/openadapt-ml/commit/c0bc0698dfd4e1ac0423116f63d16e6d98f5e861))
+  [`60bd60c`](https://github.com/OpenAdaptAI/openadapt-ml/commit/60bd60c66ef4a81699d6e85a42e8af0860ad37b6))
 
 vLLM 0.11.0 pins torch==2.8.0. The GPU E2E validation (openadapt-evals PR #87) confirmed the full ML
   stack works with PyTorch 2.8.0+cu128. The previous >=2.9.1 constraint prevented installing
@@ -22,7 +98,7 @@ Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
 
 - Add dual training backend support (standalone + verl-agent)
   ([#51](https://github.com/OpenAdaptAI/openadapt-ml/pull/51),
-  [`4419b21`](https://github.com/OpenAdaptAI/openadapt-ml/commit/4419b21eaae9ee2e984d27cc7f2f877a03182b54))
+  [`9cccc49`](https://github.com/OpenAdaptAI/openadapt-ml/commit/9cccc49af780d54a0c155320aea1f5d14bcd19a4))
 
 * feat: add dual training backend support (standalone + verl-agent)
 
@@ -51,7 +127,7 @@ Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
 ### Features
 
 - Add docs sync trigger ([#52](https://github.com/OpenAdaptAI/openadapt-ml/pull/52),
-  [`dff678a`](https://github.com/OpenAdaptAI/openadapt-ml/commit/dff678ac7a217fb76e2a17eadd9d946d40fde59a))
+  [`8cb5e8c`](https://github.com/OpenAdaptAI/openadapt-ml/commit/8cb5e8c8f24f21445b5377fe031e0e521f03fc46))
 
 
 ## v0.12.0 (2026-03-03)
@@ -60,7 +136,7 @@ Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
 
 - Add GRPO training module with minimal TRL bridge
   ([#34](https://github.com/OpenAdaptAI/openadapt-ml/pull/34),
-  [`339e5d3`](https://github.com/OpenAdaptAI/openadapt-ml/commit/339e5d35f8c7d0c9880ad3bed9cc748ee7e77945))
+  [`40d2f73`](https://github.com/OpenAdaptAI/openadapt-ml/commit/40d2f732119c461a69814ba4118244072ae8b757))
 
 * docs: add experimental roadmap and evidence context to vision
 
@@ -203,7 +279,7 @@ Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
 
 - **docs**: Require conventional commit format for PR titles
   ([#32](https://github.com/OpenAdaptAI/openadapt-ml/pull/32),
-  [`303f54f`](https://github.com/OpenAdaptAI/openadapt-ml/commit/303f54f64a342044fddd26ffdd835b006c2a48a5))
+  [`729c289`](https://github.com/OpenAdaptAI/openadapt-ml/commit/729c289e3f26b58be0d2e2d7a2efe7de147bed62))
 
 PR titles become squash merge commit messages. Without the fix:/feat: prefix,
   python-semantic-release skips the release. Document this requirement prominently in CLAUDE.md.
@@ -213,7 +289,7 @@ Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
 ### Documentation
 
 - Enforce branch protection rules ([#30](https://github.com/OpenAdaptAI/openadapt-ml/pull/30),
-  [`afad981`](https://github.com/OpenAdaptAI/openadapt-ml/commit/afad9810bc51909bc86237378b2fb5356c569790))
+  [`3f065a1`](https://github.com/OpenAdaptAI/openadapt-ml/commit/3f065a129441d0f67b731539860ba4b922996153))
 
 * docs: add mandatory branch/PR rule to CLAUDE.md
 
@@ -236,7 +312,7 @@ Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
 ### Bug Fixes
 
 - **modal**: Fix inference container image and multi-modal message handling
-  ([`88e4c09`](https://github.com/OpenAdaptAI/openadapt-ml/commit/88e4c09dcfdf26acda0b4b35d064c68aa297c895))
+  ([`6aef712`](https://github.com/OpenAdaptAI/openadapt-ml/commit/6aef712b443aec9c2b52b82c16cafed065c51fd0))
 
 - Pin transformers==4.57.3 (matches local, has Qwen3-VL support) - Add torchvision dependency
   (required by AutoVideoProcessor) - Add fallback: AutoModelForVision2Seq ->
@@ -253,7 +329,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 ### Features
 
 - **modal**: Add inference serving with call_inference API
-  ([`57e5c5f`](https://github.com/OpenAdaptAI/openadapt-ml/commit/57e5c5ff9bfefc69003c608981f2e702b0507e65))
+  ([`f45c524`](https://github.com/OpenAdaptAI/openadapt-ml/commit/f45c524f92c8b7c28651e936aae983d8316e86ee))
 
 - Add _build_inference_app() for Modal GPU inference with PEFT adapter - Add
   upload_adapter_to_volume() for uploading adapters to Modal volume - Add call_inference() as the
@@ -269,7 +345,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 ### Bug Fixes
 
 - **modal**: Apply fixes from first successful Modal training run
-  ([`120c903`](https://github.com/OpenAdaptAI/openadapt-ml/commit/120c903065b0dc15936bc1a58da7ec2e1b84e6af))
+  ([`3b38b77`](https://github.com/OpenAdaptAI/openadapt-ml/commit/3b38b776bb8ace98840b8bba45e7b773507185b9))
 
 - Add `serialized=True` to @app.function for non-global-scope support - Auto-create volume before
   upload, add `--force` for overwrites - Fix variable scoping (`vol = training_volume`) inside
@@ -285,7 +361,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 ### Features
 
 - **cloud**: Add Vast.ai and Modal GPU providers
-  ([`5812f89`](https://github.com/OpenAdaptAI/openadapt-ml/commit/5812f89db83f6be71202b0cc6fec587554b11ec7))
+  ([`dd0aad2`](https://github.com/OpenAdaptAI/openadapt-ml/commit/dd0aad23b69d66d1b8759513ece1fc97bf73a753))
 
 Vast.ai (~$0.17/hr A10): SSH+rsync marketplace model with full CLI (list, launch, terminate, train)
   matching lambda_labs.py pattern. Includes GPU search, --gpu-wait retry, auto-convert --demo-dir
@@ -306,7 +382,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 ### Features
 
 - **train**: Add end-to-end pipeline automation with --demo-dir flag
-  ([`b874018`](https://github.com/OpenAdaptAI/openadapt-ml/commit/b874018d45b174f4f9c6bacb855f571f91612cf0))
+  ([`d883e39`](https://github.com/OpenAdaptAI/openadapt-ml/commit/d883e39d26d0aa45c780176a52f9e9d9329fa848))
 
 Add prepare_bundle() and generate_screenshot_mapping() to convert_demos.py for single-call demo
   conversion. Extend both train.py and lambda_labs.py train commands with --demo-dir,
@@ -322,7 +398,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 
 - Sft training pipeline with demo conversion, Lambda Labs integration, and data persistence
   ([#29](https://github.com/OpenAdaptAI/openadapt-ml/pull/29),
-  [`e8baa69`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e8baa692a30c19c24981ac5c2c25e7e1462e26cc))
+  [`e56c9e4`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e56c9e4a581b46c697188b3b2674b850d8225a4f))
 
 * feat(training): add demo conversion pipeline for ms-swift SFT format
 
@@ -442,7 +518,7 @@ Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
 
 - **ci**: Use v9 branch config for python-semantic-release
   ([#28](https://github.com/OpenAdaptAI/openadapt-ml/pull/28),
-  [`2a79519`](https://github.com/OpenAdaptAI/openadapt-ml/commit/2a7951959984ee49082bdbbe7700cc873385caac))
+  [`bfe7092`](https://github.com/OpenAdaptAI/openadapt-ml/commit/bfe7092f3405a66cd058fd1523f23658dabbc076))
 
 Replace `branch = "main"` (v7/v8 key) with `[tool.semantic_release.branches.main]` table (v9 key).
   The old key is silently ignored by v9, causing releases to never trigger on the main branch.
@@ -455,7 +531,7 @@ Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
 ### Features
 
 - **demo-prompt**: Add VLM-annotated traces for 3 recorded demos
-  ([`5462725`](https://github.com/OpenAdaptAI/openadapt-ml/commit/5462725bbb753979072398cca2b3619fa640987a))
+  ([`6d2e0a9`](https://github.com/OpenAdaptAI/openadapt-ml/commit/6d2e0a9b27e3f3d8537aa0e277166f8377cd9b36))
 
 Ran annotation pipeline (GPT-4o) on all 3 recorded captures: - 37e10fc4 (notifications): 5 steps —
   turn off system notifications - 0c9dda13 (archive): 9 steps — create Archive folder, move .docx
@@ -471,7 +547,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 ### Bug Fixes
 
 - **deps**: Bump openadapt-capture to >=0.3.0, add uv.sources
-  ([`26b10d0`](https://github.com/OpenAdaptAI/openadapt-ml/commit/26b10d0014b3145c757d7b86fe414690835b5ae6))
+  ([`c120b0e`](https://github.com/OpenAdaptAI/openadapt-ml/commit/c120b0e0ea4d3999ef42fea6749130a52f57aed7))
 
 The new recording format uses recording.db (not capture.db). Local editable source ensures lockfile
   resolves correctly.
@@ -482,24 +558,24 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 
 - Fix ruff formatting for migrated import references
   ([#27](https://github.com/OpenAdaptAI/openadapt-ml/pull/27),
-  [`a4628f8`](https://github.com/OpenAdaptAI/openadapt-ml/commit/a4628f8482a50d1b9a7c1a08f7eb86e87a107a80))
+  [`36fd74c`](https://github.com/OpenAdaptAI/openadapt-ml/commit/36fd74c115ac042224e9766aba942d8802bb4310))
 
 Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
 
 ### Documentation
 
 - Add demo GIFs back to README
-  ([`f23daa6`](https://github.com/OpenAdaptAI/openadapt-ml/commit/f23daa63fd3f4d0a3cd8900a4815691843b1c093))
+  ([`f725872`](https://github.com/OpenAdaptAI/openadapt-ml/commit/f7258720cd8d382ccc7916cb08e1922821255166))
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 
 - Rewrite CLAUDE.md — remove migration guide, match pure ML scope
-  ([`c9be969`](https://github.com/OpenAdaptAI/openadapt-ml/commit/c9be9690871481f437020a27792bdd76a41f0ea5))
+  ([`392bd0e`](https://github.com/OpenAdaptAI/openadapt-ml/commit/392bd0e4665a1851927f51ce5c24a229360290f4))
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 
 - Rewrite README for professional open-source style
-  ([`e393edb`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e393edb42a71821f0c2cbaf16cb84ddd4804c216))
+  ([`e26032b`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e26032b0457946d1ad0465434f6d4f4161e366ec))
 
 Replace 1100-line README containing stale VM/pool references with clean 220-line README reflecting
   what the package actually contains post-migration. Use test.yml badge instead of release.yml for
@@ -509,7 +585,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 
 - Update README references to migrated CLI
   ([#26](https://github.com/OpenAdaptAI/openadapt-ml/pull/26),
-  [`71ffaad`](https://github.com/OpenAdaptAI/openadapt-ml/commit/71ffaad20bb6ecac0f40ec2dff82c69caa3a3e0d))
+  [`b56a245`](https://github.com/OpenAdaptAI/openadapt-ml/commit/b56a2452342691f4a42ca167e5ca6b39d41d818e))
 
 * feat: remove evaluation infrastructure (moved to openadapt-evals)
 
@@ -552,7 +628,7 @@ Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
 ### Features
 
 - **demo-prompt**: Add VLM annotation pipeline for recorded demos
-  ([`2ef7f64`](https://github.com/OpenAdaptAI/openadapt-ml/commit/2ef7f64644ea3f8aae21c620d0558bd2a4acef84))
+  ([`d1c1bc7`](https://github.com/OpenAdaptAI/openadapt-ml/commit/d1c1bc7832431541e31749f3545f04bb0c0fbd1e))
 
 Converts raw recordings (coordinates + screenshots) into structured text traces matching the
   hand-written demo format. Uses VLM to annotate each step with screen observation, intent, semantic
@@ -574,7 +650,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 
 - Remove evaluation infrastructure (moved to openadapt-evals)
   ([#25](https://github.com/OpenAdaptAI/openadapt-ml/pull/25),
-  [`2d57d02`](https://github.com/OpenAdaptAI/openadapt-ml/commit/2d57d028411cc591eb9459ef25fc91b8c00839ca))
+  [`ca50a77`](https://github.com/OpenAdaptAI/openadapt-ml/commit/ca50a77b7e397ca5e5d8e72a4f15dfbad21b61d4))
 
 * feat: remove evaluation infrastructure (moved to openadapt-evals)
 
@@ -616,7 +692,7 @@ Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
 
 - **cli**: Write correct dict format for --task in run command
   ([#24](https://github.com/OpenAdaptAI/openadapt-ml/pull/24),
-  [`e2bba55`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e2bba555bf04941a2bf50fa4ca95847868e66369))
+  [`97f55a7`](https://github.com/OpenAdaptAI/openadapt-ml/commit/97f55a7fdf2d4bb79f96c8b917934380c6f6130d))
 
 WAA's run.py expects test config as {domain: [task_ids...]} dict, but --task wrote a bare JSON array
   [task_id] causing TypeError when run.py indexes by domain string key.
@@ -633,7 +709,7 @@ Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
 
 - Remove broken WAA submodule, embed startup script
   ([#22](https://github.com/OpenAdaptAI/openadapt-ml/pull/22),
-  [`075592b`](https://github.com/OpenAdaptAI/openadapt-ml/commit/075592b5217ea836514ead062f3875e444f0deff))
+  [`d5e0548`](https://github.com/OpenAdaptAI/openadapt-ml/commit/d5e05488a08421d4e1170e64cf11244b7d42be77))
 
 The vendor/WindowsAgentArena submodule pointed to unpushed local commits (a956c5b) that don't exist
   upstream, breaking git-based pip installs.
@@ -646,7 +722,7 @@ Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
 
 - **ci**: Use ADMIN_TOKEN for release automation on protected branches
   ([#23](https://github.com/OpenAdaptAI/openadapt-ml/pull/23),
-  [`177c1e4`](https://github.com/OpenAdaptAI/openadapt-ml/commit/177c1e4a95984dfd6743af152acc1041a5ae8618))
+  [`93b079d`](https://github.com/OpenAdaptAI/openadapt-ml/commit/93b079d4fed68c6547d2ea27e11d8d8725a5fb3e))
 
 GITHUB_TOKEN cannot push version-bump commits to branches with PR protection. Use org-level
   ADMIN_TOKEN instead, with skip-check to prevent infinite loops on release commits.
@@ -657,7 +733,7 @@ Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
 
 - **benchmarks**: Extract library API from CLI
   ([#21](https://github.com/OpenAdaptAI/openadapt-ml/pull/21),
-  [`f4be903`](https://github.com/OpenAdaptAI/openadapt-ml/commit/f4be903d74a97267ac68d7efd292dcc85ab36ff6))
+  [`f8cac6c`](https://github.com/OpenAdaptAI/openadapt-ml/commit/f8cac6c7c61a251f76df42a4d66f762b517ad897))
 
 * refactor(benchmarks): extract library API from CLI for programmatic usage
 
@@ -697,7 +773,7 @@ Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
 ### Code Style
 
 - **cli**: Run ruff formatter
-  ([`84fb35a`](https://github.com/OpenAdaptAI/openadapt-ml/commit/84fb35a73c68bf7b0825cc2af6bbdf06f56e79ad))
+  ([`714268c`](https://github.com/OpenAdaptAI/openadapt-ml/commit/714268c1386129dcc2a63256a9e5c88a8120a7d1))
 
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
@@ -705,7 +781,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - **benchmarks**: Add pool viewer and auto-shutdown
   ([#20](https://github.com/OpenAdaptAI/openadapt-ml/pull/20),
-  [`2aeb81c`](https://github.com/OpenAdaptAI/openadapt-ml/commit/2aeb81c7b732d6adb0daa5839933afca0cb5cf3e))
+  [`36c7206`](https://github.com/OpenAdaptAI/openadapt-ml/commit/36c720679a0e0c8265cd1409d7258a008a72fe39))
 
 * feat(benchmarks): add HTML viewer for WAA pool benchmark results
 
@@ -772,7 +848,7 @@ Co-authored-by: Claude Opus 4.5 <noreply@anthropic.com>
 ### Bug Fixes
 
 - **cli**: Resolve ruff linter errors
-  ([`210a31f`](https://github.com/OpenAdaptAI/openadapt-ml/commit/210a31fcc054238a08e609520bdf57c312600d72))
+  ([`6084161`](https://github.com/OpenAdaptAI/openadapt-ml/commit/6084161b47a628a94ada31e35fa4589680ac9de2))
 
 - Replace bare `except:` with `except Exception:` - Remove unused f-string prefixes - Remove unused
   variable assignments - Remove unused imports
@@ -783,7 +859,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - **readme**: Add parallel WAA evaluation, fix build badge
   ([#19](https://github.com/OpenAdaptAI/openadapt-ml/pull/19),
-  [`fea0a10`](https://github.com/OpenAdaptAI/openadapt-ml/commit/fea0a10c514b87a8a73310a142acb73a6b31146e))
+  [`3f74b55`](https://github.com/OpenAdaptAI/openadapt-ml/commit/3f74b552f6306a70c21f083a50f02ca053f8d897))
 
 * docs(readme): add parallel WAA evaluation section, fix build badge
 
@@ -810,7 +886,7 @@ Co-authored-by: Claude Opus 4.5 <noreply@anthropic.com>
 ### Bug Fixes
 
 - **cli**: Improve pool-create reliability and error handling
-  ([`f23bd57`](https://github.com/OpenAdaptAI/openadapt-ml/commit/f23bd571a76c361d9e46d99820728ffdedb5cef5))
+  ([`6ead5ff`](https://github.com/OpenAdaptAI/openadapt-ml/commit/6ead5ffc73aa8ed9648526bfaa48c8d5ec83198f))
 
 - Properly clean up test VM and associated resources during quota check - Use sudo for docker pull
   (usermod not effective in same session) - Add pool-cleanup command for orphaned resources - Show
@@ -819,7 +895,7 @@ Co-authored-by: Claude Opus 4.5 <noreply@anthropic.com>
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - **pool**: Use WAA native task distribution with --worker_id/--num_workers
-  ([`ef0d8c7`](https://github.com/OpenAdaptAI/openadapt-ml/commit/ef0d8c7ecf60b1644dbc5a40ed0a05b1b4c2f597))
+  ([`69082e4`](https://github.com/OpenAdaptAI/openadapt-ml/commit/69082e4dfe48f1e2d20e5917864ca3ad736d4c79))
 
 - Fixed task distribution: WAA ignores --start_idx/--num_tasks, use native --worker_id and
   --num_workers parameters instead - Worker 0 gets tasks 0, N, 2N... Worker 1 gets tasks 1, N+1,
@@ -833,19 +909,19 @@ Tested: 2-worker pool running 4 tasks in parallel successfully
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - **waa**: Use D4ds_v4 VM size for quota compatibility
-  ([`2a51a97`](https://github.com/OpenAdaptAI/openadapt-ml/commit/2a51a976f10db135ed79971162f5605de944dd6e))
+  ([`8dfa40d`](https://github.com/OpenAdaptAI/openadapt-ml/commit/8dfa40d7aeb7e0266f81546438c519cb945626ce))
 
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - **waa**: Use D8ds_v5 VM size for Azure ML workers
-  ([`71a0fdd`](https://github.com/OpenAdaptAI/openadapt-ml/commit/71a0fddfa4216a49b3a37c1ff1cc2d98d1f605a1))
+  ([`e9dc820`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e9dc820b2cec517a8e4cdb5cc74189af080c4788))
 
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 ### Documentation
 
 - Add Azure ML log streaming and cost tracking guides
-  ([`59c3a3e`](https://github.com/OpenAdaptAI/openadapt-ml/commit/59c3a3ef852d747599de53fe74f660aea6d5b033))
+  ([`728f274`](https://github.com/OpenAdaptAI/openadapt-ml/commit/728f2747f105a7691dff6889294f0a1d84bd60b4))
 
 Document the new CLI commands for: - Live log streaming from Azure ML jobs - Cost tracking for
   compute instances - Teardown procedures
@@ -855,7 +931,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 ### Features
 
 - **cli**: Add Azure ML log streaming, cost tracking, and teardown
-  ([`59e3cf7`](https://github.com/OpenAdaptAI/openadapt-ml/commit/59e3cf7fbdb53f07866709efd60b05a1aa511ed5))
+  ([`401e36d`](https://github.com/OpenAdaptAI/openadapt-ml/commit/401e36dd2f50a959ba0b022c2b0bef9f5a9a015b))
 
 Add comprehensive Azure ML management commands: - azure-ml-stream: Stream logs from running jobs
   using Python SDK with account key auth (works around DefaultAzureCredential permission issues) -
@@ -868,7 +944,7 @@ Also improves: - azure-ml-quota: Shows both ML Dedicated quota (what Azure ML ac
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - **cli**: Add Azure ML status, VNC, and monitor commands
-  ([`7985cff`](https://github.com/OpenAdaptAI/openadapt-ml/commit/7985cff95cc50d0313b3f3cb8ff5a1a1de039a71))
+  ([`055ecc3`](https://github.com/OpenAdaptAI/openadapt-ml/commit/055ecc33027f560a06459cd65b4ed3446124c0c4))
 
 New commands for end-to-end Azure ML automation: - azure-ml-status: Show jobs and compute instances
   - azure-ml-vnc: Set up VNC tunnel to compute instance - azure-ml-monitor: Monitor jobs with auto
@@ -877,7 +953,7 @@ New commands for end-to-end Azure ML automation: - azure-ml-status: Show jobs an
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - **cli**: Add azure-ml-quota command for quota management
-  ([`eecb3a4`](https://github.com/OpenAdaptAI/openadapt-ml/commit/eecb3a461c2b5f6882755dab52f2cfb0c9a9616a))
+  ([`5b34170`](https://github.com/OpenAdaptAI/openadapt-ml/commit/5b34170dd5c35969ea1c89733ccaf8b41f91a0a5))
 
 Semi-automated quota increase workflow: - Checks current quota for WAA-compatible VM families -
   Shows which families have sufficient quota - Opens Azure Portal quota page with instructions -
@@ -888,7 +964,7 @@ Usage: uv run python -m openadapt_ml.benchmarks.cli azure-ml-quota
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - **cli**: Add multi-VM pool commands for parallel WAA evaluation
-  ([`005664a`](https://github.com/OpenAdaptAI/openadapt-ml/commit/005664ab0ec6c425ac9ebe1af19b23e552b9bf90))
+  ([`d988e56`](https://github.com/OpenAdaptAI/openadapt-ml/commit/d988e56d8954519ed28e01b47e88432b8c7e5672))
 
 Add pool-create, pool-wait, and pool-run commands for running WAA benchmarks across multiple VMs in
   parallel:
@@ -911,7 +987,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 ### Refactoring
 
 - **waa**: Update submodule with SDK v2 migration
-  ([`5080ad6`](https://github.com/OpenAdaptAI/openadapt-ml/commit/5080ad697e88ff297dfbb14f2c0756f53ebfd496))
+  ([`241ddf8`](https://github.com/OpenAdaptAI/openadapt-ml/commit/241ddf85a36c55396969925301aa7889d017ffbb))
 
 Updates WindowsAgentArena submodule to include Azure ML SDK v2 migration that enables job submission
   from macOS ARM64.
@@ -924,7 +1000,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 ### Bug Fixes
 
 - **ci**: Remove build_command from semantic-release config
-  ([`c0d455a`](https://github.com/OpenAdaptAI/openadapt-ml/commit/c0d455a395ec27f9705b15661cf978b092772a35))
+  ([`6bd7ded`](https://github.com/OpenAdaptAI/openadapt-ml/commit/6bd7ded5b6eda6631ebe34e5a98009fb0cd22120))
 
 The python-semantic-release action runs in a Docker container where uv is not available. Let the
   workflow handle building instead.
@@ -934,7 +1010,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 ### Continuous Integration
 
 - Add auto-release workflow
-  ([`46c91fe`](https://github.com/OpenAdaptAI/openadapt-ml/commit/46c91fe137d807a738a122a60c512470612ea708))
+  ([`e6d067b`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e6d067bbc31924be6e87feff5ffca292664b86b4))
 
 Automatically bumps version and creates tags on PR merge: - feat: minor version bump - fix/perf:
   patch version bump - docs/style/refactor/test/chore/ci/build: patch version bump
@@ -944,7 +1020,7 @@ Triggers publish.yml which deploys to PyPI.
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Switch to python-semantic-release for automated versioning
-  ([`4b5ab9a`](https://github.com/OpenAdaptAI/openadapt-ml/commit/4b5ab9aaeb970b0ef4798fed9aa0a7d7d7854e01))
+  ([`404f26f`](https://github.com/OpenAdaptAI/openadapt-ml/commit/404f26f09cc5851659611795cbe902a43e44f2ad))
 
 Replaces manual commit parsing with python-semantic-release: - Automatic version bumping based on
   conventional commits - feat: -> minor, fix:/perf: -> patch - Creates GitHub releases automatically
@@ -959,7 +1035,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - **ci**: Resolve ruff linter and format errors
   ([#15](https://github.com/OpenAdaptAI/openadapt-ml/pull/15),
-  [`af64fe3`](https://github.com/OpenAdaptAI/openadapt-ml/commit/af64fe3c710b747baab7866a21b1bd87993ab426))
+  [`cfbbed9`](https://github.com/OpenAdaptAI/openadapt-ml/commit/cfbbed97ce7699b86a78ba15e9cacbc125832509))
 
 - Move warnings.warn() after imports to fix E402 in viewer files - Remove unused imports (Any,
   base64, os, Service) to fix F401 - Remove f-string without placeholders to fix F541 - Apply ruff
@@ -974,7 +1050,7 @@ Co-authored-by: Claude Opus 4.5 <noreply@anthropic.com>
 
 - **training**: Support VL models in standard transformers fallback
   ([#18](https://github.com/OpenAdaptAI/openadapt-ml/pull/18),
-  [`2b2c1df`](https://github.com/OpenAdaptAI/openadapt-ml/commit/2b2c1df49753f9498b793925772f349f4a66c00a))
+  [`84c3838`](https://github.com/OpenAdaptAI/openadapt-ml/commit/84c383803674979c5b8be62a415e39e0b5bbbbac))
 
 * fix(training): support VL models in standard transformers fallback
 
@@ -1006,7 +1082,7 @@ Co-authored-by: Claude Opus 4.5 <noreply@anthropic.com>
 ### Chores
 
 - Bump version to 0.2.1
-  ([`cd969f8`](https://github.com/OpenAdaptAI/openadapt-ml/commit/cd969f87a66379bad37c14e15fdd39386eb8613b))
+  ([`7a1c054`](https://github.com/OpenAdaptAI/openadapt-ml/commit/7a1c054101a164b01098ead5b078ce5647c32656))
 
 Includes VL model support fix (PR #18): - Auto-detect VL models and use correct model class - Handle
   Qwen2VLForConditionalGeneration properly - Set assistant_only_loss=False for VL models
@@ -1015,7 +1091,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Remove dead code and legacy fix scripts
   ([#16](https://github.com/OpenAdaptAI/openadapt-ml/pull/16),
-  [`6d808ea`](https://github.com/OpenAdaptAI/openadapt-ml/commit/6d808ea481a327027e319112359ece07fc5012b0))
+  [`0da2f5b`](https://github.com/OpenAdaptAI/openadapt-ml/commit/0da2f5be09eabb67831d316a4f9f1498fefb76e9))
 
 Delete unused files: - training/viewer_migration_example.py (72 lines) - only self-referential -
   scripts/fix_acr_auth.py (212 lines) - one-time fix now baked into setup_azure.py -
@@ -1029,7 +1105,7 @@ Verified safe to delete: - None of these files are imported by cli.py - fix_acr_
 Co-authored-by: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Update gitignore and module exports
-  ([`81f19d7`](https://github.com/OpenAdaptAI/openadapt-ml/commit/81f19d70af9bf52df566ebe60e9537f4f960404a))
+  ([`4ab39ea`](https://github.com/OpenAdaptAI/openadapt-ml/commit/4ab39ea307ab0aa19d2b11cbf992d4d032c4e856))
 
 - Add patterns for training output, synthetic data, experiment results - Add .jsonl,
   benchmark_live.json, external/, demos/ to gitignore - Export new runtime and schema types in
@@ -1040,7 +1116,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 ### Documentation
 
 - Add architecture decisions, analysis, and design documentation
-  ([`178e6e5`](https://github.com/OpenAdaptAI/openadapt-ml/commit/178e6e534674e281a2ab4590e7fd69b0813cdc13))
+  ([`4c6859f`](https://github.com/OpenAdaptAI/openadapt-ml/commit/4c6859f7ee241973b73796e887e6bac3ec5b4fda))
 
 Key documents: - ARCHITECTURE_DECISIONS.md: Technical direction and decision records -
   analysis_jan2026.md: Comprehensive analysis and strategic options - enterprise/: SAC, Design
@@ -1057,7 +1133,7 @@ Experiment results: - waa_benchmark_results_jan2026.md: WAA benchmark analysis -
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Add ecosystem planning documents
-  ([`897dedd`](https://github.com/OpenAdaptAI/openadapt-ml/commit/897dedd46cef94a2e8500850337e7187bdc61bf3))
+  ([`f3afda5`](https://github.com/OpenAdaptAI/openadapt-ml/commit/f3afda5d9837c1b6f37d1b6cce8db9dc794cac94))
 
 - github_org_update_plan.md: GitHub org profile update strategy - desktop_app_plan.md: Desktop app
   distribution (pywebview + PyInstaller) - openadapt_integration_plan.md: Core openadapt integration
@@ -1066,7 +1142,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Add GitHub organization profile content recommendations
-  ([`fac58bb`](https://github.com/OpenAdaptAI/openadapt-ml/commit/fac58bb0ab0c6f2b463d86d5139bbbd2f90d84ce))
+  ([`afaa1dc`](https://github.com/OpenAdaptAI/openadapt-ml/commit/afaa1dccd062e535dc3a47d819cc235fb4907cd2))
 
 Add comprehensive recommendations for updating the OpenAdaptAI GitHub organization profile
   including:
@@ -1082,7 +1158,7 @@ Focuses on the new modular architecture with openadapt as the unified entry poin
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Add Qwen3-VL embedding research and design documentation
-  ([`a2e81a0`](https://github.com/OpenAdaptAI/openadapt-ml/commit/a2e81a076db53ac9e83536dcac5f8cf89937c28f))
+  ([`30e85c5`](https://github.com/OpenAdaptAI/openadapt-ml/commit/30e85c56fe85c36aed5eed36b44450a7a7f38528))
 
 Add comprehensive documentation for Qwen3-VL vision-language embedding: -
   qwen3_vl_embedding_research.md: Literature review of VLM embedding extraction methods, including
@@ -1093,7 +1169,7 @@ Add comprehensive documentation for Qwen3-VL vision-language embedding: -
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Add viewer architecture survey and comparison
-  ([`894d03d`](https://github.com/OpenAdaptAI/openadapt-ml/commit/894d03da6f86906a10fe8e49121a4818639a3a28))
+  ([`21cc0fe`](https://github.com/OpenAdaptAI/openadapt-ml/commit/21cc0fedad47a270f70db564697b6dd21405fe12))
 
 Survey of viewer technologies and frameworks for training/benchmark visualization, comparing options
   like Gradio, Streamlit, Panel, and custom HTML solutions for the unified viewer architecture.
@@ -1101,12 +1177,12 @@ Survey of viewer technologies and frameworks for training/benchmark visualizatio
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Add website redesign plan
-  ([`1a25483`](https://github.com/OpenAdaptAI/openadapt-ml/commit/1a254837a92bf4ff892a305dc2648678ab46f33c))
+  ([`6710e77`](https://github.com/OpenAdaptAI/openadapt-ml/commit/6710e775b8dbfed9db260efd87584d86ce14ae3f))
 
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Pivot desktop app to uv-first distribution and propose meta-package architecture
-  ([`21a05ac`](https://github.com/OpenAdaptAI/openadapt-ml/commit/21a05acf83347b7fed2496ad17009df1e0a0f2c1))
+  ([`98e4b2c`](https://github.com/OpenAdaptAI/openadapt-ml/commit/98e4b2cee9c646072c4c04f2e09474338beec11a))
 
 - desktop_app_plan.md: Switch from PyInstaller to uv-based installation - Tier 1: Single command
   install via uv tool - Tier 2: Optional uv bundled installer (~15MB) - Tier 3: PyInstaller full
@@ -1119,7 +1195,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Update openadapt-web repository reference to new name
-  ([`ca60945`](https://github.com/OpenAdaptAI/openadapt-ml/commit/ca6094581801c9aab3bd0b8b86a6dfe7e3c3448e))
+  ([`f4176c7`](https://github.com/OpenAdaptAI/openadapt-ml/commit/f4176c7dd197685bc2555172f07c197a1f806f43))
 
 Update repository link from OpenAdapt.web to openadapt-web following the rename to match the
   lowercase-hyphen naming convention.
@@ -1129,7 +1205,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 ### Features
 
 - Add safety gate, perception integration, and representation experiments
-  ([`5ef0ef8`](https://github.com/OpenAdaptAI/openadapt-ml/commit/5ef0ef8455e97441b963f3ccff3c94fc06c2c63c))
+  ([`5778323`](https://github.com/OpenAdaptAI/openadapt-ml/commit/57783232ffbd8c8a3faf984e51c3559c4bf4673b))
 
 New modules: - runtime/safety_gate.py: Deterministic safety gate for action validation -
   perception/integration.py: Bridge between openadapt-grounding and openadapt-ml -
@@ -1144,7 +1220,7 @@ Scripts: - p1_episode_success_ab_test.py: A/B test for demo-conditioned episode 
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Add unified baseline adapters for VLM comparison
-  ([`9c323db`](https://github.com/OpenAdaptAI/openadapt-ml/commit/9c323db0fbb17beb33b975a2120eece30e014e79))
+  ([`4921030`](https://github.com/OpenAdaptAI/openadapt-ml/commit/49210308e20e2498f8a4c7670c2819622b351563))
 
 Implements a provider abstraction layer and unified baseline system for comparing Claude, GPT, and
   Gemini across multiple evaluation tracks.
@@ -1168,7 +1244,7 @@ Usage: uv run python -m openadapt_ml.baselines.cli list-models uv run python -m
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - **experiments**: Add representation shootout and SOM evaluation results
-  ([`9951c40`](https://github.com/OpenAdaptAI/openadapt-ml/commit/9951c4078edcd1a409a38d82c9667785bf5df3f1))
+  ([`e6aca89`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e6aca89d9f8f9f5c94bee28ee091d17f0d8858f6))
 
 Add experiment results and artifacts: - representation_shootout results comparing embedding
   extraction methods - qwen_login 2b_dev_fixed plots showing base vs fine-tuned comparison -
@@ -1178,7 +1254,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - **waa**: Refactor CLI and fix Python 3.9 compatibility
   ([#14](https://github.com/OpenAdaptAI/openadapt-ml/pull/14),
-  [`5557130`](https://github.com/OpenAdaptAI/openadapt-ml/commit/5557130255cc23fa07841ef89520e35dd14f4464))
+  [`e55b610`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e55b610524300ba3665854c837327434329d489c))
 
 - Refactor CLI from 6800 to ~1300 lines with flat command structure - Add analyze command to parse
   and summarize benchmark results - Add --num-tasks flag to limit number of tasks to run - Fix
@@ -1191,7 +1267,7 @@ Co-authored-by: Claude Opus 4.5 <noreply@anthropic.com>
 
 - **benchmarks**: Consolidate to re-export from openadapt-evals
   ([#17](https://github.com/OpenAdaptAI/openadapt-ml/pull/17),
-  [`7f171e4`](https://github.com/OpenAdaptAI/openadapt-ml/commit/7f171e41abfc6a3d6065ec2abb11f73e34b11abe))
+  [`4232546`](https://github.com/OpenAdaptAI/openadapt-ml/commit/4232546292a13b6a45e1210a9452933135e740ca))
 
 * docs: add verified repo consolidation plan
 
@@ -1364,7 +1440,7 @@ v0.1.0 uses task ID format "browser_1" but tests expect "mock_browser_001" which
 Co-authored-by: Claude Opus 4.5 <noreply@anthropic.com>
 
 - **benchmarks**: Migrate to openadapt-evals package
-  ([`2e81378`](https://github.com/OpenAdaptAI/openadapt-ml/commit/2e8137830d5e42abfbd2847973684ee9313284ae))
+  ([`e6f63c7`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e6f63c79430cd965efe76c65407caba43973d449))
 
 BREAKING CHANGE: Benchmark code moved to openadapt-evals.
 
@@ -1380,7 +1456,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 ### Testing
 
 - Add unit tests for providers and baselines modules
-  ([`4942982`](https://github.com/OpenAdaptAI/openadapt-ml/commit/49429822ad5abc57eec40971eaf13558087255bf))
+  ([`a56ec04`](https://github.com/OpenAdaptAI/openadapt-ml/commit/a56ec0424482d3a5107fafd74d4cc7b6e729454a))
 
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
@@ -1390,7 +1466,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 ### Bug Fixes
 
 - Resolve test failures and SSE dashboard state conflicts
-  ([`76fa63c`](https://github.com/OpenAdaptAI/openadapt-ml/commit/76fa63c42c31991016eca9559811cfe11b487ccd))
+  ([`041912d`](https://github.com/OpenAdaptAI/openadapt-ml/commit/041912d4c1962655844a381c77d940b99cc21761))
 
 Test fixes: - test_action_parsing.py: Handle 4-value return from predict_action_from_sample() -
   test_api_adapter.py: Fix mock patch locations (openai.OpenAI, anthropic.Anthropic) - trainer.py:
@@ -1406,13 +1482,13 @@ SSE dashboard fixes: - Add phase: "ready" to Azure VM Host tasks to prevent Star
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - **cli**: Use localhost for VNC URLs via SSH tunnel
-  ([`03b23fc`](https://github.com/OpenAdaptAI/openadapt-ml/commit/03b23fcd08b58dab58d760f60f95f5af568346ae))
+  ([`947816d`](https://github.com/OpenAdaptAI/openadapt-ml/commit/947816daf563d3f7333d62a58e1e9df9c81d02ed))
 
 Probe output now correctly shows localhost:8006 instead of public IP which is not accessible without
   SSH tunnel.
 
 - **waa**: Add full Python dependencies for benchmark client
-  ([`a2cd826`](https://github.com/OpenAdaptAI/openadapt-ml/commit/a2cd8262b2f1e6a4e582ef2f293a4e5878887f78))
+  ([`0544199`](https://github.com/OpenAdaptAI/openadapt-ml/commit/05441990b839a2b76471e60298e35605cd451f46))
 
 - Add build-essential, ffmpeg, and X11 libs for package compilation - Install core packages:
   gymnasium, fabric, transformers, torch (CPU) - Install ML packages: opencv, easyocr, matplotlib,
@@ -1420,13 +1496,13 @@ Probe output now correctly shows localhost:8006 instead of public IP which is no
   layers for better caching
 
 - **waa**: Add missing pydrive and other client dependencies
-  ([`ebdc4f6`](https://github.com/OpenAdaptAI/openadapt-ml/commit/ebdc4f6a6d266d392a1a981b7b5101147919680d))
+  ([`238ff91`](https://github.com/OpenAdaptAI/openadapt-ml/commit/238ff9109ec19be6f9b4566564eb39f43ba68b7d))
 
 - **waa**: Add remaining WAA client dependencies (openpyxl, docx, etc.)
-  ([`02e5e2f`](https://github.com/OpenAdaptAI/openadapt-ml/commit/02e5e2f40bec8fd5d880048af0bbfd37c66f612d))
+  ([`678df44`](https://github.com/OpenAdaptAI/openadapt-ml/commit/678df440aadccd4cc48d41bd2924c6fc42728055))
 
 - **waa**: Copy OEM files to Samba share at container startup
-  ([`4fb26fe`](https://github.com/OpenAdaptAI/openadapt-ml/commit/4fb26fe2162996b28c2c3e1ce2b54f27eed74230))
+  ([`04d5f94`](https://github.com/OpenAdaptAI/openadapt-ml/commit/04d5f949dac9e2356b162e19430cd007411bef52))
 
 Add /copy-oem.sh startup script that copies OEM files from /oem to /tmp/smb (Samba share) at
   container startup. This fixes Windows not finding setup scripts because smb.conf is generated at
@@ -1435,12 +1511,12 @@ Add /copy-oem.sh startup script that copies OEM files from /oem to /tmp/smb (Sam
 Also update experiment doc to remove timeline estimates and add WAA baseline as in-progress.
 
 - **waa**: Copy Python env from official image to avoid 3.13 compat issues
-  ([`e5b3dc0`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e5b3dc04997ce1b2a6a86bf69ee09c30aaa3b3b2))
+  ([`4a27a22`](https://github.com/OpenAdaptAI/openadapt-ml/commit/4a27a229400e9de11c5bdc733f812b7e04a77643))
 
 ### Chores
 
 - Bump version to 0.2.0 for PyPI release
-  ([`3fac13d`](https://github.com/OpenAdaptAI/openadapt-ml/commit/3fac13de1f593676cf3aba896799bca4965db2c2))
+  ([`6aedda3`](https://github.com/OpenAdaptAI/openadapt-ml/commit/6aedda38e77b79a7efdec94e3e8366166a83a8b0))
 
 Features in this release: - TRL + Unsloth training integration (2x faster, 50% less VRAM) -
   Standardized on uv for package management - Enhanced VM CLI and WAA deployment - Comprehensive
@@ -1451,10 +1527,10 @@ Features in this release: - TRL + Unsloth training integration (2x faster, 50% l
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Remove old waa/Dockerfile (moved to waa_deploy/)
-  ([`e3bd4e3`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e3bd4e3f0ffcaaeaacd02ba2ad6c36f8d359d000))
+  ([`ad78e78`](https://github.com/OpenAdaptAI/openadapt-ml/commit/ad78e78357a5748c2a395b042b072af59182cb38))
 
 - Standardize on uv for package management
-  ([`7d5c2fe`](https://github.com/OpenAdaptAI/openadapt-ml/commit/7d5c2feaeff9a0f20e136ffae6f7499f0b775379))
+  ([`eb3aecd`](https://github.com/OpenAdaptAI/openadapt-ml/commit/eb3aecd2f84f871e139f564708b7d196e21aa917))
 
 - Replace all `pip install` with `uv add` in docs - Update cloud GPU training to use `curl ... | sh`
   for uv install - Update CLAUDE.md with enhanced VM operations guidance - Consistent `uv sync` for
@@ -1465,21 +1541,21 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Update CLAUDE.md and minor fixes
-  ([`8dbe154`](https://github.com/OpenAdaptAI/openadapt-ml/commit/8dbe15434b8474552e57e82ca657824b9f1c6efe))
+  ([`84507df`](https://github.com/OpenAdaptAI/openadapt-ml/commit/84507df6dccc0f2c2585a5aae8ed4b7b8e5138ca))
 
 - Updated CLAUDE.md with new features and documentation - trainer.py: minor improvements -
   eval_policy.py: updated for new schema - uv.lock: dependency updates
 
 - Update uv.lock
-  ([`6b82505`](https://github.com/OpenAdaptAI/openadapt-ml/commit/6b82505a453f8b972235b82c8cbab689970ba4c0))
+  ([`63797af`](https://github.com/OpenAdaptAI/openadapt-ml/commit/63797af3a938867e92587bb0f8bb36219aa824aa))
 
 ### Documentation
 
 - Add benchmark viewer screenshot to README
-  ([`e5c0516`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e5c0516171f79ec7504e19329e0eb355d456a721))
+  ([`88889c3`](https://github.com/OpenAdaptAI/openadapt-ml/commit/88889c3a71fecb6b4b7fce98e32aef53096a0a96))
 
 - Add capture format decision framework
-  ([`c60088f`](https://github.com/OpenAdaptAI/openadapt-ml/commit/c60088f147d966bd7ffe27fb569b6c804aa0460d))
+  ([`d57c27a`](https://github.com/OpenAdaptAI/openadapt-ml/commit/d57c27a58d478a439471756e2b44c29c1b9fe38e))
 
 Explores options for data format interoperability: - Option A: Native Episode output from
   openadapt-capture - Option B: Conversion layer in openadapt-ml (recommended) - Option C: Shared
@@ -1493,20 +1569,20 @@ Recommends Option B with clear guidelines for the conversion layer. Includes tex
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Add comprehensive capture migration guide with a11y integration
-  ([`9307ef6`](https://github.com/OpenAdaptAI/openadapt-ml/commit/9307ef690437c28334d2442a32d15d61253a4d80))
+  ([`779ba58`](https://github.com/OpenAdaptAI/openadapt-ml/commit/779ba588b5d01d704bee689297c12cc135c8081e))
 
 - Add design documents for SSE, retrieval, and parallelization
-  ([`fca9c94`](https://github.com/OpenAdaptAI/openadapt-ml/commit/fca9c945836a3a45973ba07de32019fe3dbdc2a2))
+  ([`464861c`](https://github.com/OpenAdaptAI/openadapt-ml/commit/464861c9f67028f4d0125fce1e13c7bcc502e759))
 
 - SSE architecture and integration guides - Demo retrieval design and experiments - WAA
   parallelization and live adapter plans - Chrome extension design for capture - Benchmark viewer UX
   improvements
 
 - Add openadapt-capture to openadapt-ml migration plan
-  ([`f3d6194`](https://github.com/OpenAdaptAI/openadapt-ml/commit/f3d6194a06844c5c9c4b53ccc72c40010494b9a0))
+  ([`447bd7e`](https://github.com/OpenAdaptAI/openadapt-ml/commit/447bd7e7d85d269ef8d3be897a4aec4ec1ad3803))
 
 - Add schema consolidation plan
-  ([`b24ea42`](https://github.com/OpenAdaptAI/openadapt-ml/commit/b24ea4260264ccc115147a23e7b68472cd138b9b))
+  ([`4d7c18a`](https://github.com/OpenAdaptAI/openadapt-ml/commit/4d7c18ad5323f7f4dac0275a605a9659c88c7108))
 
 Detailed migration plan for consolidating from two schema modules to one: - DELETE:
   openadapt_ml/schemas/ (dataclass-based, legacy) - KEEP: openadapt_ml/schema/ (Pydantic-based,
@@ -1520,13 +1596,13 @@ Includes: - Dependency analysis (22 files affected) - Field mapping between old 
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Add staged export hierarchy to enterprise guide
-  ([`e6b985b`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e6b985b29f21dfe31a01851b941d6220cd4fedea))
+  ([`f093304`](https://github.com/OpenAdaptAI/openadapt-ml/commit/f0933044796ceef8ff4c28bdcf841c030acda88f))
 
 - Episode JSON as canonical, Parquet/WebDataset as projections - Expand data loss table for flat
   formats - Mark exporters as Planned with design doc links - Add multi-step evaluation caveat
 
 - Add WAA demo recording guide for Windows captures
-  ([`213ab7b`](https://github.com/OpenAdaptAI/openadapt-ml/commit/213ab7bb7b89294501049b7f71c31b584cdfedc0))
+  ([`6d8bdb1`](https://github.com/OpenAdaptAI/openadapt-ml/commit/6d8bdb17b32369a1d5c9c6db2dff88dbcd301316))
 
 Step-by-step instructions for recording the 3 complex demos: - Task #4: Fill blank cells
   (LibreOffice Calc) - Task #5: Create chart (LibreOffice Calc) - Task #9: Archive folder (File
@@ -1539,21 +1615,21 @@ Includes setup, recording steps, export, and transfer instructions.
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Consolidate WAA CLI workflow documentation
-  ([`263ca42`](https://github.com/OpenAdaptAI/openadapt-ml/commit/263ca42e97491a4564f98cca2e9862e0051440a5))
+  ([`dbe00d0`](https://github.com/OpenAdaptAI/openadapt-ml/commit/dbe00d07d92e4d45ed4c3edad2a19894ade6c496))
 
 - Add Quick Start: Single VM section to azure_waa_setup.md - Replace manual SSH steps in CLAUDE.md
   with CLI commands - Document custom waa-auto Docker image that fixes OEM folder issue - Add vm
   probe, vm reset-windows, and other useful commands
 
 - Strengthen enterprise integration guide positioning
-  ([`e6ea3ba`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e6ea3ba1001a3a3707c95a47bcc81c6b2baad0b4))
+  ([`c093f93`](https://github.com/OpenAdaptAI/openadapt-ml/commit/c093f93d4b8971afba26498c9930ff129e691f84))
 
 Add decision boundary, requirements, retrofitting cost sections. Add data portability note
   addressing vendor lock-in concern. Add optional metadata extension pattern. Add typical
   integration workflow. Add open schema independence statement.
 
 - Update README for TRL training and PyPI installation
-  ([`a8a6055`](https://github.com/OpenAdaptAI/openadapt-ml/commit/a8a60559c020ccc127bb6375b9de4f95e7e87330))
+  ([`1c8e899`](https://github.com/OpenAdaptAI/openadapt-ml/commit/1c8e8996cb8b633719e4185af1cc90c3b38489a6))
 
 - Add Installation section with PyPI instructions (uv add openadapt-ml) - Update training section to
   reflect TRL + Unsloth integration - Update repository structure with trl_trainer.py reference -
@@ -1564,14 +1640,14 @@ Add decision boundary, requirements, retrofitting cost sections. Add data portab
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Validate demo-conditioning at n=45 (46.7% → 100%)
-  ([`49d5a20`](https://github.com/OpenAdaptAI/openadapt-ml/commit/49d5a206bc710a430155e5339107543fa60d9b7d))
+  ([`bce5a11`](https://github.com/OpenAdaptAI/openadapt-ml/commit/bce5a11173b2199217baa9163b19644f932b2fd7))
 
 - Zero-shot: 46.7% (21/45), Demo: 100% (45/45), Control: 57.8% - Improvement: +53.3 percentage
   points across 15 macOS categories - Add Parquet export design doc (derived analytics format) -
   Update enterprise guide with validated result
 
 - **experiment**: Strengthen demo-conditioning doc for expert review
-  ([`d49af59`](https://github.com/OpenAdaptAI/openadapt-ml/commit/d49af596ea96fe058640a2d86c94e8a53af231d3))
+  ([`b56faa8`](https://github.com/OpenAdaptAI/openadapt-ml/commit/b56faa8960b49ef5ae119ce2643a24715be86f29))
 
 - Add interpretation note framing result as "trajectory-conditioned disambiguation" not general
   task-solving - Highlight length-matched control in executive summary - Frame shared first action
@@ -1580,7 +1656,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
   conventions, episode success vs first-action)
 
 - **schema**: Comprehensive documentation for Episode schema
-  ([`b20b879`](https://github.com/OpenAdaptAI/openadapt-ml/commit/b20b8794fc142a619d485022b62c2da56f64450a))
+  ([`0963b75`](https://github.com/OpenAdaptAI/openadapt-ml/commit/0963b7585fc46be9b3d665a25ce0126246a13e92))
 
 - Add detailed Quick Start with code examples - Document all 24 action types with categories -
   Explain pixel vs normalized coordinate systems - Add validation and format conversion examples -
@@ -1594,7 +1670,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 ### Features
 
 - Add demo-conditioned prompting experiment and retrieval module
-  ([`8745752`](https://github.com/OpenAdaptAI/openadapt-ml/commit/874575278f9886afb1acfc1be5508228438193a6))
+  ([`f80921e`](https://github.com/OpenAdaptAI/openadapt-ml/commit/f80921e26e3c4a12231eab4e2ad55eca2f5abbd6))
 
 Validated that demo-conditioning improves first-action accuracy from 33% to 100% (n=3, preliminary
   signal). Key findings: - Benefit is semantic, not token-length (length-matched control: 67%) -
@@ -1608,7 +1684,7 @@ Statistical note: n=3 is insufficient for significance. Validation at n≥30 on 
   progress.
 
 - Add Episode JSON schema and polish benchmark viewer
-  ([`c18ae67`](https://github.com/OpenAdaptAI/openadapt-ml/commit/c18ae67eecccee331704fe04abde4b805f92f87a))
+  ([`d9e669e`](https://github.com/OpenAdaptAI/openadapt-ml/commit/d9e669e1a3e4e8150c8d7458912de27632f09ca3))
 
 Episode Schema (openadapt_ml/schema/): - Pydantic models for Episode, Step, Action, Observation -
   Schema version 1.0.0 with semver evolution policy - WAA format converter (from_waa_trajectory,
@@ -1629,7 +1705,7 @@ CLI Enhancements: - Add --auto-shutdown flag to deallocate VM after benchmark - 
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Add WAA demo-conditioned experiment with 7 manual demos
-  ([`c54b261`](https://github.com/OpenAdaptAI/openadapt-ml/commit/c54b261107600725a5ddcf6f48f73d9ee5729862))
+  ([`4f9799a`](https://github.com/OpenAdaptAI/openadapt-ml/commit/4f9799abe00c32ef89fb4ed8731b356f7e79013e))
 
 Implements hybrid demo approach for WAA benchmark: - 7 manual demos for simple tasks (settings,
   toggles, linear flows) - 3 placeholders for complex tasks needing recorded demos
@@ -1647,7 +1723,7 @@ Includes runner CLI for listing tasks and viewing demos.
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Enhanced VM CLI and WAA deployment
-  ([`1689ab4`](https://github.com/OpenAdaptAI/openadapt-ml/commit/1689ab41a34991099b3313d1f0882cfe4dec172e))
+  ([`cd95c43`](https://github.com/OpenAdaptAI/openadapt-ml/commit/cd95c436da928791293df23ec4e00485e4082ff9))
 
 CLI improvements: - Add vm deallocate, start, exec, fix-oem, docker-prune, stop-build actions - SSH
   keepalive settings (60s interval) to prevent timeouts - Docker startup check after VM restart -
@@ -1664,7 +1740,7 @@ Demo persistence validated: - scripts/p0_validate_demo_persistence.py confirms d
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Trl + Unsloth training integration
-  ([`99e34b2`](https://github.com/OpenAdaptAI/openadapt-ml/commit/99e34b2fb0cb98933683da4c3d7e845a644987aa))
+  ([`c006f2b`](https://github.com/OpenAdaptAI/openadapt-ml/commit/c006f2b00b0d010eec3864fcc81b10b5e1b1f2a9))
 
 - Add trl_trainer.py with SFTTrainer + Unsloth optimizations - Update train_from_json.py to use TRL
   trainer (2x faster, 50% less VRAM) - Remove legacy custom training loop from trainer.py - Add
@@ -1677,7 +1753,7 @@ Training command: uv run python examples/train_from_json.py --data episodes/ --o
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - **benchmark**: Add Run Benchmark UI panel and fix VNC/Docker issues
-  ([`8316bda`](https://github.com/OpenAdaptAI/openadapt-ml/commit/8316bdacbdc4ff7a3eca727de3a26921fffb0365))
+  ([`a86269e`](https://github.com/OpenAdaptAI/openadapt-ml/commit/a86269e2e2a7f328d39de990917a671c440a3654))
 
 - Add Run Benchmark panel to benchmark viewer (model, tasks, agent, domain selection) - Add POST
   /api/benchmark/start endpoint to launch benchmarks from UI - Add --domain and --task-ids CLI flags
@@ -1690,7 +1766,7 @@ The Docker cache issue caused dockurr/windows v0.00 scripts (no auto-download) t
   v5.14 (with auto-download). Fixed by adding --no-cache --pull.
 
 - **benchmarks**: Waa CLI improvements, result analysis, and viewer enhancements
-  ([`8483233`](https://github.com/OpenAdaptAI/openadapt-ml/commit/84832335f1cc75203300245f28c0d3fdc49db9c7))
+  ([`c8d1ce0`](https://github.com/OpenAdaptAI/openadapt-ml/commit/c8d1ce08226185c9ff0b9a777f31bd549a677b2f))
 
 WAA CLI: - Add `analyze` command for programmatic WAA result analysis - Remote analysis via SSH
   (--vm-ip --remote) - Local directory analysis (--results-dir) - Per-domain success rates, JSON
@@ -1704,7 +1780,7 @@ Viewer: - Add benchmark_viewer.py for WAA result visualization - Enhance local.p
   Integrate benchmarks into unified viewer
 
 - **export**: Add Parquet exporter and toolbox positioning
-  ([`e0f93f2`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e0f93f2bd567916ab805b5395378446c5dae25dc))
+  ([`bb11d62`](https://github.com/OpenAdaptAI/openadapt-ml/commit/bb11d6210443ea1c3133ccfeda3112bb8ad5ffd8))
 
 Add first-class Parquet export support: - to_parquet() / from_parquet() for Episode serialization -
   CLI: python -m openadapt_ml.export parquet --input <dir> --output <path> - Optional summary table
@@ -1715,7 +1791,7 @@ Update enterprise integration guide: - Add "What is openadapt-ml?" toolbox secti
   examples - Scope canonical claim to within openadapt-ml
 
 - **retrieval**: Add demo retrieval system and WAA live adapter
-  ([`21d48cf`](https://github.com/OpenAdaptAI/openadapt-ml/commit/21d48cf824a837f03d692c0ed448430d19ad77ae))
+  ([`b62b6f1`](https://github.com/OpenAdaptAI/openadapt-ml/commit/b62b6f1eb7dc81b99eb7787ec019f8ba1045c288))
 
 Demo Retrieval: - embeddings.py: improved embedding generation with caching - demo_retriever.py:
   semantic search for relevant demonstrations - Support for goal-based and screenshot-based
@@ -1725,7 +1801,7 @@ Benchmark Viewer: - viewer.py: standalone HTML viewer for benchmark results - wa
   evaluation adapter for WAA benchmarks - Integrated with dashboard for real-time monitoring
 
 - **schema**: Add converters between internal and external formats
-  ([`f992029`](https://github.com/OpenAdaptAI/openadapt-ml/commit/f992029b4e296f404772a588cad7da56e7109bba))
+  ([`3124992`](https://github.com/OpenAdaptAI/openadapt-ml/commit/312499279b1d3e369c0abfa7db0aaba2b6e3ea37))
 
 - from_internal_episode(): Convert schemas.sessions.Episode to schema.Episode -
   to_internal_episode(): Convert schema.Episode back to internal dict format - Document field
@@ -1740,7 +1816,7 @@ This enables bidirectional conversion between: - Internal training format (schem
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - **schema**: Add select_monitor and normalized coordinates
-  ([`e398412`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e398412b2ec7e44d8adf71e15170568836afeab8))
+  ([`da9fc16`](https://github.com/OpenAdaptAI/openadapt-ml/commit/da9fc16fbc03f0c319f5e5f1453c73df05445161))
 
 - Add action types: select_monitor, window_focus, window_resize, window_move - Add monitor_id field
   for select_monitor action - Add window_title field for window_focus action - Add
@@ -1754,7 +1830,7 @@ This enables cu-episode-v1 alignment without loss of information.
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - **waa**: Auto-build Docker image and fix tunnel detection
-  ([`0a04998`](https://github.com/OpenAdaptAI/openadapt-ml/commit/0a0499802371781d1a9f4cd18f7ab623676bc07d))
+  ([`f71e556`](https://github.com/OpenAdaptAI/openadapt-ml/commit/f71e55672da192f8372d164d3119b8b1360f114a))
 
 - CLI run-waa now automatically builds waa-auto image if missing - Added --rebuild flag to force
   image rebuild - Dockerfile: fixed IP patching, added playwright for web automation -
@@ -1766,7 +1842,7 @@ Closes #XX
 ### Refactoring
 
 - Consolidate schema to single Pydantic-based Episode module
-  ([`8c3d7c9`](https://github.com/OpenAdaptAI/openadapt-ml/commit/8c3d7c97de82263e05873ee7da8a5e1abe303d70))
+  ([`c05ad6b`](https://github.com/OpenAdaptAI/openadapt-ml/commit/c05ad6bb8a2c3682b6beed430f5a3f96ad5fcf4c))
 
 - Migrate from dual schema modules (schemas/ dataclass-based) to single canonical Pydantic schema
   (schema/episode.py) - Delete old openadapt_ml/schemas/ directory (sessions.py, validation.py) -
@@ -1790,7 +1866,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 ### Testing
 
 - Add comprehensive tests for WAA demo experiment module
-  ([`b5a5d02`](https://github.com/OpenAdaptAI/openadapt-ml/commit/b5a5d02e4b2fb6b3107ee848df5dead339281577))
+  ([`ae5930b`](https://github.com/OpenAdaptAI/openadapt-ml/commit/ae5930be3ccf91ee2bcb860f2527cffa3e262c1c))
 
 28 tests covering: - Task definitions (10 tasks, domains, difficulties) - Demo content (7 complete,
   3 placeholder) - Integration (task/demo consistency, retrieval) - Format validation (DEMONSTRATION
@@ -1801,14 +1877,14 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - Add tests for demo retrieval and WAA live adapter
-  ([`93565d0`](https://github.com/OpenAdaptAI/openadapt-ml/commit/93565d0cab4263ddbafba66439fcd4c190f39921))
+  ([`d9b6eab`](https://github.com/OpenAdaptAI/openadapt-ml/commit/d9b6eabbf22a7d7a5c6cd66cefd128b0f6e98c2d))
 
 - test_demo_retrieval.py: comprehensive tests for demo retriever - test_waa_live.py: tests for live
   WAA adapter - Updated test_retrieval.py for new embedding features - demo_retrieval_example.py:
   usage examples
 
 - Update tests for TRL trainer refactor
-  ([`b17e22d`](https://github.com/OpenAdaptAI/openadapt-ml/commit/b17e22d75ee93fb357049aabb585547e374d721b))
+  ([`0694d8d`](https://github.com/OpenAdaptAI/openadapt-ml/commit/0694d8db61cba4181f6aae425e16292c09d06fa3))
 
 
 ## v0.1.0 (2025-12-16)
@@ -1816,31 +1892,31 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 ### Bug Fixes
 
 - Consistent 'Viewer' label in nav tabs
-  ([`5e2f847`](https://github.com/OpenAdaptAI/openadapt-ml/commit/5e2f8470c3b014e1ba7cef34fc2f7978e3ee4387))
+  ([`4a6f627`](https://github.com/OpenAdaptAI/openadapt-ml/commit/4a6f627f13e939e9fb9ba594d1346e9364e3b8cc))
 
 - **dashboard**: Improve viewer/dashboard consistency and CLI commands
-  ([`a23a881`](https://github.com/OpenAdaptAI/openadapt-ml/commit/a23a88194fbcbd18de5330d28b3de9da8581d597))
+  ([`27a9857`](https://github.com/OpenAdaptAI/openadapt-ml/commit/27a9857cf731d34d6b0a53ed3bc38db4c0260768))
 
 - **dashboard**: Remove duplicate job ID and make header full-width
-  ([`15260ec`](https://github.com/OpenAdaptAI/openadapt-ml/commit/15260ecc0885c92c66ea96170bac055045f98222))
+  ([`5c3c22b`](https://github.com/OpenAdaptAI/openadapt-ml/commit/5c3c22b6cc9abd5de95df9e34ed551f601522ac8))
 
 - **dashboard**: Use subprocess for simpler http server startup
-  ([`0f9c9f9`](https://github.com/OpenAdaptAI/openadapt-ml/commit/0f9c9f9bf7e147d6cd1a532506b5083b9c1024e2))
+  ([`4e74142`](https://github.com/OpenAdaptAI/openadapt-ml/commit/4e74142f2d900927bfdff24f88c81d375d738b9e))
 
 - **plots**: Add model size labels to hardened benchmark plots
   ([`4c828f2`](https://github.com/OpenAdaptAI/openadapt-ml/commit/4c828f20066533f1b0f7b74ac35ce20c46deedec))
 
 - **serve**: Remove stale refresh args, stop button now works
-  ([`c190ea5`](https://github.com/OpenAdaptAI/openadapt-ml/commit/c190ea567ac1d8ee7a950d2dc55f8c88288beab4))
+  ([`b7206bc`](https://github.com/OpenAdaptAI/openadapt-ml/commit/b7206bc8dc70e71adc236e213ff6a8e3acbdcc63))
 
 - **stub**: Auto-copy real screenshot for evaluation samples
-  ([`700f56a`](https://github.com/OpenAdaptAI/openadapt-ml/commit/700f56a60556bd50547cb017588776cb9f2b3139))
+  ([`53c9f50`](https://github.com/OpenAdaptAI/openadapt-ml/commit/53c9f5074bb5235f9264b6665568d6ce6ab2ac01))
 
 - **viewer**: Extract predictions from window.comparisonData and fix elapsed time loading
-  ([`afb5bb8`](https://github.com/OpenAdaptAI/openadapt-ml/commit/afb5bb8128d0a48fe956ac54ef339e9eee6aa2e9))
+  ([`475c38d`](https://github.com/OpenAdaptAI/openadapt-ml/commit/475c38d624617108aa558239971f84b32ad4c061))
 
 - **viewer**: Sync audio speed with playback, add visual feedback to overlay toggles
-  ([`bfafcba`](https://github.com/OpenAdaptAI/openadapt-ml/commit/bfafcba05188a354c3c0cff0c9ab9b9dbfed0505))
+  ([`e58cc22`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e58cc22f561be8ade47d3e9ad259128035d1c154))
 
 ### Chores
 
@@ -1856,22 +1932,22 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 ### Documentation
 
 - Add benchmark viewer integration design and update TODOs
-  ([`f62ba9c`](https://github.com/OpenAdaptAI/openadapt-ml/commit/f62ba9c1ef302bec660a728f73f5c7f1700965f0))
+  ([`f21c828`](https://github.com/OpenAdaptAI/openadapt-ml/commit/f21c8289a5a88162b44a9102b0ac15a1eae4ff7c))
 
 - Add early termination controls as high priority TODO
-  ([`454d137`](https://github.com/OpenAdaptAI/openadapt-ml/commit/454d137aa7a15cc695f99b019b70114b4a94903a))
+  ([`6ed8042`](https://github.com/OpenAdaptAI/openadapt-ml/commit/6ed80420690dc60b3a1d2874d3d78a6501a4601a))
 
 - Document need for auto-termination, dashboard stop button, checkpoint download - Fix shared header
   in unified viewer template (trainer.py) - Remove 'Dashboards:' label from compare.py nav
 
 - Add GUI-Actor integration plan for coordinate-free grounding
-  ([`964d92a`](https://github.com/OpenAdaptAI/openadapt-ml/commit/964d92acc2069eb0e6b14c409cb5ab1ac085cfa2))
+  ([`a67abc3`](https://github.com/OpenAdaptAI/openadapt-ml/commit/a67abc3f9be7912ce0f3d3a425dc321f43282cbf))
 
 - Add training feedback UX critical path analysis
-  ([`8c8edef`](https://github.com/OpenAdaptAI/openadapt-ml/commit/8c8edef14e2ca37d38a106c47af23bd794d003fc))
+  ([`a87b9bb`](https://github.com/OpenAdaptAI/openadapt-ml/commit/a87b9bba5dee22fdb66e60a196005271e94e6903))
 
 - Add unified compute architecture design and PyPI TODO
-  ([`db9e008`](https://github.com/OpenAdaptAI/openadapt-ml/commit/db9e008ef8d3b3912c688d5b3312912815274406))
+  ([`e2abfe3`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e2abfe329a552c06064123227d157edc8204536c))
 
 - **readme**: Add 2b training log snippet and clarify qwen3 masking roadmap
   ([`f02ebfd`](https://github.com/OpenAdaptAI/openadapt-ml/commit/f02ebfd557dd01a520ee3f73608da6cc7f0c0039))
@@ -1880,7 +1956,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
   ([`2da03f2`](https://github.com/OpenAdaptAI/openadapt-ml/commit/2da03f2ee9a1f7780e336323f036b21d293776ca))
 
 - **viewer**: Add timeline visualizer and eval integration design
-  ([`27c4130`](https://github.com/OpenAdaptAI/openadapt-ml/commit/27c4130b8753f4fe2817feb4b77c72b3a4a93b4a))
+  ([`d3e93ed`](https://github.com/OpenAdaptAI/openadapt-ml/commit/d3e93ede05513c2ee92a6a51c2ef4139fbc493ef))
 
 ### Features
 
@@ -1888,38 +1964,38 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
   ([`ec92d6b`](https://github.com/OpenAdaptAI/openadapt-ml/commit/ec92d6b250dc6e4c184e9b2ff07c12781979ba1d))
 
 - V0.1.0 release with benchmark integration, grounding module, and cloud training
-  ([`7887890`](https://github.com/OpenAdaptAI/openadapt-ml/commit/7887890a6903aa3f7edb32fcf2e41f53b252a537))
+  ([`b29d558`](https://github.com/OpenAdaptAI/openadapt-ml/commit/b29d5586967e0673ee45417ca11797f75c46e00f))
 
 - **benchmark**: Add qwen login orchestrator and refine docs
   ([`efcce00`](https://github.com/OpenAdaptAI/openadapt-ml/commit/efcce008ecf4839857cae154b94b29499d959809))
 
 - **cloud**: Add Lambda Labs training, benchmarks, and training visualization
-  ([`7eece80`](https://github.com/OpenAdaptAI/openadapt-ml/commit/7eece80e9974b0b6c5414db9cb597408487cd596))
+  ([`2063aea`](https://github.com/OpenAdaptAI/openadapt-ml/commit/2063aea43501253296d4ac6a09c3c56fc72614b3))
 
 - **config**: Add pydantic-settings configuration and API benchmarks
   ([`2e7bfd1`](https://github.com/OpenAdaptAI/openadapt-ml/commit/2e7bfd1923b15223e7bf59181244f465cd300d7a))
 
 - **dashboard**: Add early termination controls and /api/stop endpoint
-  ([`d6f5df4`](https://github.com/OpenAdaptAI/openadapt-ml/commit/d6f5df4704d45301a7ee9820ea5ba17c538b3c7b))
+  ([`7c27f47`](https://github.com/OpenAdaptAI/openadapt-ml/commit/7c27f476792914c3b1115891c2c98b2296fa7e71))
 
 - **dashboard**: Enhance evaluation samples with model thinking display
-  ([`340fe36`](https://github.com/OpenAdaptAI/openadapt-ml/commit/340fe36b6f715aca5480e77709801b2c029541e3))
+  ([`a0e2b09`](https://github.com/OpenAdaptAI/openadapt-ml/commit/a0e2b09250bbcc83257072674197c46e63ed3845))
 
 - **dashboard**: Show model thinking by default, add legend
-  ([`5828d67`](https://github.com/OpenAdaptAI/openadapt-ml/commit/5828d6764891261d688fd741dcbbbecc4250369d))
+  ([`fd26952`](https://github.com/OpenAdaptAI/openadapt-ml/commit/fd26952b6c12c6b2a72844f9820f295860e145a9))
 
 - **docs**: Add dashboard screenshots and fix viewer predictions
-  ([`5b729a9`](https://github.com/OpenAdaptAI/openadapt-ml/commit/5b729a9c1f01d304260f266081900f4cae04c8a7))
+  ([`8ea00d0`](https://github.com/OpenAdaptAI/openadapt-ml/commit/8ea00d0df44f3ffcc98be08ee3b7b77a571a061d))
 
 - **lambda**: Add early termination controls with auto-stop, checkpoint download, and dashboard stop
   button
-  ([`1157af8`](https://github.com/OpenAdaptAI/openadapt-ml/commit/1157af89f00041fc0bafe8e468f9edea9e626dc6))
+  ([`4936fe0`](https://github.com/OpenAdaptAI/openadapt-ml/commit/4936fe03d729f407c58e1d5c4bb725f8637f74a2))
 
 - **lambda**: Auto-symlink capture screenshots and rewrite paths
-  ([`40af8db`](https://github.com/OpenAdaptAI/openadapt-ml/commit/40af8dbfb424de02dd7cb3fe18bd0f023853083c))
+  ([`1bef82c`](https://github.com/OpenAdaptAI/openadapt-ml/commit/1bef82c0a980efbfaa3497d4a0d8b9576584e1bd))
 
 - **local**: Add local training CLI for CUDA/Apple Silicon
-  ([`6edee26`](https://github.com/OpenAdaptAI/openadapt-ml/commit/6edee26b1bf251cac3f61d866867b6e1b839f9f5))
+  ([`1efb175`](https://github.com/OpenAdaptAI/openadapt-ml/commit/1efb175dacb965e267f403c9c79603c738e53f67))
 
 - **plots**: Add legend to comprehensive comparison and streamline README
   ([`b710d49`](https://github.com/OpenAdaptAI/openadapt-ml/commit/b710d4939e4aee97d9553838cf78947c3c99590e))
@@ -1937,42 +2013,42 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
   ([`9b27555`](https://github.com/OpenAdaptAI/openadapt-ml/commit/9b275558dc77fdcac1abc1ddaf5bacb8f9b9c2d8))
 
 - **training**: Add job-scoped directories and HTTP server for dashboards
-  ([`73fb601`](https://github.com/OpenAdaptAI/openadapt-ml/commit/73fb6011ead9690807db497c128186d2c7b36794))
+  ([`cb69e6a`](https://github.com/OpenAdaptAI/openadapt-ml/commit/cb69e6a7366a1a4c3dec1c8db4c9c9ee27a8e948))
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 - **training**: Add stub adapter for rapid UI testing without GPU
-  ([`79a95a9`](https://github.com/OpenAdaptAI/openadapt-ml/commit/79a95a91efa0fca926991598f51a8755cb7ebbde))
+  ([`5f236aa`](https://github.com/OpenAdaptAI/openadapt-ml/commit/5f236aa53faa467692613ff4e1dc4273dab0ac61))
 
 - **viewer**: Add benchmark tab with WAA integration WIP state
-  ([`a31dbf9`](https://github.com/OpenAdaptAI/openadapt-ml/commit/a31dbf98e4cd48faa28ef41ec67e2a0a77640d3a))
+  ([`a707acb`](https://github.com/OpenAdaptAI/openadapt-ml/commit/a707acb780e2996467e49c849817a96eb4761ee8))
 
 - **viewer**: Add parseModelOutput for SoM parsing and truncation
-  ([`3396594`](https://github.com/OpenAdaptAI/openadapt-ml/commit/3396594aaac19e9b0ff9e1b79d5eb2070b790721))
+  ([`1217f64`](https://github.com/OpenAdaptAI/openadapt-ml/commit/1217f6400cce64ba0afe7e411479cbe16010d1dc))
 
 - **viewer**: Add screenshots to README and smart auto-scroll
-  ([`3a5a256`](https://github.com/OpenAdaptAI/openadapt-ml/commit/3a5a2568888b493ccaab12e3d00242336df650e4))
+  ([`e147f09`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e147f091382c9d871a306b63cde6e84bdd90f4ee))
 
 - **viewer**: Add SoM action parsing for model predictions
-  ([`2dd29fb`](https://github.com/OpenAdaptAI/openadapt-ml/commit/2dd29fbe0ac33a1971c1507610372819b29df428))
+  ([`6a89164`](https://github.com/OpenAdaptAI/openadapt-ml/commit/6a89164fdb4826fa7064c76612bcd7a857e366cf))
 
 - **viewer**: Add transcript/audio sync, copy-all button, and extract shared UI
-  ([`bd54110`](https://github.com/OpenAdaptAI/openadapt-ml/commit/bd54110b457558ecb4f3a50114cc194d338fede7))
+  ([`6beff41`](https://github.com/OpenAdaptAI/openadapt-ml/commit/6beff41e32ed064a81de05db62b3dfbd7e9ea67c))
 
 - **viewer**: Extract viewer module with evaluation gallery and badges
-  ([`fc003b0`](https://github.com/OpenAdaptAI/openadapt-ml/commit/fc003b06179a33a140840881159a9912f112a7eb))
+  ([`911faac`](https://github.com/OpenAdaptAI/openadapt-ml/commit/911faac01b923a1ab23c69b3cb2ed3499d3a0c57))
 
 ### Refactoring
 
 - Rename --eval-on-training-data to --overfit
-  ([`19b1c94`](https://github.com/OpenAdaptAI/openadapt-ml/commit/19b1c9447031e654ec8bbc68ba0fe0d10785db57))
+  ([`3cb9dc1`](https://github.com/OpenAdaptAI/openadapt-ml/commit/3cb9dc1e9efab45a13ec91dca53f5c5524aef9bd))
 
 - **viewer**: Consolidate to standalone HTML generation
-  ([`6126aeb`](https://github.com/OpenAdaptAI/openadapt-ml/commit/6126aeb864b4b4529f9df34e1e93758fd8c73475))
+  ([`bbda9c9`](https://github.com/OpenAdaptAI/openadapt-ml/commit/bbda9c9c30f205369caf89099240b65f9b7ace54))
 
 ### Testing
 
 - **local**: Add tests for local CLI with early stopping
-  ([`51f7f32`](https://github.com/OpenAdaptAI/openadapt-ml/commit/51f7f326b4a986467b108971098570498e361a17))
+  ([`e371687`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e37168798f4b0a2469299f05f202f08954d6648c))
