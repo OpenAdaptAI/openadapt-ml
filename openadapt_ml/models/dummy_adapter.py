@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-import torch
-from torch import nn
+try:
+    import torch
+    from torch import nn
+except ImportError:
+    torch = None  # type: ignore[assignment]
+    nn = None  # type: ignore[assignment]
 
 from openadapt_ml.models.base_adapter import BaseVLMAdapter, get_default_device
 
@@ -14,9 +18,16 @@ class DummyAdapter(BaseVLMAdapter):
     - Ignores images/messages content.
     - Uses a tiny linear model and returns a simple MSE loss.
     - generate() returns a fixed string.
+
+    Requires torch to be installed (pip install openadapt-ml[training]).
     """
 
-    def __init__(self, device: Optional[torch.device] = None) -> None:
+    def __init__(self, device: Optional[Any] = None) -> None:
+        if torch is None:
+            raise ImportError(
+                "torch is required for DummyAdapter. "
+                "Install with: pip install openadapt-ml[training]"
+            )
         if device is None:
             device = get_default_device()
         # Tiny dummy model with a few parameters
@@ -32,7 +43,7 @@ class DummyAdapter(BaseVLMAdapter):
         y = torch.zeros(batch_size, 1, device=self.device)
         return {"inputs": x, "targets": y}
 
-    def compute_loss(self, inputs: Dict[str, Any]) -> torch.Tensor:  # type: ignore[override]
+    def compute_loss(self, inputs: Dict[str, Any]) -> Any:  # type: ignore[override]
         x = inputs["inputs"]
         y = inputs["targets"]
         preds = self.model(x)

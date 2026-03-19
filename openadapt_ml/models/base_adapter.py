@@ -1,16 +1,28 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None  # type: ignore[assignment]
+
+if TYPE_CHECKING:
+    import torch
 
 
-def get_default_device() -> torch.device:
+def get_default_device() -> "torch.device":
     """Select cuda, then mps, then cpu.
 
     This is used as a fallback when no explicit device is provided.
+    Requires torch to be installed.
     """
+    if torch is None:
+        raise ImportError(
+            "torch is required for model operations. "
+            "Install with: pip install openadapt-ml[training]"
+        )
 
     if torch.cuda.is_available():
         return torch.device("cuda")
@@ -29,14 +41,21 @@ class BaseVLMAdapter(ABC):
     - converting SFT-style samples into model inputs (tokenization, image processing)
     - computing supervised training loss
     - generating assistant text given a single sample at inference time
+
+    Requires torch to be installed (pip install openadapt-ml[training]).
     """
 
     def __init__(
         self,
-        model: torch.nn.Module,
+        model: Any,
         processor: Any,
-        device: Optional[torch.device] = None,
+        device: Optional[Any] = None,
     ) -> None:
+        if torch is None:
+            raise ImportError(
+                "torch is required for BaseVLMAdapter. "
+                "Install with: pip install openadapt-ml[training]"
+            )
         self.model = model
         self.processor = processor
         self.device = device or get_default_device()
@@ -53,7 +72,7 @@ class BaseVLMAdapter(ABC):
         """
 
     @abstractmethod
-    def compute_loss(self, inputs: Dict[str, Any]) -> torch.Tensor:
+    def compute_loss(self, inputs: Dict[str, Any]) -> Any:
         """Run the model forward and return a scalar loss tensor."""
 
     @abstractmethod
