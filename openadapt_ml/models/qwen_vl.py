@@ -400,7 +400,9 @@ class QwenVLAdapter(BaseVLMAdapter):
 
     def compute_loss(self, inputs: Dict[str, Any]) -> Any:  # type: ignore[override]
         inputs = {
-            k: v.to(self.device) if torch is not None and isinstance(v, torch.Tensor) else v
+            k: v.to(self.device)
+            if torch is not None and isinstance(v, torch.Tensor)
+            else v
             for k, v in inputs.items()
         }
         outputs = self.model(**inputs)
