@@ -23,21 +23,16 @@ classifiers = [
 
 dependencies = [
     "anthropic>=0.75.0",
-    "bitsandbytes>=0.41.0", # For 4-bit quantization
     "click>=8.1.0", # CLI framework
     "google-generativeai>=0.8.5",
     "matplotlib>=3.10.7",
     "modal>=1.3.4",
     "openadapt-capture>=0.3.0",
-    "peft>=0.18.0",
     "pillow>=12.0.0",
     "pyautogui>=0.9.54",
     "pydantic-settings>=2.0.0",
     "pytest>=9.0.2",
     "pyyaml>=6.0.3",
-    "torch>=2.8.0",
-    "torchvision>=0.24.1",
-    "transformers>=4.57.3",
 ]
 
 [project.optional-dependencies]
@@ -57,8 +52,13 @@ lambda-labs = [
 parquet = [
     "pyarrow>=14.0.0",
 ]
-# TRL + Unsloth for optimized training (2x faster, 50% less VRAM)
+# Heavy ML dependencies for local model training and inference
 training = [
+    "bitsandbytes>=0.41.0", # For 4-bit quantization
+    "peft>=0.18.0",
+    "torch>=2.8.0",
+    "torchvision>=0.24.1",
+    "transformers>=4.57.3",
     "trl>=0.12.0",
     "datasets>=2.18.0",
 ]

@@ -42,6 +42,7 @@ Example (verl backend):
 
 from __future__ import annotations
 
+# Lightweight imports (no torch required)
 from openadapt_ml.training.grpo.config import GRPOConfig
 from openadapt_ml.training.grpo.reward import (
     binary_task_success,
@@ -51,13 +52,6 @@ from openadapt_ml.training.grpo.rollout_collector import (
     GRPORolloutCollector,
     Rollout,
 )
-from openadapt_ml.training.grpo.trainer import (
-    GRPOTrainer,
-    policy_gradient_loss,
-    grpo_loss,
-    parse_vlm_output_to_action,
-    format_action_as_text,
-)
 from openadapt_ml.training.grpo.cot_warmup import (
     build_cot_sft_samples,
     generate_cot_annotations,
@@ -66,6 +60,24 @@ from openadapt_ml.training.grpo.verl_backend import (
     build_vagen_config,
     train_with_verl,
 )
+
+# Lazy imports for torch-dependent modules
+_TRAINER_NAMES = {
+    "GRPOTrainer",
+    "policy_gradient_loss",
+    "grpo_loss",
+    "parse_vlm_output_to_action",
+    "format_action_as_text",
+}
+
+
+def __getattr__(name: str):
+    if name in _TRAINER_NAMES:
+        from openadapt_ml.training.grpo import trainer as _trainer
+
+        return getattr(_trainer, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "GRPOConfig",

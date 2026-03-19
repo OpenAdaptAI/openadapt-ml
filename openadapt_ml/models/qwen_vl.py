@@ -2,13 +2,28 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-import torch
-from peft import LoraConfig, PeftModel, get_peft_model
-from transformers import (
-    AutoProcessor,
-    Qwen3VLForConditionalGeneration,
-    Qwen2_5_VLForConditionalGeneration,
-)
+try:
+    import torch
+except ImportError:
+    torch = None  # type: ignore[assignment]
+
+try:
+    from peft import LoraConfig, PeftModel, get_peft_model
+except ImportError:
+    LoraConfig = None  # type: ignore[assignment,misc]
+    PeftModel = None  # type: ignore[assignment,misc]
+    get_peft_model = None  # type: ignore[assignment]
+
+try:
+    from transformers import (
+        AutoProcessor,
+        Qwen3VLForConditionalGeneration,
+        Qwen2_5_VLForConditionalGeneration,
+    )
+except ImportError:
+    AutoProcessor = None  # type: ignore[assignment,misc]
+    Qwen3VLForConditionalGeneration = None  # type: ignore[assignment,misc]
+    Qwen2_5_VLForConditionalGeneration = None  # type: ignore[assignment,misc]
 
 from openadapt_ml.models.base_adapter import BaseVLMAdapter, get_default_device
 
@@ -67,9 +82,9 @@ class QwenVLAdapter(BaseVLMAdapter):
 
     def __init__(
         self,
-        model: torch.nn.Module,
+        model: Any,
         processor: Any,
-        device: Optional[torch.device] = None,
+        device: Optional[Any] = None,
         version: str = "qwen3",
     ) -> None:
         super().__init__(model=model, processor=processor, device=device)
@@ -79,9 +94,9 @@ class QwenVLAdapter(BaseVLMAdapter):
     def from_pretrained(
         cls,
         model_name: str,
-        lora_config: Optional[LoraConfig | Dict[str, Any]] = None,
+        lora_config: Optional[Any] = None,
         load_in_4bit: bool = False,
-        device: Optional[torch.device] = None,
+        device: Optional[Any] = None,
         max_pixels: Optional[int] = None,
         min_pixels: Optional[int] = None,
     ) -> "QwenVLAdapter":
@@ -91,7 +106,22 @@ class QwenVLAdapter(BaseVLMAdapter):
             max_pixels: Maximum image size in pixels (e.g., 512*512=262144 for faster training).
                         If None, uses model default (very large).
             min_pixels: Minimum image size in pixels. If None, uses model default.
+
+        Requires torch, transformers, and peft to be installed
+        (pip install openadapt-ml[training]).
         """
+        _missing = []
+        if torch is None:
+            _missing.append("torch")
+        if AutoProcessor is None:
+            _missing.append("transformers")
+        if LoraConfig is None:
+            _missing.append("peft")
+        if _missing:
+            raise ImportError(
+                f"{', '.join(_missing)} required for QwenVLAdapter. "
+                "Install with: pip install openadapt-ml[training]"
+            )
 
         if "Qwen3-VL" in model_name or "Qwen3VL" in model_name:
             version = "qwen3"
@@ -368,9 +398,9 @@ class QwenVLAdapter(BaseVLMAdapter):
             inputs["labels"] = labels
             return inputs
 
-    def compute_loss(self, inputs: Dict[str, Any]) -> torch.Tensor:  # type: ignore[override]
+    def compute_loss(self, inputs: Dict[str, Any]) -> Any:  # type: ignore[override]
         inputs = {
-            k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+            k: v.to(self.device) if torch is not None and isinstance(v, torch.Tensor) else v
             for k, v in inputs.items()
         }
         outputs = self.model(**inputs)

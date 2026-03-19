@@ -36,7 +36,11 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None  # type: ignore[assignment]
+
 from PIL import Image
 
 from openadapt_ml.datasets.next_action import SYSTEM_PROMPT

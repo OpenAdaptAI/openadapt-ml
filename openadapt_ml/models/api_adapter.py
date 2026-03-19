@@ -5,7 +5,10 @@ from typing import Any, Dict, List, Optional
 import base64
 import os
 
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None  # type: ignore[assignment]
 
 from openadapt_ml.config import settings
 from openadapt_ml.models.base_adapter import BaseVLMAdapter, get_default_device
@@ -21,7 +24,7 @@ class ApiVLMAdapter(BaseVLMAdapter):
     def __init__(
         self,
         provider: str,
-        device: Optional[torch.device] = None,
+        device: Optional[Any] = None,
         api_key: Optional[str] = None,
         model_name: Optional[str] = None,
     ) -> None:
@@ -84,22 +87,27 @@ class ApiVLMAdapter(BaseVLMAdapter):
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 
-        if device is None:
-            device = get_default_device()
-
         # Store client separately; BaseVLMAdapter expects a model + processor, so
         # we pass a tiny dummy module and the client as the "processor".
         self._client = client
-        model = torch.nn.Identity()
-        processor: Any = client
-        super().__init__(model=model, processor=processor, device=device)
+        if torch is not None:
+            if device is None:
+                device = get_default_device()
+            model = torch.nn.Identity()
+            processor: Any = client
+            super().__init__(model=model, processor=processor, device=device)
+        else:
+            # Lightweight mode: skip torch-based init for API-only usage
+            self.model = None
+            self.processor = client
+            self.device = None
 
     def prepare_inputs(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:  # type: ignore[override]
         raise NotImplementedError(
             "ApiVLMAdapter does not support training (prepare_inputs)"
         )
 
-    def compute_loss(self, inputs: Dict[str, Any]) -> torch.Tensor:  # type: ignore[override]
+    def compute_loss(self, inputs: Dict[str, Any]) -> Any:  # type: ignore[override]
         raise NotImplementedError(
             "ApiVLMAdapter does not support training (compute_loss)"
         )

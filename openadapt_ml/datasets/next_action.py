@@ -3,7 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
-from torch.utils.data import Dataset
+try:
+    from torch.utils.data import Dataset as _TorchDataset
+except ImportError:
+    _TorchDataset = None  # type: ignore[assignment,misc]
 
 from openadapt_ml.schema import Action, ActionType, Episode, Step, UIElement
 
@@ -523,10 +526,18 @@ class NextActionSample:
     messages: List[Dict[str, str]]
 
 
-class NextActionDataset(Dataset):
-    """Thin PyTorch Dataset wrapper around pre-built SFT samples."""
+class NextActionDataset(_TorchDataset if _TorchDataset is not None else object):  # type: ignore[misc]
+    """Thin PyTorch Dataset wrapper around pre-built SFT samples.
+
+    Requires torch to be installed (pip install openadapt-ml[training]).
+    """
 
     def __init__(self, samples: List[Dict[str, Any]]):
+        if _TorchDataset is None:
+            raise ImportError(
+                "torch is required for NextActionDataset. "
+                "Install with: pip install openadapt-ml[training]"
+            )
         self._samples = samples
 
     def __len__(self) -> int:  # type: ignore[override]
