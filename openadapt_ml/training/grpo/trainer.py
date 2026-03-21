@@ -23,7 +23,7 @@ Key design decisions:
     - beta=0.0 (no KL penalty) per DAPO/Open-Reasoner-Zero. Simpler, saves
       memory (no reference model needed).
     - Per-step backward to avoid OOM on long trajectories.
-    - Standard HF model loading: AutoModelForVision2Seq + AutoProcessor + PEFT.
+    - Standard HF model loading: AutoModelForImageTextToText + AutoProcessor + PEFT.
     - Standard PEFT checkpointing: model.save_pretrained().
 """
 
@@ -222,7 +222,12 @@ def _load_model_and_processor(config: GRPOConfig) -> tuple[Any, Any]:
         (model, processor) tuple. Model has LoRA adapters attached.
     """
     from peft import LoraConfig, PeftModel, get_peft_model
-    from transformers import AutoModelForVision2Seq, AutoProcessor
+    from transformers import AutoProcessor
+
+    try:
+        from transformers import AutoModelForImageTextToText as AutoVLM
+    except ImportError:
+        from transformers import AutoModelForVision2Seq as AutoVLM
 
     processor = AutoProcessor.from_pretrained(config.model_name)
 
@@ -239,7 +244,7 @@ def _load_model_and_processor(config: GRPOConfig) -> tuple[Any, Any]:
             bnb_4bit_quant_type="nf4",
         )
 
-    model = AutoModelForVision2Seq.from_pretrained(config.model_name, **load_kwargs)
+    model = AutoVLM.from_pretrained(config.model_name, **load_kwargs)
 
     if config.lora_checkpoint:
         logger.info("Loading existing LoRA from %s", config.lora_checkpoint)

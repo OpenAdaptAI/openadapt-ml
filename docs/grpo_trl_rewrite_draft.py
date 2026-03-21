@@ -952,7 +952,7 @@ def train_grpo(waa_config: WAATrainingConfig | None = None) -> str:
 # to verify this works with Unsloth's patched model loading.
 #
 # If incompatible, we can:
-#   (a) Use standard HF model loading (AutoModelForVision2Seq)
+#   (a) Use standard HF model loading (AutoModelForImageTextToText)
 #   (b) Load with Unsloth, then pass the model to TRL
 #   (c) Use Unsloth's GRPOTrainer fork (if available)
 #
