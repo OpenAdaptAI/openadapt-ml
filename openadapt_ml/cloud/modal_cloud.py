@@ -336,9 +336,12 @@ def _build_inference_app(
         if not hasattr(infer, "_model"):
             print(f"Loading base model: {_base}")
             try:
-                from transformers import AutoModelForVision2Seq
+                try:
+                    from transformers import AutoModelForImageTextToText as AutoVLM
+                except ImportError:
+                    from transformers import AutoModelForVision2Seq as AutoVLM
 
-                infer._model = AutoModelForVision2Seq.from_pretrained(
+                infer._model = AutoVLM.from_pretrained(
                     _base,
                     torch_dtype=torch.bfloat16,
                     device_map="auto",
