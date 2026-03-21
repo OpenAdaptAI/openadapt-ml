@@ -1,6 +1,54 @@
 # CHANGELOG
 
 
+## v0.15.1 (2026-03-21)
+
+### Bug Fixes
+
+- Use keyword args for Qwen VL processor call
+  ([#58](https://github.com/OpenAdaptAI/openadapt-ml/pull/58),
+  [`d196dce`](https://github.com/OpenAdaptAI/openadapt-ml/commit/d196dce5c3f472fae2e8f830cafd5f2e565f5b13))
+
+* fix: replace AutoModelForVision2Seq with AutoModelForImageTextToText for transformers 5.x
+
+AutoModelForVision2Seq was removed in transformers 5.x (shipped on AWS DL AMI). Use
+  AutoModelForImageTextToText as the primary import with a fallback to AutoModelForVision2Seq for
+  older transformers versions.
+
+Files updated: - openadapt_ml/training/grpo/trainer.py - openadapt_ml/cloud/modal_cloud.py -
+  docs/grpo_trl_rewrite_draft.py (comment only)
+
+Note: openadapt_ml/training/trl_trainer.py already had the correct
+
+try/except pattern and was not modified.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+* fix: use keyword args for Qwen VL processor to avoid positional conflict
+
+Qwen2_5_VLProcessor.__call__() expects text= and images= as keyword args. Passing text as positional
+  arg conflicts with images kwarg: TypeError: got multiple values for argument 'images'
+
+---------
+
+Co-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+### Chores
+
+- Trigger release
+  ([`7f8833c`](https://github.com/OpenAdaptAI/openadapt-ml/commit/7f8833cd7143323d807ed791b4a98a37e266ce4a))
+
+### Documentation
+
+- Add first scored trace (Notepad Hello World, score 0.5)
+  ([`ba44eaa`](https://github.com/OpenAdaptAI/openadapt-ml/commit/ba44eaae7e626358b5910ac265beb29c0c414f5f))
+
+6 steps, 91s, GPT-5.4-mini planner+grounder, lightweight mode. VLM judge passed milestone 2 (Hello
+  World typed, confidence 1.00). Milestone 1 (process check) timed out during /execute_windows eval.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+
 ## v0.15.0 (2026-03-19)
 
 ### Bug Fixes
