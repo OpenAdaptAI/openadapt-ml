@@ -327,7 +327,7 @@ class GRPOTrainer:
             else:
                 text_input = messages[-1]["content"]
 
-            inputs = processor(text_input, images=[image], return_tensors="pt")
+            inputs = processor(text=[text_input], images=[image], return_tensors="pt")
             inputs = {k: v.to(model.device) for k, v in inputs.items()}
 
             with torch.no_grad():
@@ -524,7 +524,7 @@ class GRPOTrainer:
                 text_input = messages[-1]["content"]
 
             prompt_inputs = self._processor(
-                text_input, images=[image], return_tensors="pt"
+                text=[text_input], images=[image], return_tensors="pt"
             )
             prompt_ids = prompt_inputs["input_ids"]
             prompt_len = prompt_ids.shape[1]
