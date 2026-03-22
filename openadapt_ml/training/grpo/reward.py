@@ -6,9 +6,18 @@ computation following the GRPO algorithm (Shao et al., 2024).
 GRPO computes advantages relative to the group mean rather than using
 a learned value function, which is simpler and works well for sparse
 binary rewards (task success/failure).
+
+Also provides ``evaluate_milestones_screenshot``, a standalone utility
+that evaluates milestone-based rewards from a screenshot without needing
+the WAA /evaluate endpoint.  This is the local-evaluation path used by
+the standalone GRPO trainer when ``--task-dir`` is set.
 """
 
 from __future__ import annotations
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def binary_task_success(score: float, threshold: float = 0.5) -> float:
@@ -54,3 +63,90 @@ def compute_group_advantages(rewards: list[float]) -> list[float]:
         return [0.0] * n
 
     return [(r - mean) / (std + eps) for r in rewards]
+
+
+def evaluate_milestones_screenshot(
+    task_config: object,
+    screenshot_bytes: bytes,
+    vlm_model: str = "gpt-4.1-mini",
+    vlm_provider: str = "openai",
+) -> float:
+    """Evaluate milestone-based rewards from a screenshot (no server needed).
+
+    Iterates over the milestones in a TaskConfig and evaluates each
+    ``screenshot``-type milestone using a VLM judge.  Non-screenshot
+    milestones are skipped (they require a live server).
+
+    This is a standalone utility that can be called independently of the
+    trainer, e.g.::
+
+        from openadapt_ml.training.grpo.reward import evaluate_milestones_screenshot
+        reward = evaluate_milestones_screenshot(task_config, screenshot_bytes)
+
+    Args:
+        task_config: A ``TaskConfig`` instance (from ``openadapt_evals.task_config``).
+            Must have a ``milestones`` attribute (list of ``Milestone`` objects).
+        screenshot_bytes: PNG screenshot bytes to evaluate against.
+        vlm_model: VLM model name for the judge.
+        vlm_provider: VLM provider (``"openai"`` or ``"anthropic"``).
+
+    Returns:
+        Fraction of screenshot milestones that passed (0.0 to 1.0).
+        Returns 0.0 if there are no milestones or no screenshot milestones.
+    """
+    milestones = getattr(task_config, "milestones", None)
+    if not milestones:
+        return 0.0
+
+    # Only evaluate screenshot-type milestones locally
+    screenshot_milestones = [
+        ms for ms in milestones
+        if getattr(ms.check, "check", None) == "screenshot"
+    ]
+    if not screenshot_milestones:
+        return 0.0
+
+    try:
+        from openadapt_evals.vlm_evaluator import vlm_judge
+    except ImportError:
+        logger.warning(
+            "openadapt-evals is not installed; cannot evaluate screenshot "
+            "milestones. Install with: pip install openadapt-evals"
+        )
+        return 0.0
+
+    passed = 0
+    for ms in screenshot_milestones:
+        description = getattr(ms.check, "description", None) or ""
+        if not description:
+            continue
+        try:
+            success, _confidence = vlm_judge(
+                screenshot_bytes,
+                description,
+                model=vlm_model,
+                provider=vlm_provider,
+            )
+            if success:
+                passed += 1
+            logger.debug(
+                "Milestone '%s': %s",
+                getattr(ms, "name", "?"),
+                "PASS" if success else "FAIL",
+            )
+        except Exception as exc:
+            logger.warning(
+                "Milestone '%s' evaluation failed: %s",
+                getattr(ms, "name", "?"),
+                exc,
+            )
+
+    total = len(screenshot_milestones)
+    score = passed / total if total > 0 else 0.0
+    logger.info(
+        "Milestone evaluation: %d/%d screenshot milestones passed (%.2f)",
+        passed,
+        total,
+        score,
+    )
+    return score

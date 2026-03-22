@@ -37,6 +37,11 @@ class GRPOConfig:
         server_url: URL of the WAA server for live environment interaction.
         evaluate_url: URL of the evaluate server. If None, defaults to server_url.
         task_ids: List of WAA task IDs to train on.
+        task_dir: Path to a directory of YAML task config files. When set,
+            the trainer loads TaskConfig objects and uses milestone-based
+            reward evaluation locally (no /evaluate endpoint needed).
+            If task_ids is empty, task IDs are auto-populated from the
+            loaded configs.
         learning_rate: Optimizer learning rate for LoRA parameter updates.
         num_training_steps: Total number of GRPO training steps (outer loop).
         save_every_steps: Checkpoint frequency.
@@ -68,6 +73,12 @@ class GRPOConfig:
     )
     task_ids: list[str] = field(default_factory=list)
     screen_size: tuple[int, int] = (1920, 1080)  # (width, height)
+
+    # Task configuration directory (YAML files with milestones for dense rewards).
+    # When set, the trainer loads TaskConfig objects from this directory and
+    # uses milestone-based reward evaluation locally, without needing the
+    # WAA /evaluate endpoint.  Requires openadapt-evals to be installed.
+    task_dir: str | None = None
 
     # Training
     learning_rate: float = 5e-6
