@@ -68,12 +68,19 @@ class GRPORolloutCollector:
 
     Args:
         config: GRPO training configuration.
+        task_configs: Optional dict mapping task_id -> TaskConfig. When
+            provided, task configs are loaded into the RLEnvironment for
+            milestone-based dense reward evaluation.
 
     Raises:
         ImportError: If openadapt-evals is not installed.
     """
 
-    def __init__(self, config: GRPOConfig) -> None:
+    def __init__(
+        self,
+        config: GRPOConfig,
+        task_configs: dict[str, Any] | None = None,
+    ) -> None:
         if RLEnvironment is None:
             raise ImportError(
                 "openadapt-evals is required for rollout collection. "
@@ -81,6 +88,7 @@ class GRPORolloutCollector:
             )
 
         self._config = config
+        self._task_configs = task_configs or {}
         self._adapter = WAALiveAdapter(
             WAALiveConfig(
                 server_url=config.server_url,
@@ -122,6 +130,11 @@ class GRPORolloutCollector:
             task_id = random.choice(self._config.task_ids)
 
         rollouts: list[Rollout] = []
+
+        # Load task config into the environment for dense milestone rewards
+        if task_id in self._task_configs:
+            tc = self._task_configs[task_id]
+            self._env.load_task_config(tc)
 
         for i in range(self._config.num_rollouts_per_step):
             logger.info(

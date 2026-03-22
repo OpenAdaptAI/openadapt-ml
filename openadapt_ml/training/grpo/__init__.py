@@ -47,6 +47,7 @@ from openadapt_ml.training.grpo.config import GRPOConfig
 from openadapt_ml.training.grpo.reward import (
     binary_task_success,
     compute_group_advantages,
+    evaluate_milestones_screenshot,
 )
 from openadapt_ml.training.grpo.rollout_collector import (
     GRPORolloutCollector,
@@ -86,6 +87,7 @@ __all__ = [
     "Rollout",
     "binary_task_success",
     "compute_group_advantages",
+    "evaluate_milestones_screenshot",
     "policy_gradient_loss",
     "grpo_loss",
     "parse_vlm_output_to_action",

@@ -45,11 +45,23 @@ from PIL import Image
 
 from openadapt_ml.datasets.next_action import SYSTEM_PROMPT
 from openadapt_ml.training.grpo.config import GRPOConfig
-from openadapt_ml.training.grpo.reward import compute_group_advantages
+from openadapt_ml.training.grpo.reward import (
+    compute_group_advantages,
+    evaluate_milestones_screenshot,
+)
 from openadapt_ml.training.grpo.rollout_collector import (
     GRPORolloutCollector,
     Rollout,
 )
+
+# Optional import for TaskConfig (openadapt-evals may not be installed)
+try:
+    from openadapt_evals.task_config import TaskConfig
+
+    _HAS_TASK_CONFIG = True
+except ImportError:
+    TaskConfig = None  # type: ignore[assignment, misc]
+    _HAS_TASK_CONFIG = False
 
 logger = logging.getLogger(__name__)
 
@@ -301,6 +313,106 @@ class GRPOTrainer:
         self._optimizer: Any = None
         self._collector: GRPORolloutCollector | None = None
         self._step: int = 0
+        self._task_configs: dict[str, Any] = {}
+
+        # Load task configs from --task-dir if specified
+        if config.task_dir:
+            self._load_task_configs(config.task_dir)
+
+    def _load_task_configs(self, task_dir: str) -> None:
+        """Load TaskConfig YAMLs from a directory.
+
+        Populates ``self._task_configs`` (keyed by task ID) and auto-fills
+        ``config.task_ids`` if it was left empty.
+
+        Args:
+            task_dir: Path to directory containing YAML/JSON task configs.
+
+        Raises:
+            ImportError: If openadapt-evals is not installed.
+            FileNotFoundError: If the directory does not exist.
+        """
+        if not _HAS_TASK_CONFIG:
+            raise ImportError(
+                "openadapt-evals is required for --task-dir support. "
+                "Install with: pip install openadapt-evals"
+            )
+
+        task_dir_path = Path(task_dir)
+        if not task_dir_path.is_dir():
+            raise FileNotFoundError(f"Task directory not found: {task_dir}")
+
+        configs = TaskConfig.from_dir(str(task_dir_path))
+        if not configs:
+            raise ValueError(f"No task configs found in {task_dir}")
+
+        for tc in configs:
+            self._task_configs[tc.id] = tc
+            logger.info(
+                "Loaded task config: %s (%s) — %d milestones",
+                tc.id,
+                tc.name[:50],
+                len(tc.milestones),
+            )
+
+        # Auto-populate task_ids if empty
+        if not self._config.task_ids:
+            self._config.task_ids = list(self._task_configs.keys())
+            logger.info(
+                "Auto-populated task_ids from task_dir: %s",
+                self._config.task_ids,
+            )
+
+    def _compute_milestone_reward(
+        self,
+        task_id: str,
+        screenshot_bytes: bytes,
+    ) -> float:
+        """Compute milestone-based reward for a task using VLM judge.
+
+        Evaluates screenshot-type milestones locally without needing the
+        WAA /evaluate endpoint.  Falls back to 0.0 if the task has no
+        milestones or the task_id is not found in loaded configs.
+
+        Args:
+            task_id: The task ID to look up in loaded configs.
+            screenshot_bytes: PNG screenshot bytes to evaluate.
+
+        Returns:
+            Fraction of screenshot milestones passed (0.0 to 1.0).
+        """
+        task_config = self._task_configs.get(task_id)
+        if task_config is None:
+            return 0.0
+        return evaluate_milestones_screenshot(task_config, screenshot_bytes)
+
+    def _compute_milestone_reward_from_rollout(
+        self,
+        rollout: Rollout,
+    ) -> float | None:
+        """Extract the last screenshot from a rollout and compute milestone reward.
+
+        Returns None if no task config or no screenshot is available,
+        signalling the caller to keep the existing reward.
+        """
+        task_config = self._task_configs.get(rollout.task_id)
+        if task_config is None or not getattr(task_config, "milestones", None):
+            return None
+
+        # Find the last step with a screenshot
+        screenshot_bytes: bytes | None = None
+        for step in reversed(rollout.steps):
+            obs = getattr(step, "observation", None)
+            if obs is not None:
+                ss = getattr(obs, "screenshot", None)
+                if ss:
+                    screenshot_bytes = ss
+                    break
+
+        if not screenshot_bytes:
+            return None
+
+        return evaluate_milestones_screenshot(task_config, screenshot_bytes)
 
     def _make_agent_fn(self) -> Callable:
         """Create agent closure: observation -> BenchmarkAction.
@@ -381,12 +493,15 @@ class GRPOTrainer:
         if not self._config.task_ids:
             raise ValueError(
                 "config.task_ids must be non-empty. Provide at least one "
-                "WAA task ID to train on."
+                "WAA task ID to train on, or use --task-dir to load from "
+                "YAML files."
             )
 
         logger.info("Starting GRPO training")
         logger.info("  Model: %s", self._config.model_name)
         logger.info("  Tasks: %s", self._config.task_ids)
+        logger.info("  Task dir: %s", self._config.task_dir or "(none)")
+        logger.info("  Task configs loaded: %d", len(self._task_configs))
         logger.info("  Rollouts/step: %d", self._config.num_rollouts_per_step)
         logger.info("  Training steps: %d", self._config.num_training_steps)
 
@@ -394,7 +509,10 @@ class GRPOTrainer:
         self._model, self._processor = _load_model_and_processor(self._config)
         trainable = [p for p in self._model.parameters() if p.requires_grad]
         self._optimizer = torch.optim.AdamW(trainable, lr=self._config.learning_rate)
-        self._collector = GRPORolloutCollector(self._config)
+        self._collector = GRPORolloutCollector(
+            self._config,
+            task_configs=self._task_configs if self._task_configs else None,
+        )
 
         Path(self._config.output_dir).mkdir(parents=True, exist_ok=True)
         agent_fn = self._make_agent_fn()
@@ -408,6 +526,16 @@ class GRPOTrainer:
             # Collect rollouts (inference)
             self._model.eval()
             rollouts = self._collector.collect_group(agent_fn=agent_fn, task_id=task_id)
+
+            # If task configs with milestones are loaded, override the
+            # binary rewards with milestone-based dense rewards.
+            if self._task_configs:
+                for rollout in rollouts:
+                    milestone_reward = self._compute_milestone_reward_from_rollout(
+                        rollout
+                    )
+                    if milestone_reward is not None:
+                        rollout.reward = max(rollout.reward, milestone_reward)
 
             # Train (gradient update)
             self._model.train()
