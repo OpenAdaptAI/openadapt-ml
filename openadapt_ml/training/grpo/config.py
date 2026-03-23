@@ -75,5 +75,12 @@ class GRPOConfig:
     save_every_steps: int = 50
     output_dir: str = "checkpoints/grpo"
 
+    # Generation
+    max_new_tokens: int = 2048  # Token budget per step. Reasoning models need
+    # 1000+ tokens (thought + action). 100 truncates mid-reasoning → unparseable.
+
+    # Task configs
+    task_dir: str | None = None  # Directory of TaskConfig YAMLs for milestone rewards
+
     # Stuck detection
     stuck_window: int = 3

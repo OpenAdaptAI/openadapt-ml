@@ -388,7 +388,7 @@ class GRPOTrainer:
             with torch.no_grad():
                 outputs = model.generate(
                     **inputs,
-                    max_new_tokens=100,
+                    max_new_tokens=self._config.max_new_tokens,
                     temperature=temperature,
                     do_sample=True,
                 )
@@ -404,6 +404,15 @@ class GRPOTrainer:
                     screen_size = collector.env.screen_size
                 except Exception:
                     pass
+
+            # Warn if output was likely truncated (hit max_new_tokens)
+            gen_len = outputs[0].shape[0] - inputs["input_ids"].shape[1]
+            if gen_len >= self._config.max_new_tokens - 1:
+                logger.warning(
+                    "Generation hit max_new_tokens=%d — output may be truncated. "
+                    "Increase config.max_new_tokens if actions aren't parsed.",
+                    self._config.max_new_tokens,
+                )
 
             action = _parse_vlm_output_to_action(decoded, screen_size=screen_size)
 
