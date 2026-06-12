@@ -1,6 +1,44 @@
 # CHANGELOG
 
 
+## v0.16.1 (2026-06-12)
+
+### Bug Fixes
+
+- Repair 8 latent import/kwarg bugs; add import-integrity and packaging guards
+  ([#64](https://github.com/OpenAdaptAI/openadapt-ml/pull/64),
+  [`04e9e67`](https://github.com/OpenAdaptAI/openadapt-ml/commit/04e9e678f754c51e8670bd439d1c396ff9ee22cd))
+
+Follow-up to OpenAdaptAI/OpenAdapt#999: green CI shipped a fully broken CLI because no test
+  exercised lazy imports, internal call seams, or the built wheel. This adds three guards and fixes
+  everything they caught on current main:
+
+New tests (dependency-free, <3s total): - tests/test_import_integrity.py::test_no_phantom_imports —
+  AST-walks every `from openadapt_ml.x import y` (including inside function bodies) and verifies y
+  exists in x - tests/test_import_integrity.py::test_no_phantom_kwargs — verifies keyword args
+  passed to internal functions exist in their signatures - tests/test_packaging.py — builds the
+  wheel and asserts bundled configs, core modules, and version match
+
+Latent bugs the new tests caught on main, fixed here: - cloud/local.py: cmd_serve called
+  regenerate_local_dashboard with a keep_polling kwarg that no longer exists (dashboard regeneration
+  failed on every serve, downgraded to a warning) - scripts/compare.py +
+  experiments/demo_prompt/run_experiment.py: capture_to_episode(goal=) — same kwarg bug as #999 bug
+  3, two more call sites - ingest/__init__.py: re-exported capture_to_session and
+  load_captures_as_sessions, which don't exist; the except ImportError guard meant
+  capture_to_episode was silently never exported either - evals/grounding.py: TYPE_CHECKING import
+  from missing module openadapt_ml.data.types (Episode lives in openadapt_ml.schema) -
+  cloud/azure_inference.py: imported QwenVLAdapter from missing module openadapt_ml.adapters.qwen
+  (lives in models.qwen_vl) and constructed it with a non-existent model_name kwarg (needs
+  from_pretrained); imported generate_comparison which was refactored away — restored as a thin
+  wrapper over generate_comparison_data/_html in compare.py
+
+Also: - release.yml: file/append a GitHub issue when the release workflow fails. Releases failed
+  silently Mar-Jun 2026 while PyPI went stale, which is what forced #999's reporter onto git
+  installs - pyproject: add build to the dev extra for the packaging tests
+
+Co-authored-by: Claude Fable 5 <noreply@anthropic.com>
+
+
 ## v0.16.0 (2026-06-12)
 
 ### Bug Fixes
