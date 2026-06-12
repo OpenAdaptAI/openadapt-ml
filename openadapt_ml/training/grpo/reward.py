@@ -100,8 +100,7 @@ def evaluate_milestones_screenshot(
 
     # Only evaluate screenshot-type milestones locally
     screenshot_milestones = [
-        ms for ms in milestones
-        if getattr(ms.check, "check", None) == "screenshot"
+        ms for ms in milestones if getattr(ms.check, "check", None) == "screenshot"
     ]
     if not screenshot_milestones:
         return 0.0

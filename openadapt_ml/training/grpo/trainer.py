@@ -195,6 +195,7 @@ def _parse_vlm_output_to_action(
     if json_match:
         try:
             import json as _json
+
             action_data = _json.loads(json_match.group())
             atype = action_data.get("action_type", "").lower()
             coord = action_data.get("coordinate", action_data.get("coords", []))
@@ -205,9 +206,7 @@ def _parse_vlm_output_to_action(
                     x_val, y_val = x_val * width, y_val * height
                 return BenchmarkAction(type="click", x=int(x_val), y=int(y_val))
             if atype == "type":
-                return BenchmarkAction(
-                    type="type", text=action_data.get("text", "")
-                )
+                return BenchmarkAction(type="type", text=action_data.get("text", ""))
             if atype in ("done", "wait"):
                 return BenchmarkAction(type=atype)
         except Exception:
