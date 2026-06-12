@@ -423,7 +423,7 @@ def run_experiment(
     from openadapt_ml.ingest.capture import capture_to_episode
 
     print(f"Loading demo from: {demo_capture_path}")
-    episode = capture_to_episode(demo_capture_path, goal=goal)
+    episode = capture_to_episode(demo_capture_path, instruction=goal)
     print(f"  Loaded {len(episode.steps)} steps, goal: {episode.goal}")
 
     print(f"\nTest task: {test_task}")

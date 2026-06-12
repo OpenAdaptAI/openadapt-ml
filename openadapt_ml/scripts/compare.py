@@ -202,6 +202,29 @@ def generate_comparison_data(
     return comparison_data
 
 
+def generate_comparison(
+    capture_path: str | Path,
+    adapter=None,
+    output_path: str | Path | None = None,
+) -> Path:
+    """Generate a comparison HTML for a capture using a loaded adapter.
+
+    Convenience wrapper over generate_comparison_data and
+    generate_comparison_html for callers that hold a capture path and a
+    model adapter (e.g. openadapt_ml.cloud.azure_inference).
+    """
+    from openadapt_ml.ingest.capture import capture_to_episode
+
+    capture_path = Path(capture_path)
+    episode = capture_to_episode(capture_path)
+    comparison_data = generate_comparison_data(episode, model=adapter)
+    if output_path is None:
+        output_path = capture_path / "comparison.html"
+    output_path = Path(output_path)
+    generate_comparison_html(capture_path, episode, comparison_data, output_path)
+    return output_path
+
+
 def generate_comparison_html(
     capture_path: Path,
     episode: Episode,
@@ -804,7 +827,7 @@ def main():
 
     # Convert capture to episode
     print(f"Loading capture from: {capture_path}")
-    episode = capture_to_episode(capture_path, goal=args.goal)
+    episode = capture_to_episode(capture_path, instruction=args.goal)
     print(f"Loaded {len(episode.steps)} steps")
 
     # Load model if checkpoint provided

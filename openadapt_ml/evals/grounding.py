@@ -19,8 +19,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from PIL import Image
 
-    from openadapt_ml.data.types import Episode
     from openadapt_ml.grounding.base import GroundingModule, RegionCandidate
+    from openadapt_ml.schema import Episode
 
 
 @dataclass
