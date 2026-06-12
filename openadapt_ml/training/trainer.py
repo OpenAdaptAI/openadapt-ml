@@ -106,7 +106,16 @@ def update_current_symlink_to_latest(
     if not job_dirs:
         return None
 
-    latest = max(job_dirs, key=lambda d: d.stat().st_mtime)
+    # Prefer directories that look like training runs over stray dirs
+    # (e.g. a top-level "checkpoints" directory from the old flat layout).
+    run_like = [
+        d
+        for d in job_dirs
+        if (d / "training_log.json").exists() or (d / "dashboard.html").exists()
+    ]
+    candidates = run_like or job_dirs
+
+    latest = max(candidates, key=lambda d: d.stat().st_mtime)
 
     current_link = base_dir / "current"
     temp_link = base_dir / f".current_temp_{latest.name}"
