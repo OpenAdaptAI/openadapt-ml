@@ -409,6 +409,9 @@ def _run_sft_training(
             callbacks=[callback],
         )
     else:
+        import torch
+
+        has_cuda = torch.cuda.is_available()
         training_args = SFTConfig(
             output_dir=config.output_dir,
             per_device_train_batch_size=config.batch_size,
@@ -423,6 +426,9 @@ def _run_sft_training(
             save_strategy=config.save_strategy,
             max_length=None,  # Critical for VLMs
             assistant_only_loss=False,  # Not supported for VL models yet
+            use_cpu=not has_cuda,
+            bf16=has_cuda and torch.cuda.is_bf16_supported(),
+            fp16=False,
         )
 
         trainer = SFTTrainer(

@@ -38,7 +38,7 @@ def _load_capture_episodes(capture_path: str | Path, goal: str | None = None) ->
     from openadapt_ml.ingest.capture import capture_to_episode
 
     capture_path = Path(capture_path)
-    episode = capture_to_episode(capture_path, goal=goal)
+    episode = capture_to_episode(capture_path, instruction=goal)
     return [episode]
 
 
