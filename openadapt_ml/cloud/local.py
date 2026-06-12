@@ -54,6 +54,22 @@ def get_current_output_dir() -> Path:
     return TRAINING_OUTPUT
 
 
+def resolve_config_path(config: str | Path) -> Path:
+    """Resolve a training config path, falling back to packaged configs.
+
+    Relative paths like "configs/qwen3vl_capture.yaml" only exist when
+    running from a repo checkout. When openadapt-ml is pip-installed, the
+    bundled copies under openadapt_ml/configs/ are used instead.
+    """
+    path = Path(config)
+    if path.exists():
+        return path
+    packaged = Path(__file__).resolve().parent.parent / "configs" / path.name
+    if packaged.exists():
+        return packaged
+    return path
+
+
 def _regenerate_viewer_if_possible(output_dir: Path) -> bool:
     """Regenerate viewer.html if comparison data exists.
 
@@ -324,7 +340,7 @@ def cmd_train(args: argparse.Namespace) -> int:
         else:
             config = "configs/qwen3vl_capture_4bit.yaml"
 
-    config_path = Path(config)
+    config_path = resolve_config_path(config)
     if not config_path.exists():
         print(f"Error: Config not found: {config_path}")
         return 1

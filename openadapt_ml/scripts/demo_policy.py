@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 
 from openadapt_ml.datasets.next_action import build_next_action_sft_samples
-from openadapt_ml.ingest.synthetic import generate_synthetic_sessions
+from openadapt_ml.ingest.synthetic import generate_synthetic_episodes
 from openadapt_ml.models.dummy_adapter import DummyAdapter
 from openadapt_ml.models.qwen_vl import QwenVLAdapter
 from openadapt_ml.models.api_adapter import ApiVLMAdapter
@@ -20,10 +20,9 @@ def main() -> None:
     args = parser.parse_args()
 
     # Use synthetic data to build one SFT-style sample
-    sessions = generate_synthetic_sessions(
-        num_sessions=1, seed=99, output_dir="synthetic/demo"
+    episodes = generate_synthetic_episodes(
+        num_episodes=1, seed=99, output_dir="synthetic/demo"
     )
-    episodes = [ep for sess in sessions for ep in sess.episodes]
     samples = build_next_action_sft_samples(episodes)
 
     # Load first sample and overwrite assistant content so the dummy adapter
