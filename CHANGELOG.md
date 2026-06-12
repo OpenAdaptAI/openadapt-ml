@@ -1,6 +1,133 @@
 # CHANGELOG
 
 
+## v0.16.0 (2026-06-12)
+
+### Bug Fixes
+
+- Align GRPO prompt format with SFT training format
+  ([#61](https://github.com/OpenAdaptAI/openadapt-ml/pull/61),
+  [`04e6e9f`](https://github.com/OpenAdaptAI/openadapt-ml/commit/04e6e9f8321334e3aac6a701a8c68e29e53cb0c6))
+
+The GRPO rollout prompt was missing the "Thought:" line and action history that the SFT training
+  uses. Models fine-tuned via SFT output "Thought: ...\nAction: CLICK(...)" but the GRPO prompt
+  didn't prompt for this format, causing verbose free-form output that couldn't be parsed → reward
+  0.0 → zero gradients.
+
+Changes: - Add "Thought:" and "Action:" prompt lines matching SFT format - Add action_history
+  parameter for step context - Parser extracts action from "Action: ..." line before regex matching
+  - Parser handles JSON format {"action_type": "click", "coordinate": [x,y]} - Debug logging of raw
+  VLM output for zero-reward diagnosis
+
+Co-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+- Include image placeholder in chat template for VLM GRPO
+  ([#59](https://github.com/OpenAdaptAI/openadapt-ml/pull/59),
+  [`6617e02`](https://github.com/OpenAdaptAI/openadapt-ml/commit/6617e026e564c2b7e04cbeb1bb63e8c8b7a348c7))
+
+Qwen2.5-VL requires <|image_pad|> tokens in the input. These are inserted by apply_chat_template
+  only when messages include {"type": "image"} content blocks.
+
+Fixed both agent_fn and _compute_rollout_loss.
+
+Co-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+- Increase max_new_tokens to 2048 and make configurable via GRPOConfig
+  ([#62](https://github.com/OpenAdaptAI/openadapt-ml/pull/62),
+  [`fecf461`](https://github.com/OpenAdaptAI/openadapt-ml/commit/fecf4619ce9ebe3763b90d3f6007a0a31689afe3))
+
+* fix: align GRPO prompt format with SFT training format
+
+The GRPO rollout prompt was missing the "Thought:" line and action history that the SFT training
+  uses. Models fine-tuned via SFT output "Thought: ...\nAction: CLICK(...)" but the GRPO prompt
+  didn't prompt for this format, causing verbose free-form output that couldn't be parsed → reward
+  0.0 → zero gradients.
+
+Changes: - Add "Thought:" and "Action:" prompt lines matching SFT format - Add action_history
+  parameter for step context - Parser extracts action from "Action: ..." line before regex matching
+  - Parser handles JSON format {"action_type": "click", "coordinate": [x,y]} - Debug logging of raw
+  VLM output for zero-reward diagnosis
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+* fix: increase max_new_tokens to 2048 and make configurable
+
+The default of 100 tokens truncated reasoning models mid-thought, producing unparseable output →
+  DONE → reward 0.0 → zero gradients. Caused 4 failed training runs (~20 GPU-hours wasted).
+
+- Add max_new_tokens to GRPOConfig (default 2048) - Use config value instead of hardcoded 100 - Add
+  truncation warning when generation hits the limit
+
+---------
+
+Co-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+- Repair broken internal imports, CPU training, and config packaging (OpenAdapt#999)
+  ([#63](https://github.com/OpenAdaptAI/openadapt-ml/pull/63),
+  [`9b8f3cd`](https://github.com/OpenAdaptAI/openadapt-ml/commit/9b8f3cd8a2e0f95203813338917bc89bae474001))
+
+* fix: repair broken internal imports, CPU training, and config packaging
+
+Fixes the openadapt-ml side of OpenAdaptAI/OpenAdapt#999:
+
+- Add missing update_current_symlink_to_latest() to training/trainer.py; cmd_serve imported it but
+  it never existed, so `openadapt serve` failed with a misleading "openadapt-ml not installed" error
+  (bug 2) - scripts/train.py: capture_to_episode(goal=) -> instruction=, matching the actual
+  signature (bug 3) - scripts/demo_policy.py: import generate_synthetic_episodes instead of the
+  non-existent generate_synthetic_sessions (bug 4) - Ship configs/ inside the wheel (hatch
+  force-include) and add resolve_config_path() so installed packages find bundled configs instead of
+  failing on repo-relative paths (bug 5) - training/trl_trainer.py: pass use_cpu/bf16/fp16 to
+  SFTConfig based on CUDA availability so CPU-only training no longer raises ValueError (bug 7)
+
+Verified: py_compile on all changed files, isolated functional test of
+
+the symlink helper, and wheel build confirming configs are included.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+* fix: respect MPS in CPU fallback, prefer run-like dirs for symlink
+
+- use_cpu now stays False on Apple Silicon (MPS) so the previous accelerated path isn't regressed;
+  only true CPU-only setups get use_cpu=True - update_current_symlink_to_latest prefers directories
+  containing training_log.json or dashboard.html so a stray top-level "checkpoints" directory from
+  the old flat layout can't win
+
+* style: ruff format grpo modules (pre-existing violations blocking CI)
+
+These two files fail 'ruff format --check' on main as well; formatting them here so the test matrix
+  can actually run.
+
+---------
+
+Co-authored-by: Claude Fable 5 <noreply@anthropic.com>
+
+### Features
+
+- Add --task-dir support for milestone-based rewards in standalone GRPO trainer
+  ([#60](https://github.com/OpenAdaptAI/openadapt-ml/pull/60),
+  [`7d095da`](https://github.com/OpenAdaptAI/openadapt-ml/commit/7d095dabbcf39b4146eb3bb5a28d12bde95a6bd7))
+
+* fix: include image placeholder in chat template for VLM GRPO
+
+Qwen2.5-VL requires <|image_pad|> tokens in the input. These are inserted by apply_chat_template
+  only when messages include {"type": "image"} content blocks.
+
+Fixed both agent_fn and _compute_rollout_loss.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+* feat: add --task-dir support for milestone-based rewards in standalone GRPO trainer
+
+- GRPOConfig: add task_dir field - reward.py: evaluate_milestones_screenshot() for client-side
+  reward - trainer.py: load TaskConfigs, auto-populate task_ids, override rewards -
+  rollout_collector.py: pass task_configs to env - No WAA evaluate endpoint needed — rewards
+  computed via VLM judge
+
+---------
+
+Co-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+
 ## v0.15.1 (2026-03-21)
 
 ### Bug Fixes

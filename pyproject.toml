@@ -1,6 +1,6 @@
 [project]
 name = "openadapt-ml"
-version = "0.15.1"
+version = "0.16.0"
 description = "Model-agnostic, domain-agnostic ML engine for GUI automation agents"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -78,6 +78,7 @@ benchmarks = [
 Homepage = "https://github.com/OpenAdaptAI/openadapt-ml"
 Repository = "https://github.com/OpenAdaptAI/openadapt-ml"
 Documentation = "https://github.com/OpenAdaptAI/openadapt-ml/tree/main/docs"
+
 
 [build-system]
 requires = ["hatchling"]
