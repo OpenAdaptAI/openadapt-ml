@@ -424,10 +424,10 @@ def main():
 
     elif args.command == "inference-worker":
         # Start inference worker
-        from openadapt_ml.adapters.qwen import QwenVLAdapter
+        from openadapt_ml.models.qwen_vl import QwenVLAdapter
 
         print(f"Starting inference worker with model: {args.model}")
-        adapter = QwenVLAdapter(model_name=args.model)
+        adapter = QwenVLAdapter.from_pretrained(args.model)
         queue.poll_and_process(adapter)
 
     elif args.command == "inference-watch":

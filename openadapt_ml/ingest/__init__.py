@@ -11,8 +11,8 @@ Functions:
     - load_episodes(): Load Episodes from JSON files (primary entry point)
     - save_episodes(): Save Episodes to JSON file
     - capture_to_episode(): Converts one openadapt-capture recording → one Episode
-    - capture_to_session(): Converts one recording → Session containing one Episode
-    - load_captures_as_sessions(): Loads multiple recordings → list of Sessions
+    - capture_to_episodes(): Converts one recording → list of Episodes
+    - load_captures_as_episodes(): Loads multiple recordings → list of Episodes
     - generate_synthetic_episodes(): Creates synthetic training data
 """
 
@@ -29,15 +29,15 @@ __all__ = [
 try:
     from openadapt_ml.ingest.capture import (  # noqa: F401
         capture_to_episode,
-        capture_to_session,
-        load_captures_as_sessions,
+        capture_to_episodes,
+        load_captures_as_episodes,
     )
 
     __all__.extend(
         [
             "capture_to_episode",
-            "capture_to_session",
-            "load_captures_as_sessions",
+            "capture_to_episodes",
+            "load_captures_as_episodes",
         ]
     )
 except ImportError:

@@ -499,9 +499,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         if not args.no_regenerate:
             print("Regenerating dashboard and viewer...")
             try:
-                # Use keep_polling=True so JavaScript fetches live data from training_log.json
-                # This ensures the dashboard shows current data instead of stale embedded data
-                regenerate_local_dashboard(str(serve_dir), keep_polling=True)
+                regenerate_local_dashboard(str(serve_dir))
                 # Also regenerate viewer if comparison data exists
                 _regenerate_viewer_if_possible(serve_dir)
             except Exception as e:

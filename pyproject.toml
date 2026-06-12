@@ -66,6 +66,7 @@ training = [
 # See https://docs.unsloth.ai/get-started/installation
 
 dev = [
+    "build>=1.0.0",  # tests/test_packaging.py builds the wheel
     "pytest>=9.0.0",
     "ruff>=0.1.0",
 ]
