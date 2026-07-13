@@ -33,6 +33,7 @@ from openadapt_ml.training.grpo.config import GRPOConfig
 
 logger = logging.getLogger(__name__)
 
+
 def _load_waa_desktop_env() -> Any | None:
     """Lazily import the concrete WAADesktopEnv from openadapt-evals.
 
