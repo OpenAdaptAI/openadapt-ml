@@ -38,7 +38,7 @@ from openadapt_ml.experiments.waa_demo.tasks import (
 )
 
 if TYPE_CHECKING:
-    from openadapt_evals import (
+    from openadapt_types import (
         BenchmarkAction,
         BenchmarkObservation,
         BenchmarkTask,
@@ -305,7 +305,7 @@ Think step by step, then output the action on a new line starting with "ACTION:"
         Returns:
             BenchmarkAction parsed from VLM response
         """
-        from openadapt_evals import BenchmarkAction
+        from openadapt_types import BenchmarkAction
 
         adapter = self._get_adapter()
 
@@ -447,7 +447,7 @@ Think step by step, then output the action on a new line starting with "ACTION:"
         Uses the same parsing logic as APIBenchmarkAgent.
         """
         import re
-        from openadapt_evals import BenchmarkAction
+        from openadapt_types import BenchmarkAction
 
         raw_action = {"response": response}
 

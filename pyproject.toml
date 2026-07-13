@@ -28,6 +28,10 @@ dependencies = [
     "matplotlib>=3.10.7",
     "modal>=1.3.4",
     "openadapt-capture>=0.3.0",
+    # Canonical schema package. Benchmark* types (Task/Observation/Action/Agent)
+    # live here so ml and evals don't import each other (breaks ml<->evals cycle).
+    # NOTE: requires the openadapt-types release that adds openadapt_types.benchmark.
+    "openadapt-types>=0.3.0",
     "pillow>=12.0.0",
     "pyautogui>=0.9.54",
     "pydantic-settings>=2.0.0",
