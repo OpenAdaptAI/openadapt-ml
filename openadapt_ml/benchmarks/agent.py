@@ -32,8 +32,10 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
-# Import base classes from openadapt-evals (canonical location)
-from openadapt_evals import (
+# Import base classes from openadapt-types (canonical schema package).
+# These used to live in openadapt-evals; importing them from the schema
+# package keeps openadapt-ml a leaf (no module-level ml -> evals import).
+from openadapt_types import (
     BenchmarkAction,
     BenchmarkAgent,
     BenchmarkObservation,

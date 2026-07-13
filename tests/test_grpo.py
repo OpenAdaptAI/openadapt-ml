@@ -186,16 +186,18 @@ def test_rollout_defaults():
 
 def test_rollout_collector_requires_evals():
     """GRPORolloutCollector raises ImportError without openadapt-evals."""
-    from openadapt_ml.training.grpo.rollout_collector import (
-        GRPORolloutCollector,
-        RLEnvironment,
-    )
+    import importlib.util
+
+    from openadapt_ml.training.grpo.rollout_collector import GRPORolloutCollector
     from openadapt_ml.training.grpo import GRPOConfig
 
-    # If openadapt-evals is not installed, this should raise ImportError.
-    # If it IS installed, the constructor will try to connect (which we skip).
+    # The concrete env/adapter are imported lazily inside __init__ (openadapt-ml
+    # is a leaf and has no module-level openadapt-evals import). If evals is not
+    # installed, constructing the collector should raise ImportError. If it IS
+    # installed, the constructor will try to connect (which we skip).
     config = GRPOConfig(server_url="http://localhost:99999")
-    if RLEnvironment is None:
+    evals_installed = importlib.util.find_spec("openadapt_evals") is not None
+    if not evals_installed:
         with pytest.raises(ImportError, match="openadapt-evals"):
             GRPORolloutCollector(config)
 

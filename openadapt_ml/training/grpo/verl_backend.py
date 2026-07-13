@@ -33,11 +33,18 @@ from openadapt_ml.training.grpo.config import GRPOConfig
 
 logger = logging.getLogger(__name__)
 
-# Deferred import for openadapt-evals WAADesktopEnv (optional dependency)
-try:
-    from openadapt_evals.adapters.verl_env import WAADesktopEnv
-except ImportError:
-    WAADesktopEnv = None  # type: ignore[assignment, misc]
+def _load_waa_desktop_env() -> Any | None:
+    """Lazily import the concrete WAADesktopEnv from openadapt-evals.
+
+    Kept out of module scope so openadapt-ml has no module-level
+    openadapt-evals import (ml stays a dependency leaf). Returns the class,
+    or ``None`` if openadapt-evals is not installed.
+    """
+    try:
+        from openadapt_evals.adapters.verl_env import WAADesktopEnv
+    except ImportError:
+        return None
+    return WAADesktopEnv
 
 
 def build_vagen_config(config: GRPOConfig) -> dict[str, Any]:
@@ -96,7 +103,7 @@ def train_with_verl(config: GRPOConfig) -> None:
     """
     vagen_config = build_vagen_config(config)
 
-    if WAADesktopEnv is not None:
+    if _load_waa_desktop_env() is not None:
         logger.info(
             "WAADesktopEnv is available. verl-agent can use it for "
             "desktop environment interaction."

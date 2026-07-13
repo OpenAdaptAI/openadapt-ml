@@ -54,15 +54,6 @@ from openadapt_ml.training.grpo.rollout_collector import (
     Rollout,
 )
 
-# Optional import for TaskConfig (openadapt-evals may not be installed)
-try:
-    from openadapt_evals.task_config import TaskConfig
-
-    _HAS_TASK_CONFIG = True
-except ImportError:
-    TaskConfig = None  # type: ignore[assignment, misc]
-    _HAS_TASK_CONFIG = False
-
 logger = logging.getLogger(__name__)
 
 DEFAULT_SCREEN_SIZE: tuple[int, int] = (1920, 1080)
@@ -166,18 +157,7 @@ def _parse_vlm_output_to_action(
 
     Supports: CLICK(x=0.XX, y=0.XX), TYPE(text="..."), WAIT(), DONE().
     """
-    try:
-        from openadapt_evals.adapters.base import BenchmarkAction
-    except ImportError:
-        from dataclasses import dataclass as _dc
-
-        @_dc
-        class BenchmarkAction:  # type: ignore[no-redef]
-            type: str = "done"
-            x: float | None = None
-            y: float | None = None
-            text: str | None = None
-            key: str | None = None
+    from openadapt_types import BenchmarkAction
 
     text = text.strip()
     width, height = screen_size
@@ -371,11 +351,16 @@ class GRPOTrainer:
             ImportError: If openadapt-evals is not installed.
             FileNotFoundError: If the directory does not exist.
         """
-        if not _HAS_TASK_CONFIG:
+        # Lazy import: the concrete TaskConfig is an eval-harness concept.
+        # Keeping it out of module scope keeps openadapt-ml a leaf (no
+        # module-level openadapt-evals import).
+        try:
+            from openadapt_evals.task_config import TaskConfig
+        except ImportError as exc:
             raise ImportError(
                 "openadapt-evals is required for --task-dir support. "
                 "Install with: pip install openadapt-evals"
-            )
+            ) from exc
 
         task_dir_path = Path(task_dir)
         if not task_dir_path.is_dir():
@@ -459,7 +444,7 @@ class GRPOTrainer:
         Captures model/processor by reference so weight updates during
         training are reflected in subsequent rollouts.
         """
-        from openadapt_evals.adapters.base import BenchmarkAction
+        from openadapt_types import BenchmarkAction
 
         model = self._model
         processor = self._processor

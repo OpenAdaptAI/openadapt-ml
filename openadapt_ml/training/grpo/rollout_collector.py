@@ -14,28 +14,20 @@ from __future__ import annotations
 import logging
 import random
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from openadapt_ml.training.grpo.config import GRPOConfig
 from openadapt_ml.training.grpo.reward import binary_task_success
+from openadapt_ml.training.grpo.rollout_env import RolloutEnv
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    # The concrete environment/adapter live in openadapt-evals and implement
+    # the RolloutEnv Protocol defined in openadapt-ml. They are imported
+    # lazily (inside __init__) at runtime to keep openadapt-ml a leaf with no
+    # module-level openadapt-evals import.
+    from openadapt_evals.adapters import WAALiveAdapter
 
 logger = logging.getLogger(__name__)
-
-# Deferred imports for openadapt-evals dependencies (optional at install time)
-try:
-    from openadapt_evals.adapters import (
-        RLEnvironment,
-        RolloutStep,
-        WAALiveAdapter,
-        WAALiveConfig,
-    )
-    from openadapt_evals.adapters.rl_env import ResetConfig
-except ImportError:
-    RLEnvironment = None  # type: ignore[assignment, misc]
-    RolloutStep = None  # type: ignore[assignment, misc]
-    WAALiveAdapter = None  # type: ignore[assignment, misc]
-    WAALiveConfig = None  # type: ignore[assignment, misc]
-    ResetConfig = None  # type: ignore[assignment, misc]
 
 
 @dataclass
@@ -81,25 +73,35 @@ class GRPORolloutCollector:
         config: GRPOConfig,
         task_configs: dict[str, Any] | None = None,
     ) -> None:
-        if RLEnvironment is None:
+        # Lazy import: the concrete WAA adapter + RLEnvironment live in
+        # openadapt-evals and implement the RolloutEnv Protocol. Importing
+        # them here (not at module scope) keeps openadapt-ml a leaf.
+        try:
+            from openadapt_evals.adapters import (
+                RLEnvironment,
+                WAALiveAdapter,
+                WAALiveConfig,
+            )
+        except ImportError as exc:
             raise ImportError(
                 "openadapt-evals is required for rollout collection. "
                 "Install it with: uv add openadapt-evals"
-            )
+            ) from exc
 
         self._config = config
         self._task_configs = task_configs or {}
-        self._adapter = WAALiveAdapter(
+        self._adapter: WAALiveAdapter = WAALiveAdapter(
             WAALiveConfig(
                 server_url=config.server_url,
                 evaluate_url=config.evaluate_url,
             )
         )
-        self._env = RLEnvironment(self._adapter)
+        # RLEnvironment structurally satisfies the RolloutEnv Protocol.
+        self._env: RolloutEnv = RLEnvironment(self._adapter)
 
     @property
-    def env(self) -> Any:
-        """The underlying RLEnvironment instance."""
+    def env(self) -> RolloutEnv:
+        """The underlying environment (implements the RolloutEnv Protocol)."""
         return self._env
 
     def collect_group(
