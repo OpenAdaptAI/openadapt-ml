@@ -31,7 +31,7 @@ dependencies = [
     # Canonical schema package. Benchmark* types (Task/Observation/Action/Agent)
     # live here so ml and evals don't import each other (breaks ml<->evals cycle).
     # NOTE: requires the openadapt-types release that adds openadapt_types.benchmark.
-    "openadapt-types>=0.2.0",
+    "openadapt-types>=0.3.0",
     "pillow>=12.0.0",
     "pyautogui>=0.9.54",
     "pydantic-settings>=2.0.0",
@@ -98,9 +98,6 @@ packages = ["openadapt_ml"]
 
 [tool.uv.sources]
 openadapt-capture = { path = "../openadapt-capture", editable = true }
-# Local editable pin until the openadapt-types release adding the Benchmark*
-# module (openadapt_types.benchmark) is published. See PR release sequencing.
-openadapt-types = { path = "../openadapt-types", editable = true }
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
