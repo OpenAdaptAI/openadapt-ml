@@ -1,18 +1,21 @@
 # OpenAdapt-ML
 
 > [!IMPORTANT]
-> **Status: Research — not required by the product.** This package explores
-> training and running demo-conditioned vision-language model (VLM) agents for
-> GUI automation. It is evidence-generating research work and is not required
-> to record, compile, or replay a workflow.
+> **Status: experimental research. Not required by the product.** This package
+> explores training and running demo-conditioned vision-language model (VLM)
+> agents for GUI automation. It is evidence-generating research work with an
+> unstable API, and it is not required to record, compile, or replay a
+> workflow.
 >
-> The OpenAdapt product is the demonstration compiler,
+> The OpenAdapt product is a **governed demonstration compiler**:
 > [`openadapt-flow`](https://github.com/OpenAdaptAI/openadapt-flow), installed
 > via the [`OpenAdapt`](https://github.com/OpenAdaptAI/OpenAdapt) launcher
-> (`pip install openadapt`): it compiles a demonstrated GUI workflow into a
-> deterministic, locally executable program. Healthy runs make no model calls,
-> and it halts instead of guessing when verification fails. Lifecycle labels for
-> every repository are in the
+> (`pip install openadapt`). You record a workflow once, it compiles the
+> demonstration into a deterministic, locally executable program, and it replays
+> that program with **zero model calls on the healthy path**, halting instead of
+> guessing when verification fails. Model training and grounding live here as a
+> **research and cost-optimization surface (Phase 2)**, not as part of that
+> deterministic replay path. Lifecycle labels for every repository are in the
 > [repository lifecycle registry](https://github.com/OpenAdaptAI/.github/blob/main/REPOSITORY_LIFECYCLE.md).
 
 [![Tests](https://github.com/OpenAdaptAI/openadapt-ml/actions/workflows/test.yml/badge.svg)](https://github.com/OpenAdaptAI/openadapt-ml/actions/workflows/test.yml)
@@ -21,27 +24,77 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**The ML engine for [OpenAdapt](https://github.com/OpenAdaptAI/OpenAdapt) -- open-source desktop automation with demo-conditioned AI agents.**
+OpenAdapt-ML is the research ML layer for [OpenAdapt](https://github.com/OpenAdaptAI/OpenAdapt).
+It provides the GUI-specific machinery for experimenting with vision-language
+model (VLM) agents that automate desktop tasks: canonical schemas for GUI
+trajectories, VLM adapters, supervised fine-tuning, visual grounding, online RL
+(GRPO) experiments, and demo-conditioned inference.
 
-OpenAdapt-ML provides the GUI-specific ML layer for training and running vision-language model (VLM) agents that automate desktop tasks. It handles everything between raw screen recordings and a production policy API: canonical schemas for GUI trajectories, VLM adapters, supervised fine-tuning with TRL + Unsloth, grounding, and demo-conditioned inference.
+## How this fits the product
+
+OpenAdapt is a governed demonstration compiler. All substrates are first-class,
+with honest maturity: Browser is in beta (the full record, compile, and replay
+loop runs in CI); Windows, macOS, and RDP are early access; Citrix and VDI are
+exploratory. That deterministic replay loop lives in
+[`openadapt-flow`](https://github.com/OpenAdaptAI/openadapt-flow) and makes no
+model calls when a run is healthy.
+
+This repository sits deliberately upstream of that path. Everything here is
+research aimed at the surfaces where a model may help: repairing or generalizing
+a compiled step, grounding UI elements when structural cues are missing, and
+reducing cost over time. Treat it as a lab, not a supported API. The APIs,
+configs, and results below can and do change.
 
 ## Demos
 
-**Synthetic Login** -- Qwen3-VL-2B fine-tuned on synthetic UI scenarios:
+**Synthetic Login** (Qwen3-VL-2B fine-tuned on synthetic UI scenarios):
 
 ![Login Demo](experiments/qwen_login/login_demo.gif)
 ![Registration Demo](experiments/qwen_login/registration_demo.gif)
 
-## Key Features
+## What is here
 
-- **GUI trajectory schemas** -- Pydantic models for Episodes, Steps, Actions, and Observations with JSON Schema export and format converters (WAA, WebArena)
-- **VLM adapters** -- Unified interface for Qwen3-VL, Qwen2.5-VL, Claude, GPT, and Gemini with automatic device selection (CUDA / MPS / CPU)
-- **Supervised fine-tuning** -- TRL SFTTrainer with Unsloth optimizations for 2x faster training and 50% less VRAM via LoRA adapters
-- **Runtime policy API** -- `AgentPolicy` that predicts the next GUI action (`CLICK`, `TYPE`, `DONE`) from a screenshot and goal
-- **Demo-conditioned inference** -- Retrieval-augmented prompting using recorded demonstrations for trajectory-conditioned disambiguation
-- **Grounding module** -- Locate UI elements via Gemini vision API, oracle bounding boxes, or Set-of-Marks (SoM) overlays
-- **Cloud GPU training** -- One-command training pipelines for Lambda Labs and Azure
-- **Synthetic data generation** -- Configurable UI scenarios (login, registration) with layout jitter for rapid iteration
+- **GUI trajectory schemas.** Pydantic models for `Episode`, `Step`, `Action`,
+  and `Observation` with JSON Schema export and format converters (WAA,
+  WebArena).
+- **VLM adapters.** A unified interface for Qwen3-VL and Qwen2.5-VL (local) plus
+  Claude, GPT, and Gemini (inference-only, API-backed), with automatic device
+  selection (CUDA / MPS / CPU).
+- **Supervised fine-tuning (SFT).** TRL `SFTTrainer` with optional Unsloth
+  optimizations, training LoRA adapters.
+- **Online RL (GRPO), experimental.** A Group Relative Policy Optimization
+  training module that collects rollouts against a live environment. See the
+  training status note below for what actually runs today.
+- **Runtime policy API.** `AgentPolicy` predicts the next GUI action (`CLICK`,
+  `TYPE`, `DONE`, and related types) from a screenshot and goal.
+- **Demo-conditioned inference.** Retrieval-augmented prompting that conditions
+  on recorded demonstrations for trajectory-aware disambiguation.
+- **Grounding.** Locate UI elements via a vision API, oracle bounding boxes, or
+  Set-of-Marks (SoM) overlays.
+- **Recording segmentation.** Turn raw recordings into described, deduplicated
+  segments.
+- **Cloud GPU training.** One-command training pipelines for Lambda Labs, Modal,
+  and Azure, plus local training.
+- **Synthetic data generation.** Configurable UI scenarios (login, registration)
+  with layout jitter for rapid iteration.
+
+## Training status (read before you train)
+
+Model training here is research and cost-optimization work, not the product's
+healthy replay path. Two facts matter most:
+
+- **A base VLM cannot operate Windows out of the box.** In practice you need an
+  SFT checkpoint (or distillation) before online RL produces any signal.
+  Un-fine-tuned base models yield near-zero reward on real GUI tasks.
+- **The GRPO module has two backends at different maturity.**
+  `GRPOConfig.backend="standalone"` (the default) is a built-in HuggingFace plus
+  PEFT trainer intended for single-GPU prototyping and debugging.
+  `backend="verl"` is an integration point for verl-agent / VAGEN
+  (GiGPO, multi-GPU); it currently prints setup instructions and raises
+  `NotImplementedError` rather than running a training job. Supervised
+  fine-tuning uses TRL's `SFTTrainer` and is the most exercised training path.
+
+Expect rough edges. This is where experiments happen.
 
 ## Installation
 
@@ -49,31 +102,32 @@ OpenAdapt-ML provides the GUI-specific ML layer for training and running vision-
 # Core package
 pip install openadapt-ml
 
-# With training dependencies (TRL + datasets)
+# With training dependencies (torch, transformers, TRL, PEFT, datasets)
 pip install openadapt-ml[training]
 
 # With API-backed VLMs (Claude, GPT)
 pip install openadapt-ml[api]
 
-# Development (from source)
+# From source
 git clone https://github.com/OpenAdaptAI/openadapt-ml.git
 cd openadapt-ml
 uv sync
 ```
 
-## Quick Start
+Unsloth is optional and installed separately; see the
+[Unsloth install guide](https://docs.unsloth.ai/get-started/installation).
 
-### Run a smoke test
+## Quick start
+
+### Run a smoke test (no GPU)
 
 ```bash
-# Model-free policy demo (no GPU required)
 uv run python -m openadapt_ml.scripts.demo_policy --backend dummy
 ```
 
 ### Train on synthetic data
 
 ```bash
-# Fine-tune Qwen3-VL on synthetic login scenario
 uv run python -m openadapt_ml.scripts.train \
   --config configs/qwen3vl_synthetic.yaml
 ```
@@ -85,10 +139,10 @@ uv run python -m openadapt_ml.scripts.train \
 uv run python -m openadapt_ml.scripts.train \
   --config configs/qwen3vl_capture.yaml \
   --capture ~/captures/my-workflow \
-  --open  # Opens training dashboard in browser
+  --open  # Opens the training dashboard in a browser
 ```
 
-### End-to-end benchmark (train + eval + plot)
+### End-to-end benchmark (train, eval, plot)
 
 ```bash
 uv run python -m openadapt_ml.scripts.run_qwen_login_benchmark \
@@ -105,7 +159,7 @@ from openadapt_ml.models.qwen_vl import QwenVLAdapter
 adapter = QwenVLAdapter(model_name="Qwen/Qwen3-VL-2B-Instruct")
 policy = AgentPolicy(adapter)
 
-# Given an SFT-style sample (screenshot + goal + chat history):
+# Given an SFT-style sample (screenshot, goal, chat history):
 output = policy.predict(sample)
 print(output.action)   # Action(type=CLICK, coordinates={"x": 0.45, "y": 0.71})
 print(output.thought)  # "Click the Login button"
@@ -139,74 +193,65 @@ episode = Episode(
 
 ```
 openadapt_ml/
-├── schema/              # Episode, Step, Action, Observation (Pydantic models)
-│   ├── episode.py       #   Core dataclasses + JSON Schema export
-│   └── converters.py    #   WAA/WebArena format converters
-├── models/              # VLM adapters
-│   ├── base_adapter.py  #   BaseVLMAdapter ABC
-│   ├── qwen_vl.py       #   Qwen3-VL, Qwen2.5-VL
-│   ├── api_adapter.py   #   Claude, GPT (inference-only)
-│   └── dummy_adapter.py #   Fake adapter for testing
-├── training/            # Fine-tuning pipeline
-│   ├── trl_trainer.py   #   TRL SFTTrainer + Unsloth
-│   ├── trainer.py       #   Training orchestration
-│   └── viewer.py        #   Training dashboard (HTML)
-├── runtime/             # Inference
-│   ├── policy.py        #   AgentPolicy (screenshot -> action)
-│   └── safety_gate.py   #   Action safety checks
-├── datasets/            # Data loading
-│   └── next_action.py   #   Episodes -> SFT chat samples
-├── ingest/              # Data ingestion
-│   ├── synthetic.py     #   Synthetic UI generation
-│   ├── capture.py       #   openadapt-capture loader
-│   └── loader.py        #   Generic episode loader
-├── grounding/           # UI element localization
-│   ├── base.py          #   OracleGrounder, GroundingModule ABC
-│   └── detector.py      #   GeminiGrounder, SoM overlays
-├── retrieval/           # Demo-conditioned inference
-│   ├── retriever.py     #   Demo retrieval for RAG prompting
-│   └── embeddings.py    #   Screenshot/action embeddings
-├── benchmarks/          # ML-specific benchmark agents
-│   └── agent.py         #   PolicyAgent, APIBenchmarkAgent, UnifiedBaselineAgent
-├── cloud/               # Cloud GPU training
-│   ├── lambda_labs.py   #   Lambda Labs integration
-│   ├── local.py         #   Local training (CUDA/MPS)
-│   └── ssh_tunnel.py    #   SSH tunnel management
-├── segmentation/        # Recording segmentation pipeline
-├── evals/               # Evaluation metrics (grounding, trajectory matching)
-├── config.py            # Settings via pydantic-settings
-└── scripts/             # CLI entry points (train, eval, compare, demo)
+├── schema/          # Episode, Step, Action, Observation (Pydantic) + converters
+├── models/          # VLM adapters (Qwen3-VL, Qwen2.5-VL, API backends, dummy)
+│   └── providers/   #   Provider-specific client wiring
+├── training/        # Fine-tuning + RL
+│   ├── trl_trainer.py  #   TRL SFTTrainer (+ optional Unsloth)
+│   ├── trainer.py      #   Training orchestration
+│   ├── grpo/           #   GRPO online RL (standalone default; verl = stub)
+│   └── viewer.py       #   Training dashboard (HTML)
+├── runtime/         # Inference: AgentPolicy + action safety gate
+├── datasets/        # Episodes -> SFT chat samples
+├── ingest/          # Synthetic UI, openadapt-capture loader, generic loader
+├── grounding/       # UI element localization (oracle, vision API, SoM)
+├── perception/      # Perception integration helpers
+├── retrieval/       # Demo-conditioned retrieval for RAG-style prompting
+├── segmentation/    # Recording -> described, deduplicated segments
+├── baselines/       # Baseline agents and prompt/parse utilities
+├── benchmarks/      # ML-specific benchmark agents (PolicyAgent, API, unified)
+├── evals/           # Evaluation metrics (grounding, trajectory matching)
+├── export/          # Dataset export (Parquet, CLI)
+├── cloud/           # Cloud GPU training (Lambda Labs, Modal, Azure, vast.ai)
+├── config.py        # Settings via pydantic-settings
+└── scripts/         # CLI entry points (train, eval, compare, demo)
 ```
 
-## Benchmark Results
+## Benchmark results
+
+These are controlled synthetic results. They show that the training pipeline
+runs end to end, not real-world performance.
 
 ### Synthetic Login (Qwen3-VL-2B with Set-of-Marks)
 
-| Metric                | Score    |
-|-----------------------|----------|
-| Action Type Accuracy  | **100%** |
-| Element Accuracy      | **100%** |
-| Episode Success Rate  | **100%** |
+| Metric               | Score    |
+|----------------------|----------|
+| Action Type Accuracy | **100%** |
+| Element Accuracy     | **100%** |
+| Episode Success Rate | **100%** |
 
-### Multi-Model Comparison (Synthetic Login, coordinate mode)
+### Multi-model comparison (Synthetic Login, coordinate mode)
 
-| Model               | Action Accuracy | Coord Error | Click Hit Rate |
-|----------------------|-----------------|-------------|----------------|
-| Qwen3-VL-2B FT      | 0.469           | 0.051       | 0.850          |
-| Qwen3-VL-8B FT      | 0.286           | 0.004       | 1.000          |
-| Claude Sonnet 4.5    | 0.121           | 0.757       | 0.000          |
-| GPT-5.1              | 0.183           | 0.057       | 0.600          |
+| Model             | Action Accuracy | Coord Error | Click Hit Rate |
+|-------------------|-----------------|-------------|----------------|
+| Qwen3-VL-2B FT    | 0.469           | 0.051       | 0.850          |
+| Qwen3-VL-8B FT    | 0.286           | 0.004       | 1.000          |
+| Claude Sonnet 4.5 | 0.121           | 0.757       | 0.000          |
+| GPT-5.1           | 0.183           | 0.057       | 0.600          |
 
-> These are results on a controlled synthetic benchmark with ~3 UI elements. They validate that the training pipeline works, not real-world performance. Evaluation on standard benchmarks (WAA, WebArena) is ongoing via [openadapt-evals](https://github.com/OpenAdaptAI/openadapt-evals).
+> This is a controlled synthetic benchmark with roughly three UI elements. It
+> validates that the training pipeline works, not real-world accuracy.
+> Evaluation on standard benchmarks (WAA, WebArena) is ongoing via
+> [openadapt-evals](https://github.com/OpenAdaptAI/openadapt-evals).
 
-## Cloud GPU Training
+## Cloud GPU training
 
 ### Lambda Labs
 
 ```bash
 export LAMBDA_API_KEY=your_key_here
 
-# One-command: launch, train, download, terminate
+# Launch, train, download, and terminate in one command
 uv run python -m openadapt_ml.cloud.lambda_labs train \
   --capture ~/captures/my-workflow \
   --goal "Turn off Night Shift in System Settings"
@@ -225,24 +270,31 @@ OpenAdapt-ML is one component in the OpenAdapt stack:
 
 | Package | Purpose |
 |---------|---------|
-| **[openadapt-ml](https://github.com/OpenAdaptAI/openadapt-ml)** | ML engine: schemas, VLM adapters, training, inference, grounding |
+| **[OpenAdapt](https://github.com/OpenAdaptAI/OpenAdapt)** | Desktop automation platform and launcher (`pip install openadapt`) |
+| **[openadapt-flow](https://github.com/OpenAdaptAI/openadapt-flow)** | The demonstration compiler: deterministic, zero-model-call replay on the healthy path |
+| **[openadapt-ml](https://github.com/OpenAdaptAI/openadapt-ml)** | This repo: research ML (schemas, VLM adapters, training, inference, grounding) |
 | **[openadapt-evals](https://github.com/OpenAdaptAI/openadapt-evals)** | Evaluation infrastructure: VM management, pool orchestration, benchmark runners, `oa-vm` CLI |
 | **[openadapt-capture](https://github.com/OpenAdaptAI/openadapt-capture)** | Lightweight GUI recording and demo sharing |
-| **[OpenAdapt](https://github.com/OpenAdaptAI/OpenAdapt)** | Desktop automation platform (end-user application) |
 
-> Looking for benchmark evaluation, Azure VM management, or the `oa-vm` CLI? Those live in [openadapt-evals](https://github.com/OpenAdaptAI/openadapt-evals).
+> Looking for benchmark evaluation, Azure VM management, or the `oa-vm` CLI?
+> Those live in [openadapt-evals](https://github.com/OpenAdaptAI/openadapt-evals).
 
 ## Documentation
 
-- [`docs/design.md`](docs/design.md) -- System design (schemas, adapters, training, runtime)
-- [`docs/cloud_gpu_training.md`](docs/cloud_gpu_training.md) -- Lambda Labs and Azure training guide
-- [`docs/qwen_login_experiment.md`](docs/qwen_login_experiment.md) -- Synthetic benchmark reproduction
-- [`docs/gemini_grounding.md`](docs/gemini_grounding.md) -- Grounding module documentation
+- [docs.openadapt.ai](https://docs.openadapt.ai) for the product and the overall
+  stack.
+- [`docs/design.md`](docs/design.md) for system design (schemas, adapters,
+  training, runtime).
+- [`docs/cloud_gpu_training.md`](docs/cloud_gpu_training.md) for the Lambda Labs
+  and Azure training guide.
+- [`docs/qwen_login_experiment.md`](docs/qwen_login_experiment.md) for synthetic
+  benchmark reproduction.
+- [`docs/gemini_grounding.md`](docs/gemini_grounding.md) for the grounding
+  module.
 
 ## Contributing
 
 ```bash
-# Clone and install dev dependencies
 git clone https://github.com/OpenAdaptAI/openadapt-ml.git
 cd openadapt-ml
 uv sync --extra dev --extra training
@@ -254,8 +306,13 @@ uv run pytest
 uv run ruff check .
 ```
 
-We use [Angular-style commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, etc.) with [Python Semantic Release](https://python-semantic-release.readthedocs.io/) for automated versioning and PyPI publishing.
+We use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`,
+`fix:`, `docs:`, and so on) with
+[Python Semantic Release](https://python-semantic-release.readthedocs.io/) for
+automated versioning and PyPI publishing.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). OpenAdapt is open core: this repository is permissively licensed,
+while private hardening corpora, tuned parameters, and deployment-derived recipes
+are intentionally kept out of it.
