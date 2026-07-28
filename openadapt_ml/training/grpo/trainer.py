@@ -612,7 +612,9 @@ class GRPOTrainer:
         reward_mean = sum(rewards) / len(rewards) if rewards else 0.0
 
         # Skip if no variance (no gradient signal)
-        valid = [(r, a) for r, a in zip(rollouts, advantages) if abs(a) >= 1e-8]
+        valid = [
+            (r, a) for r, a in zip(rollouts, advantages, strict=True) if abs(a) >= 1e-8
+        ]
         if not valid:
             return {"reward_mean": reward_mean, "loss": 0.0, "skipped": True}
 

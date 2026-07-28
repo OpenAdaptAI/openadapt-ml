@@ -186,8 +186,11 @@ def report(artifact_dir: str, html: bool = False) -> None:
         # Check if good actions dominate
         rewards = convergence.get("rewards", [])
         if final and rewards:
-            good_prob = sum(p for p, r in zip(final, rewards) if r > 0.5)
-            bad_prob = sum(p for p, r in zip(final, rewards) if r <= 0.5)
+            # strict=False: final_policy and rewards are read from a JSON
+            # report on disk. They should be the same length; a renderer
+            # must still display a malformed report rather than crash.
+            good_prob = sum(p for p, r in zip(final, rewards, strict=False) if r > 0.5)
+            bad_prob = sum(p for p, r in zip(final, rewards, strict=False) if r <= 0.5)
             lines.append(f"  Good action prob: {good_prob:.4f}")
             lines.append(f"  Bad action prob:  {bad_prob:.4f}")
             lines.append(
@@ -357,7 +360,9 @@ def _generate_html(
             for i in range(0, len(policy_hist), 5):
                 probs = policy_hist[i]
                 labels = [
-                    f"{'G' if r > 0.5 else 'B'}:{p:.3f}" for p, r in zip(probs, rewards)
+                    # strict=False: see above, same on-disk report data.
+                    f"{'G' if r > 0.5 else 'B'}:{p:.3f}"
+                    for p, r in zip(probs, rewards, strict=False)
                 ]
                 html_parts.append(f"Step {i:3d}: {' | '.join(labels)}")
             html_parts.append("</pre>")

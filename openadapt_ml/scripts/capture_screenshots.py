@@ -54,8 +54,8 @@ def get_timestamp() -> str:
 
 def check_url_available(url: str, timeout: int = 5) -> bool:
     """Check if a URL is accessible."""
-    import urllib.request
     import urllib.error
+    import urllib.request
 
     try:
         urllib.request.urlopen(url, timeout=timeout)

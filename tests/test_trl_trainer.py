@@ -10,21 +10,27 @@ They focus on:
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from openadapt_ml.schema import Action, ActionType, Episode, Observation, Step, UIElement
+from openadapt_ml.schema import (
+    Action,
+    ActionType,
+    Episode,
+    Observation,
+    Step,
+    UIElement,
+)
 
 
 # Check if optional dependencies are available
 def _has_datasets() -> bool:
     """Check if datasets library is installed."""
     try:
-        import datasets
+        import datasets  # noqa: F401  # the import IS the availability probe
         return True
     except ImportError:
         return False
@@ -394,7 +400,10 @@ class TestDryRunModelLoading:
 
     def test_load_unsloth_model_not_installed(self) -> None:
         """Test fallback when unsloth is not installed."""
-        from openadapt_ml.training.trl_trainer import TRLTrainingConfig, _load_unsloth_model
+        from openadapt_ml.training.trl_trainer import (
+            TRLTrainingConfig,
+            _load_unsloth_model,
+        )
 
         config = TRLTrainingConfig()
 
@@ -602,11 +611,11 @@ class TestCLIInterface:
     def test_argparse_setup(self) -> None:
         """Test that the module has proper CLI argument parsing."""
         # We can verify the module is set up for CLI by checking it imports
-        import openadapt_ml.training.trl_trainer as module
-
         # The module should have a __name__ == "__main__" block
         # We can verify the argparse setup by checking the source
         import inspect
+
+        import openadapt_ml.training.trl_trainer as module
 
         source = inspect.getsource(module)
         assert "argparse.ArgumentParser" in source
@@ -633,7 +642,6 @@ class TestVLModelDetection:
 
     def test_vl_detection_by_name_vl_suffix(self) -> None:
         """Test VL detection for models with VL in name."""
-        from openadapt_ml.training.trl_trainer import TRLTrainingConfig
 
         # These model names should be detected as VL models
         vl_model_names = [

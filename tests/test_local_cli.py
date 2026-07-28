@@ -9,8 +9,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-import pytest
-
 
 def test_local_status_command():
     """Test that the status command runs without error."""
@@ -26,10 +24,9 @@ def test_local_status_command():
 
 def test_local_check_command_no_data():
     """Test check command with no training data."""
-    import os
-    from unittest.mock import patch
-    from openadapt_ml.cloud.local import cmd_check
     import argparse
+
+    from openadapt_ml.cloud.local import cmd_check
 
     original_dir = os.getcwd()
     try:
@@ -45,9 +42,9 @@ def test_local_check_command_no_data():
 
 def test_local_check_command_with_mock_data():
     """Test check command with mock training data."""
-    import os
-    from openadapt_ml.cloud.local import cmd_check
     import argparse
+
+    from openadapt_ml.cloud.local import cmd_check
 
     original_dir = os.getcwd()
     try:
@@ -97,9 +94,9 @@ def test_local_train_help():
 
 def test_local_viewer_no_data():
     """Test viewer command with no training data."""
-    import os
-    from openadapt_ml.cloud.local import cmd_viewer
     import argparse
+
+    from openadapt_ml.cloud.local import cmd_viewer
 
     original_dir = os.getcwd()
     try:
@@ -124,7 +121,6 @@ def test_detect_device():
 
 def test_get_training_status_empty():
     """Test get_training_status with no data."""
-    import os
 
     from openadapt_ml.cloud.local import get_training_status
 
@@ -135,16 +131,15 @@ def test_get_training_status_empty():
         with tempfile.TemporaryDirectory() as tmpdir:
             os.chdir(tmpdir)
             status = get_training_status()
-            assert status["running"] == False
+            assert status["running"] is False
             assert status["epoch"] == 0
-            assert status["has_dashboard"] == False
+            assert status["has_dashboard"] is False
     finally:
         os.chdir(original_dir)
 
 
 def test_get_training_status_with_data():
     """Test get_training_status with mock data."""
-    import os
 
     from openadapt_ml.cloud.local import get_training_status
 
@@ -173,7 +168,7 @@ def test_get_training_status_with_data():
             assert status["epoch"] == 3
             assert status["step"] == 50
             assert status["loss"] == 0.25
-            assert status["has_dashboard"] == True
+            assert status["has_dashboard"] is True
     finally:
         os.chdir(original_dir)
 

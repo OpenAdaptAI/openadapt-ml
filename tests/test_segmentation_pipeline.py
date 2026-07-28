@@ -116,7 +116,7 @@ def run_stage1(recording_path: Path, output_path: Path):
 
     logger.info(f"Recording: {recording_path}")
     logger.info(f"Output: {output_path}")
-    logger.info(f"Model: gemini-2.0-flash")
+    logger.info("Model: gemini-2.0-flash")
 
     describer = FrameDescriber(
         model="gemini-2.0-flash",
@@ -141,8 +141,8 @@ def run_stage1(recording_path: Path, output_path: Path):
 
 def run_stage2(transcript_path: Path, output_path: Path):
     """Run Stage 2: Episode Extraction using LLM."""
-    from openadapt_ml.segmentation.segment_extractor import SegmentExtractor
     from openadapt_ml.segmentation.schemas import ActionTranscript
+    from openadapt_ml.segmentation.segment_extractor import SegmentExtractor
 
     logger.info("=" * 60)
     logger.info(f"STAGE 2: Episode Extraction - {transcript_path.stem}")
@@ -150,7 +150,7 @@ def run_stage2(transcript_path: Path, output_path: Path):
 
     logger.info(f"Transcript: {transcript_path}")
     logger.info(f"Output: {output_path}")
-    logger.info(f"Model: gpt-4o")
+    logger.info("Model: gpt-4o")
 
     # Load transcript
     data = json.loads(transcript_path.read_text())

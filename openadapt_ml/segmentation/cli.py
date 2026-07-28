@@ -93,8 +93,8 @@ def extract(
 ):
     """Extract workflow segments from a recording (Stage 2)."""
     from openadapt_ml.segmentation.frame_describer import FrameDescriber
-    from openadapt_ml.segmentation.segment_extractor import SegmentExtractor
     from openadapt_ml.segmentation.schemas import ActionTranscript
+    from openadapt_ml.segmentation.segment_extractor import SegmentExtractor
 
     if verbose:
         logging.basicConfig(level=logging.INFO)
@@ -243,7 +243,7 @@ def pipeline(
     verbose,
 ):
     """Run complete segmentation pipeline."""
-    from openadapt_ml.segmentation.pipeline import SegmentationPipeline, PipelineConfig
+    from openadapt_ml.segmentation.pipeline import PipelineConfig, SegmentationPipeline
     from openadapt_ml.segmentation.schemas import EpisodeLibrary
 
     if verbose:
@@ -284,11 +284,9 @@ def pipeline(
             list(recordings),
             output_dir=output_dir,
             existing_library=existing_library,
-            progress_callback=lambda stage, cur, tot: click.echo(
-                f"  [{stage}] {cur}/{tot}"
-            )
-            if verbose
-            else None,
+            progress_callback=lambda stage, cur, tot: (
+                click.echo(f"  [{stage}] {cur}/{tot}") if verbose else None
+            ),
         )
 
     # Save final library if not already saved
@@ -414,8 +412,8 @@ def review(library, recording, reviewer, auto_approve_high_confidence, output):
     This command presents each annotation for human verification.
     Reviewers can approve, reject, or edit each annotation.
     """
-    from openadapt_ml.segmentation.schemas import AnnotatedEpisodeLibrary
     from openadapt_ml.segmentation.annotator import verify_annotation
+    from openadapt_ml.segmentation.schemas import AnnotatedEpisodeLibrary
 
     # Load library
     data = json.loads(Path(library).read_text())
@@ -567,8 +565,8 @@ def export_gold(library, format, output, recording, include_screenshots):
 
     Only exports episodes where is_gold=True AND human_verified=True.
     """
-    from openadapt_ml.segmentation.schemas import AnnotatedEpisodeLibrary
     from openadapt_ml.segmentation.annotator import export_gold_episodes
+    from openadapt_ml.segmentation.schemas import AnnotatedEpisodeLibrary
 
     # Load library
     data = json.loads(Path(library).read_text())
@@ -608,6 +606,7 @@ def export_gold(library, format, output, recording, include_screenshots):
 def export(library, format, output, workflow):
     """Export segments to various formats."""
     import csv
+
     from openadapt_ml.segmentation.schemas import EpisodeLibrary
 
     data = json.loads(Path(library).read_text())

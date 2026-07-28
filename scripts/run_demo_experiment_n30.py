@@ -22,7 +22,6 @@ from openadapt_ml.experiments.demo_prompt.run_experiment import (
     DemoPromptExperiment,
 )
 
-
 # Hand-crafted demo for "Turn off Night Shift" on macOS
 # All test tasks share the same first action: Apple menu click
 DEMO_TURN_OFF_NIGHTSHIFT = """DEMONSTRATION:
@@ -303,11 +302,11 @@ def run_experiment(
     print(f"  With demo: {demo_acc*100:.1f}%")
 
     if improvement > 0:
-        print(f"\n✓ Demo-conditioning IMPROVES first-action accuracy")
+        print("\n✓ Demo-conditioning IMPROVES first-action accuracy")
     elif improvement < 0:
-        print(f"\n✗ Demo-conditioning DECREASES first-action accuracy")
+        print("\n✗ Demo-conditioning DECREASES first-action accuracy")
     else:
-        print(f"\n= Demo-conditioning has NO EFFECT on first-action accuracy")
+        print("\n= Demo-conditioning has NO EFFECT on first-action accuracy")
 
     # Save results
     output_dir = Path("openadapt_ml/experiments/demo_prompt/results")

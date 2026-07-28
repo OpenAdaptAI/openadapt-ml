@@ -38,7 +38,6 @@ from typing import Any
 
 import requests
 
-
 API_BASE = "https://cloud.lambdalabs.com/api/v1"
 
 # Default port for HTTP server
@@ -1413,14 +1412,15 @@ def main():
         print(f"  Max runtime: {args.max_runtime} minutes")
 
         # Generate initial dashboard with setup status
+        import time as time_module
         from pathlib import Path
+
         from openadapt_ml.training.trainer import (
-            TrainingState,
             TrainingConfig,
+            TrainingState,
             generate_training_dashboard,
             setup_job_directory,
         )
-        import time as time_module
 
         job_id = time_module.strftime("%Y%m%d_%H%M%S")
         output_dir = setup_job_directory("training_output", job_id)
@@ -1824,9 +1824,10 @@ def main():
         # One-shot dashboard refresh
         import time as time_module
         from pathlib import Path
+
         from openadapt_ml.training.trainer import (
-            TrainingState,
             TrainingConfig,
+            TrainingState,
             generate_training_dashboard,
         )
 
@@ -1952,8 +1953,8 @@ def main():
         if getattr(args, "stub", False):
             from openadapt_ml.training.stub_provider import StubTrainingProvider
             from openadapt_ml.training.trainer import (
-                TrainingState,
                 TrainingConfig,
+                TrainingState,
                 generate_training_dashboard,
             )
 
@@ -2041,11 +2042,11 @@ def main():
 
         # Use job-scoped directory structure
         from openadapt_ml.training.trainer import (
-            TrainingState,
             TrainingConfig,
+            TrainingState,
             generate_training_dashboard,
-            setup_job_directory,
             get_current_job_directory,
+            setup_job_directory,
         )
 
         base_dir = Path("training_output")
@@ -2767,9 +2768,10 @@ def main():
     elif args.command == "sync":
         # Sync training output from Lambda and regenerate navigation for file:// protocol
         from pathlib import Path
+
         from openadapt_ml.training.trainer import (
-            TrainingState,
             TrainingConfig,
+            TrainingState,
             generate_training_dashboard,
             regenerate_all_dashboards,
         )
@@ -2878,9 +2880,10 @@ def main():
 
     elif args.command == "viewer":
         # Regenerate and open local viewer (no Lambda required)
-        from pathlib import Path
-        from openadapt_ml.training.trainer import regenerate_all_dashboards
         import re
+        from pathlib import Path
+
+        from openadapt_ml.training.trainer import regenerate_all_dashboards
 
         output_dir = Path(args.output)
 

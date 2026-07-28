@@ -3046,8 +3046,8 @@ def generate_benchmark_viewer(
 
     # Import shared header components from trainer
     from openadapt_ml.training.trainer import (
-        _get_shared_header_css,
         _generate_shared_header_html,
+        _get_shared_header_css,
     )
 
     # Generate HTML
@@ -3147,8 +3147,8 @@ def generate_multi_run_benchmark_viewer(
 
     # Import shared header components from trainer
     from openadapt_ml.training.trainer import (
-        _get_shared_header_css,
         _generate_shared_header_html,
+        _get_shared_header_css,
     )
 
     # Generate HTML
@@ -3176,8 +3176,8 @@ def generate_empty_benchmark_viewer(output_path: Path | str) -> Path:
 
     # Import shared header components from trainer
     from openadapt_ml.training.trainer import (
-        _get_shared_header_css,
         _generate_shared_header_html,
+        _get_shared_header_css,
     )
 
     shared_header_css = _get_shared_header_css()

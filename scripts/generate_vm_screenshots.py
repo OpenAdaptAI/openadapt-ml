@@ -138,7 +138,7 @@ def main():
         return 1
 
     print(f"\n📁 Output directory: {SCREENSHOTS_DIR.relative_to(PROJECT_ROOT)}")
-    print(f"🎯 Generating screenshots with mock data (no VM required)")
+    print("🎯 Generating screenshots with mock data (no VM required)")
 
     # Screenshot 1: Full monitor dashboard (default)
     success = record_and_convert(

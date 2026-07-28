@@ -10,7 +10,6 @@ from PIL import Image
 from openadapt_ml.models.base_adapter import BaseVLMAdapter
 from openadapt_ml.schema import Action, ActionType, UIElement
 
-
 # Coordinate-based DSL patterns
 _CLICK_RE = re.compile(r"CLICK\(x=(-?[0-9]*\.?[0-9]+),\s*y=(-?[0-9]*\.?[0-9]+)\)")
 _TYPE_RE = re.compile(r'TYPE\(text="([^"\\]*(?:\\.[^"\\]*)*)"\)')

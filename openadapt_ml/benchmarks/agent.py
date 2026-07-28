@@ -391,7 +391,7 @@ Then output the action on a new line starting with "ACTION:"
     ) -> str:
         """Format action history for prompt."""
         lines = []
-        for i, (obs, action) in enumerate(history[-5:], 1):
+        for i, (_obs, action) in enumerate(history[-5:], 1):
             action_str = self._action_to_string(action)
             lines.append(f"{i}. {action_str}")
         return "\n".join(lines)

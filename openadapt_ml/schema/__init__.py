@@ -67,19 +67,19 @@ See Also:
 
 from openadapt_ml.schema.episode import (
     SCHEMA_VERSION,
-    Episode,
-    Step,
     Action,
-    Observation,
     ActionType,
     BenchmarkSource,
-    Coordinates,
     BoundingBox,
+    Coordinates,
+    Episode,
+    Observation,
+    Step,
     UIElement,
-    validate_episode,
+    export_json_schema,
     load_episode,
     save_episode,
-    export_json_schema,
+    validate_episode,
 )
 
 # Perception integration (requires openadapt-grounding)

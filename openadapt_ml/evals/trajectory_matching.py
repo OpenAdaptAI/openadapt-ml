@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 from openadapt_ml.runtime.policy import AgentPolicy
-from openadapt_ml.schema import Action, Episode, ActionType
+from openadapt_ml.schema import Action, ActionType, Episode
 
 
 @dataclass

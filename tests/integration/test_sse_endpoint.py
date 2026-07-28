@@ -6,10 +6,10 @@ Usage:
 """
 
 import argparse
-import requests
 import json
-import time
 from datetime import datetime
+
+import requests
 
 
 def test_sse_endpoint(base_url: str = "http://localhost:8765", interval: int = 5):

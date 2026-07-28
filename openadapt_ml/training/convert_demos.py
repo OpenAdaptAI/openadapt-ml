@@ -56,7 +56,6 @@ import warnings
 from pathlib import Path
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # System prompt for SFT training data
 # ---------------------------------------------------------------------------
@@ -501,8 +500,8 @@ def _resolve_screenshots_from_capture(
         return {}
 
     try:
-        from openadapt_ml.ingest.capture import capture_to_episode
         from openadapt_ml.experiments.demo_prompt.annotate import coalesce_steps
+        from openadapt_ml.ingest.capture import capture_to_episode
 
         episode = capture_to_episode(
             str(capture_dir),

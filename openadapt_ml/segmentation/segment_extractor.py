@@ -83,16 +83,19 @@ class SegmentExtractor:
 
         if "gpt" in self.model.lower():
             import openai
+
             from openadapt_ml.config import settings
 
             self._client = openai.OpenAI(api_key=settings.openai_api_key)
         elif "claude" in self.model.lower():
             import anthropic
+
             from openadapt_ml.config import settings
 
             self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
         elif "gemini" in self.model.lower():
             import google.generativeai as genai
+
             from openadapt_ml.config import settings
 
             genai.configure(api_key=settings.google_api_key)

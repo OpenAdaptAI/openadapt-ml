@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from openadapt_ml.retrieval import DemoIndex, LegacyDemoRetriever as DemoRetriever
+from openadapt_ml.retrieval import DemoIndex
+from openadapt_ml.retrieval import LegacyDemoRetriever as DemoRetriever
 from openadapt_ml.retrieval.embeddings import TextEmbedder
 from openadapt_ml.schema import Action, ActionType, Episode, Observation, Step
 

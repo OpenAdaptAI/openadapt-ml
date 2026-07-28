@@ -7,8 +7,8 @@ Usage:
 
 import re
 import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 
 def parse_log_file(log_path: Path) -> dict:
@@ -24,7 +24,7 @@ def parse_log_file(log_path: Path) -> dict:
     finished_matches = list(re.finditer(finished_pattern, content))
     result_matches = list(re.finditer(result_pattern, content))
 
-    for i, match in enumerate(finished_matches):
+    for match in finished_matches:
         domain = match.group(1)
         task_id = match.group(2)
         # Find the result that precedes this finish

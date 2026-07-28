@@ -79,7 +79,7 @@ def run(
     """
     from PIL import Image
 
-    from openadapt_ml.baselines import UnifiedBaselineAdapter, TrackConfig
+    from openadapt_ml.baselines import TrackConfig, UnifiedBaselineAdapter
 
     # Select track config
     track_configs = {
@@ -196,7 +196,7 @@ def compare(
     """
     from PIL import Image
 
-    from openadapt_ml.baselines import UnifiedBaselineAdapter, TrackConfig
+    from openadapt_ml.baselines import TrackConfig, UnifiedBaselineAdapter
 
     model_list = [m.strip() for m in models.split(",")]
 

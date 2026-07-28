@@ -17,8 +17,8 @@ except ImportError:
 try:
     from transformers import (
         AutoProcessor,
-        Qwen3VLForConditionalGeneration,
         Qwen2_5_VLForConditionalGeneration,
+        Qwen3VLForConditionalGeneration,
     )
 except ImportError:
     AutoProcessor = None  # type: ignore[assignment,misc]

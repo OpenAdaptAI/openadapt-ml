@@ -49,19 +49,19 @@ Usage:
 
 from openadapt_ml.baselines.adapter import UnifiedBaselineAdapter
 from openadapt_ml.baselines.config import (
+    # Registry
+    MODELS,
     # Enums
     ActionOutputFormat,
-    CoordinateSystem,
-    TrackType,
     # Config dataclasses
     BaselineConfig,
+    CoordinateSystem,
     ModelSpec,
     ReActConfig,
     ScreenConfig,
     SoMConfig,
     TrackConfig,
-    # Registry
-    MODELS,
+    TrackType,
     # Helper functions
     get_default_model,
     get_model_spec,

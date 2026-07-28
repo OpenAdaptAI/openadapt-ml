@@ -67,7 +67,6 @@ from typing import Any, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-
 # Schema version - follows semver
 SCHEMA_VERSION = "1.0.0"
 

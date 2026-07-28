@@ -10,9 +10,9 @@ import yaml
 from openadapt_ml.datasets.next_action import build_next_action_sft_samples
 from openadapt_ml.evals.trajectory_matching import evaluate_policy_on_episodes
 from openadapt_ml.ingest.synthetic import generate_synthetic_episodes
+from openadapt_ml.models.api_adapter import ApiVLMAdapter
 from openadapt_ml.models.dummy_adapter import DummyAdapter
 from openadapt_ml.models.qwen_vl import QwenVLAdapter
-from openadapt_ml.models.api_adapter import ApiVLMAdapter
 from openadapt_ml.runtime.policy import AgentPolicy
 
 

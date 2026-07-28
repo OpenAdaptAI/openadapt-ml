@@ -83,7 +83,7 @@ def main() -> None:
         print(f"App context: {app_context}")
 
     # Retrieve with scores
-    print(f"\nRetrieving top-3 demonstrations...")
+    print("\nRetrieving top-3 demonstrations...")
     results = retriever.retrieve_with_scores(task, app_context, top_k=3)
 
     print(f"\nFound {len(results)} similar demo(s):")

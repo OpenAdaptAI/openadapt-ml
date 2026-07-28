@@ -156,7 +156,7 @@ def main() -> None:
     print(f"App context: {app_context}")
 
     # Retrieve relevant demos
-    print(f"\nRetrieving top-3 similar demonstrations...")
+    print("\nRetrieving top-3 similar demonstrations...")
     results = retriever.retrieve(new_task, top_k=3, app_context=app_context)
 
     print(f"\nFound {len(results)} similar demos:")

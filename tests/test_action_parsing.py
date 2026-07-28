@@ -1,15 +1,14 @@
 """Tests for action DSL parsing in AgentPolicy."""
 
-import pytest
 
 from openadapt_ml.runtime.policy import (
     _CLICK_RE,
+    _DONE_RE,
     _TYPE_RE,
     _WAIT_RE,
-    _DONE_RE,
     AgentPolicy,
 )
-from openadapt_ml.schema import Action, ActionType
+from openadapt_ml.schema import ActionType
 
 
 class MockAdapter:

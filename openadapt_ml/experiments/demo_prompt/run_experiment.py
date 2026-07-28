@@ -19,7 +19,6 @@ from openadapt_ml.experiments.demo_prompt.format_demo import (
     get_demo_screenshot_paths,
 )
 
-
 # System prompt for GUI automation
 SYSTEM_PROMPT = """You are a GUI automation agent. Given a screenshot and task instruction, determine the next action to take.
 
@@ -87,9 +86,11 @@ class DemoPromptExperiment:
             return self._client
 
         if self.provider == "anthropic":
-            from anthropic import Anthropic
-            from openadapt_ml.config import settings
             import os
+
+            from anthropic import Anthropic
+
+            from openadapt_ml.config import settings
 
             key = settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
             if not key:
@@ -97,9 +98,11 @@ class DemoPromptExperiment:
             self._client = Anthropic(api_key=key)
 
         elif self.provider == "openai":
-            from openai import OpenAI
-            from openadapt_ml.config import settings
             import os
+
+            from openai import OpenAI
+
+            from openadapt_ml.config import settings
 
             key = settings.openai_api_key or os.getenv("OPENAI_API_KEY")
             if not key:

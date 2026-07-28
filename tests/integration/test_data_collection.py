@@ -79,7 +79,7 @@ def test_data_collection():
     )
 
     # Verify results
-    logger.info(f"\nEvaluation complete! Results:")
+    logger.info("\nEvaluation complete! Results:")
     logger.info(f"  Total tasks: {len(results)}")
     logger.info(f"  Success: {sum(1 for r in results if r.success)}")
     logger.info(f"  Failure: {sum(1 for r in results if not r.success)}")
@@ -119,7 +119,7 @@ def test_data_collection():
         logger.error("  ✗ tasks directory missing")
         return False
 
-    logger.info(f"  ✓ tasks directory exists")
+    logger.info("  ✓ tasks directory exists")
 
     # Check each task directory
     task_dirs = list(tasks_dir.iterdir())

@@ -72,7 +72,13 @@ training = [
 dev = [
     "build>=1.0.0",  # tests/test_packaging.py builds the wheel
     "pytest>=9.0.0",
-    "ruff>=0.1.0",
+    # Bounded on purpose. `ruff>=0.1.0` let any runner resolve any future ruff,
+    # and ruff 0.16.0 changed two implicit contracts at once (see [tool.ruff]).
+    # Under 0.16 defaults this tree reports 1035 findings in `openadapt_ml/`
+    # and 3 documentation files reformat, none of it caused by a commit here.
+    # Raise this ceiling deliberately, with the new findings resolved in the
+    # same change.
+    "ruff>=0.16,<0.17",
 ]
 # Benchmark evaluation (depends on openadapt-evals)
 benchmarks = [
@@ -98,6 +104,85 @@ packages = ["openadapt_ml"]
 
 [tool.uv.sources]
 openadapt-capture = { path = "../openadapt-capture", editable = true }
+
+# ---------------------------------------------------------------------------
+# Ruff
+#
+# Everything ruff decides for this repository is written down here. Until
+# 2026-07-27 this file had no `[tool.ruff]` section at all, so line length,
+# target version, which FILES ruff touched, and which RULES it applied were all
+# inherited from whatever ruff version a runner happened to resolve.
+#
+# ruff 0.16.0 then changed both halves of that implicit contract at once:
+#   * the default rule set grew from 59 rules to 413; and
+#   * the default `include` gained "*.md", so `ruff format` started rewriting
+#     Python code blocks inside documentation.
+# Neither needed a commit in this repository to take effect. That is the
+# failure mode this section exists to remove: a future ruff release must change
+# nothing here until a person edits this file.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+# 88, not the OpenAdapt house value of 100, because `openadapt_ml/` is already
+# formatted at 88 and always has been. Recording the value the tree actually
+# uses is the point; switching to 100 would rewrap 70 of 112 files for no
+# behavioural gain and would bury this change. E501 is not enforced (see
+# below), so this governs the formatter only.
+line-length = 88
+
+# The lowest interpreter this package supports (`requires-python = ">=3.10"`,
+# and CI runs 3.10 and 3.11). Previously inferred from requires-python; pinned
+# so inference changes cannot move it.
+target-version = "py310"
+
+# ruff 0.16.0's default `include` list, minus "*.md". Documentation here
+# contains illustrative and deliberately partial snippets; a Python formatter
+# rewriting prose is not a contract this repository wants, and it arrived
+# without a commit. Pinned in full so a future addition to the default list is
+# likewise inert until someone adds it here.
+include = [
+    "*.py",
+    "*.pyi",
+    "*.pyw",
+    "*.ipynb",
+    "**/pyproject.toml",
+    "**/ruff.toml",
+    "**/.ruff.toml",
+]
+
+[tool.ruff.lint]
+# An explicit, bounded rule set rather than ruff's defaults.
+#
+# Why bounded: ruff 0.16 defaults report 1035 findings in `openadapt_ml/`
+# alone. That is not a set anyone can review honestly in one change, and ~90%
+# of it is not defect-finding — 581 are `UP` typing modernisations
+# (`Optional[X]` -> `X | None`, `List` -> `list`), 156 are `BLE001` on
+# best-effort dashboard and status probes that are deliberately blind, and 73
+# are `PLW1510` (`subprocess.run` without `check=`), where every fix is a
+# behaviour change needing per-call judgement. Adopting 413 rules by accident
+# is the opposite of the predictability this section is for. Each of those
+# families can be adopted later, deliberately, on its own merits.
+#
+# Why THIS set: `E,F,I,W` is the OpenAdapt house selection (openadapt-capture,
+# -privacy, -telemetry, -crier, -herald, -desktop, OpenAdapt) and is already
+# WIDER than what this repository enforced before — ruff's old default was
+# effectively `E4,E7,E9,F`, so `I` (import sorting) and the rest of `E`/`W` are
+# net new coverage, not a retreat.
+#
+# `B` (flake8-bugbear) is added on top because it is the one extra family that
+# pays for itself here: 36 findings repository-wide, all real defect shapes
+# rather than style — `B905` (`zip()` silently truncating to the shorter
+# sequence), `B904` (exception chaining lost inside `except`), `B007`. That is
+# a reviewable number and it guards code paths that pair model outputs with
+# ground truth, where a silent length mismatch is exactly the kind of quiet
+# wrong answer this project cares about.
+ignore = [
+    # Line length is left to the formatter. `ruff format` already wraps what it
+    # can; the residue is long string literals, URLs and comments that E501
+    # would only push into worse line breaks. Every OpenAdapt repository
+    # ignores E501 for this reason.
+    "E501",
+]
+select = ["B", "E", "F", "I", "W"]
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]

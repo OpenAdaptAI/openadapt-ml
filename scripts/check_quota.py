@@ -11,8 +11,8 @@ Usage:
 """
 
 import subprocess
-import sys
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
 
 def run_azure_command(cmd: list) -> Optional[str]:
     """Run Azure CLI command and return output."""

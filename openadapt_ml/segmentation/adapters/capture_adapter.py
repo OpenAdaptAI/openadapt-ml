@@ -354,7 +354,7 @@ class CaptureAdapter:
                 paired.append(action)
 
         # Log any unpaired down events
-        for base_type, (down_type, down_timestamp, down_data) in pending_down.items():
+        for down_type, down_timestamp, _down_data in pending_down.values():
             logger.debug(f"Unpaired {down_type} event at {down_timestamp}")
 
         return paired

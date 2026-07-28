@@ -14,9 +14,7 @@ from pathlib import Path
 
 from openadapt_ml.experiments.demo_prompt.run_experiment import (
     DemoPromptExperiment,
-    ExperimentResult,
 )
-
 
 # Irrelevant demo - completely unrelated file management task
 IRRELEVANT_DEMO = """DEMONSTRATION:
@@ -111,13 +109,13 @@ def run_negative_control_test(
         print("\n" + "=" * 80)
         print(f"RESULTS FOR: {name}")
         print("=" * 80)
-        print(f"\nZERO-SHOT:")
+        print("\nZERO-SHOT:")
         print(f"  Action: {zero_shot_result.action_parsed}")
         print(f"  Response preview: {zero_shot_result.response[:300]}...")
         if zero_shot_result.error:
             print(f"  Error: {zero_shot_result.error}")
 
-        print(f"\nWITH IRRELEVANT DEMO:")
+        print("\nWITH IRRELEVANT DEMO:")
         print(f"  Action: {irrelevant_result.action_parsed}")
         print(f"  Response preview: {irrelevant_result.response[:300]}...")
         if irrelevant_result.error:
@@ -216,7 +214,7 @@ def run_negative_control_test(
     same_count = sum(1 for r in summary["results"] if r.get("same_action") is True)
     different_count = sum(1 for r in summary["results"] if r.get("same_action") is False)
 
-    print(f"\nActions comparison:")
+    print("\nActions comparison:")
     print(f"  Same action: {same_count}/{len(TEST_CASES)}")
     print(f"  Different action: {different_count}/{len(TEST_CASES)}")
 

@@ -143,8 +143,8 @@ def _regenerate_benchmark_viewer_if_available(output_dir: Path) -> bool:
     Returns True if benchmark viewer was regenerated, False otherwise.
     """
     from openadapt_ml.training.benchmark_viewer import (
-        generate_multi_run_benchmark_viewer,
         generate_empty_benchmark_viewer,
+        generate_multi_run_benchmark_viewer,
     )
 
     benchmark_results_dir = Path("benchmark_results")
@@ -578,6 +578,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 # Run benchmark in background thread with progress logging
                 def run_benchmark():
                     import subprocess
+
                     from dotenv import load_dotenv
 
                     # Load .env file for API keys
@@ -753,7 +754,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 # Return LIVE Azure job status from Azure ML
                 # Supports ?force=true parameter for manual refresh (always fetches live)
                 try:
-                    from urllib.parse import urlparse, parse_qs
+                    from urllib.parse import parse_qs, urlparse
 
                     query = parse_qs(urlparse(self.path).query)
                     force_refresh = query.get("force", ["false"])[0].lower() == "true"
@@ -777,7 +778,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
             elif self.path.startswith("/api/benchmark-sse"):
                 # Server-Sent Events endpoint for real-time benchmark updates
                 try:
-                    from urllib.parse import urlparse, parse_qs
+                    from urllib.parse import parse_qs, urlparse
 
                     query = parse_qs(urlparse(self.path).query)
                     interval = int(query.get("interval", [5])[0])
@@ -807,7 +808,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 # Return live logs for running Azure job
                 try:
                     # Parse job_id from query string
-                    from urllib.parse import urlparse, parse_qs
+                    from urllib.parse import parse_qs, urlparse
 
                     query = parse_qs(urlparse(self.path).query)
                     job_id = query.get("job_id", [None])[0]
@@ -2319,8 +2320,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 - started_at: str - ISO timestamp
                 - elapsed_minutes: int
             """
-            import subprocess
             import re
+            import subprocess
 
             result = {
                 "running": False,
@@ -2627,7 +2628,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
                             continue
 
                 # Calculate averages
-                for domain, stats in domain_breakdown.items():
+                for stats in domain_breakdown.values():
                     if stats["total"] > 0:
                         stats["rate"] = stats["success"] / stats["total"]
                         stats["avg_steps"] = stats["total_steps"] / stats["total"]
@@ -2726,7 +2727,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
             try:
                 return json.loads(execution_file.read_text())
             except (json.JSONDecodeError, IOError) as e:
-                raise Exception(f"Failed to load execution data: {e}")
+                raise Exception(f"Failed to load execution data: {e}") from e
 
         async def _detect_running_benchmark(
             self, vm_ip: str, container_name: str = "winarena"
@@ -2744,8 +2745,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 - progress: dict with tasks_completed, total_tasks, current_step
                 - recent_logs: str (last few log lines)
             """
-            import subprocess
             import re
+            import subprocess
 
             result = {
                 "running": False,
@@ -2889,8 +2890,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
             Uses a generator-based approach to avoid blocking the main thread
             and properly handles client disconnection.
             """
-            import time
             import select
+            import time
 
             HEARTBEAT_INTERVAL = 30  # seconds
 
@@ -3125,8 +3126,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
             - heartbeat: Keep-alive signal every 30 seconds
             - error: Error messages
             """
-            import time
             import select
+            import time
             from pathlib import Path
 
             HEARTBEAT_INTERVAL = 30  # seconds
@@ -3191,9 +3192,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 read_status,
             )
             from openadapt_evals.infrastructure.session_tracker import (
+                DEFAULT_SESSION_FILE,
                 get_session,
                 update_session_vm_state,
-                DEFAULT_SESSION_FILE,
             )
 
             status_file = Path(DEFAULT_OUTPUT_FILE)
@@ -3356,8 +3357,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
             Avoids creating a new event loop on each call which causes issues
             when called from a synchronous context.
             """
-            import subprocess
             import re
+            import subprocess
 
             result = {
                 "running": False,
@@ -3643,10 +3644,10 @@ def cmd_serve(args: argparse.Namespace) -> int:
 def cmd_viewer(args: argparse.Namespace) -> int:
     """Regenerate viewer from local training output."""
     from openadapt_ml.training.trainer import (
+        TrainingConfig,
+        TrainingState,
         generate_training_dashboard,
         generate_unified_viewer_from_output_dir,
-        TrainingState,
-        TrainingConfig,
     )
 
     current_dir = get_current_output_dir()

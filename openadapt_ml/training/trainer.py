@@ -7,17 +7,21 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from openadapt_ml.schema import ActionType
-from openadapt_ml.training.shared_ui import (
-    get_shared_header_css as _get_shared_header_css,
-    generate_shared_header_html as _generate_shared_header_html,
-    build_nav_links as _build_nav_links,
-)
-from openadapt_ml.training.viewer import (
-    generate_unified_viewer_from_output_dir,
-)
 from openadapt_ml.training.benchmark_viewer import (
     _get_azure_jobs_panel_css,
     _get_azure_jobs_panel_html,
+)
+from openadapt_ml.training.shared_ui import (
+    build_nav_links as _build_nav_links,
+)
+from openadapt_ml.training.shared_ui import (
+    generate_shared_header_html as _generate_shared_header_html,
+)
+from openadapt_ml.training.shared_ui import (
+    get_shared_header_css as _get_shared_header_css,
+)
+from openadapt_ml.training.viewer import (
+    generate_unified_viewer_from_output_dir,
 )
 
 
@@ -60,7 +64,7 @@ def setup_job_directory(base_dir: str | Path, job_id: str) -> Path:
         # Clean up temp link on failure
         if temp_link.exists() or temp_link.is_symlink():
             temp_link.unlink()
-        raise RuntimeError(f"Failed to create current symlink: {e}")
+        raise RuntimeError(f"Failed to create current symlink: {e}") from e
 
     return job_dir
 
@@ -127,7 +131,7 @@ def update_current_symlink_to_latest(
     except Exception as e:
         if temp_link.exists() or temp_link.is_symlink():
             temp_link.unlink()
-        raise RuntimeError(f"Failed to update current symlink: {e}")
+        raise RuntimeError(f"Failed to update current symlink: {e}") from e
 
     return latest
 
@@ -530,8 +534,8 @@ def generate_training_dashboard(state: TrainingState, config: TrainingConfig) ->
     # Generate comparison viewer preview if capture path available
     if state.capture_path:
         try:
-            from openadapt_ml.scripts.compare import generate_comparison_html
             from openadapt_ml.ingest.capture import capture_to_episode
+            from openadapt_ml.scripts.compare import generate_comparison_html
 
             capture_path = Path(state.capture_path)
             if capture_path.exists():

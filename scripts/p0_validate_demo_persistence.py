@@ -27,20 +27,29 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # Only needed to resolve the "Episode" annotations below. Never imported at
+    # runtime, so it is safe above the sys.path bootstrap.
+    from openadapt_ml.schema import Episode
 
 # Add project to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Load .env file
-from dotenv import load_dotenv
+# Load .env file. E402: these imports are deliberately below the sys.path
+# bootstrap above, because openadapt_ml is not importable until it runs.
+from dotenv import load_dotenv  # noqa: E402
+
 env_path = Path(__file__).parent.parent / ".env"
 if env_path.exists():
     load_dotenv(env_path)
     print(f"Loaded .env from {env_path}")
 
-from openadapt_ml.ingest.capture import capture_to_episode
-from openadapt_ml.experiments.demo_prompt.format_demo import format_episode_as_demo
+from openadapt_ml.experiments.demo_prompt.format_demo import (  # noqa: E402
+    format_episode_as_demo,
+)
+from openadapt_ml.ingest.capture import capture_to_episode  # noqa: E402
 
 # Configure logging
 logging.basicConfig(
@@ -129,7 +138,6 @@ class P0Validator:
         logger.info("Running mock validation (no API calls)")
 
         # Import the agent
-        from openadapt_evals.waa_deploy.api_agent import ApiAgent
 
         # Create agent with demo - use mock provider to avoid API calls
         # We'll manually inspect the prompt generation
@@ -146,7 +154,7 @@ class P0Validator:
                 continue
 
             # Build the prompt manually (same logic as api_agent.predict)
-            content_parts = [f"TASK: Turn off Night Shift"]
+            content_parts = ["TASK: Turn off Night Shift"]
 
             # CRITICAL: Check demo inclusion
             if demo_str:

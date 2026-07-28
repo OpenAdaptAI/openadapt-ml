@@ -45,11 +45,11 @@ def to_parquet(
     try:
         import pyarrow as pa
         import pyarrow.parquet as pq
-    except ImportError:
+    except ImportError as e:
         raise ImportError(
             "Parquet export requires pyarrow. "
             "Install with: pip install openadapt-ml[parquet]"
-        )
+        ) from e
 
     if not flatten_steps:
         raise ValueError(
@@ -197,11 +197,11 @@ def from_parquet(parquet_path: str) -> list[Episode]:
     """
     try:
         import pyarrow.parquet as pq
-    except ImportError:
+    except ImportError as e:
         raise ImportError(
             "Parquet import requires pyarrow. "
             "Install with: pip install openadapt-ml[parquet]"
-        )
+        ) from e
 
     from openadapt_ml.schema import Action, ActionType, Episode, Observation, Step
 

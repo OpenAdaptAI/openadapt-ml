@@ -23,12 +23,19 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from openadapt_viewer.components import (
+    badge as _badge,
+)
+from openadapt_viewer.components import (
+    metrics_grid as _metrics_grid,
+)
+from openadapt_viewer.components import (
+    playback_controls as _playback_controls,
+)
+
 # Import openadapt-viewer components
 from openadapt_viewer.components import (
     screenshot_display as _screenshot_display,
-    playback_controls as _playback_controls,
-    metrics_grid as _metrics_grid,
-    badge as _badge,
 )
 
 

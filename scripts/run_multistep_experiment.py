@@ -13,12 +13,10 @@ Results are saved to: openadapt_ml/experiments/demo_prompt/results/
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from openadapt_ml.experiments.demo_prompt.run_experiment import (
     DemoPromptExperiment,
 )
-
 
 # The full 5-step demo for "Turn off Night Shift"
 # Using behavior-only format (no explanatory annotations)

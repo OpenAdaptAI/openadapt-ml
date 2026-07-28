@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -114,7 +113,7 @@ def create_resource_group(name: str, location: str) -> None:
             run_cmd(["az", "group", "create", "--name", name, "--location", location])
             print(f"  Resource group '{name}' created")
         except subprocess.CalledProcessError as e:
-            print(f"  ERROR: Failed to create resource group")
+            print("  ERROR: Failed to create resource group")
             print(f"  {e.stderr}")
             raise
 
@@ -130,7 +129,7 @@ def create_service_principal(name: str, subscription_id: str) -> dict:
         "--sdk-auth",
     ])
     creds = json.loads(output)
-    print(f"  Service principal created")
+    print("  Service principal created")
     return creds
 
 
@@ -278,12 +277,12 @@ def request_gpu_quota(subscription_id: str, location: str, family: str = "standa
             "--limit-object", f"value={requested_vcpus}",
             "--resource-type", "dedicated",
         ])
-        print(f"  Quota request submitted successfully")
+        print("  Quota request submitted successfully")
         return True
     except subprocess.CalledProcessError as e:
         error_msg = str(e.stderr) if e.stderr else str(e)
         if "already" in error_msg.lower() or "limit" in error_msg.lower():
-            print(f"  Quota already at or above requested level")
+            print("  Quota already at or above requested level")
             return True
         print(f"  WARNING: Quota request failed: {error_msg}")
         print("  You may need to request manually at:")
@@ -355,7 +354,7 @@ def attach_acr_to_workspace(acr_name: str, resource_group: str, workspace_name: 
     """Attach ACR to ML workspace so compute can pull images."""
     acr_id = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.ContainerRegistry/registries/{acr_name}"
 
-    print(f"  Attaching ACR to workspace...")
+    print("  Attaching ACR to workspace...")
     try:
         run_cmd([
             "az", "ml", "workspace", "update",
@@ -364,11 +363,11 @@ def attach_acr_to_workspace(acr_name: str, resource_group: str, workspace_name: 
             "--container-registry", acr_id,
             "-u",  # Update dependent resources
         ])
-        print(f"  ACR attached to workspace")
+        print("  ACR attached to workspace")
     except subprocess.CalledProcessError as e:
         # Might already be attached
         if "already" in str(e.stderr).lower():
-            print(f"  ACR already attached")
+            print("  ACR already attached")
         else:
             print(f"  WARNING: Could not attach ACR: {e.stderr}")
 
@@ -388,7 +387,7 @@ def grant_acr_pull_role(acr_name: str, resource_group: str, workspace_name: str,
     Returns:
         True if role assignment succeeded, False otherwise.
     """
-    print(f"  Granting AcrPull role to workspace managed identity...")
+    print("  Granting AcrPull role to workspace managed identity...")
 
     try:
         # Get workspace managed identity principal ID
@@ -402,8 +401,8 @@ def grant_acr_pull_role(acr_name: str, resource_group: str, workspace_name: str,
         principal_id = output.strip()
 
         if not principal_id or principal_id == "None":
-            print(f"  WARNING: Workspace does not have a managed identity")
-            print(f"  Managed identity is automatically created when workspace is used")
+            print("  WARNING: Workspace does not have a managed identity")
+            print("  Managed identity is automatically created when workspace is used")
             return False
 
         print(f"  Workspace principal ID: {principal_id}")
@@ -418,18 +417,18 @@ def grant_acr_pull_role(acr_name: str, resource_group: str, workspace_name: str,
             "--role", "AcrPull",
             "--scope", acr_id,
         ])
-        print(f"  AcrPull role granted successfully")
+        print("  AcrPull role granted successfully")
         return True
 
     except subprocess.CalledProcessError as e:
         error_msg = str(e.stderr) if e.stderr else str(e)
         # Role might already be assigned
         if "already exists" in error_msg.lower() or "conflict" in error_msg.lower():
-            print(f"  AcrPull role already assigned")
+            print("  AcrPull role already assigned")
             return True
         else:
             print(f"  WARNING: Could not grant AcrPull role: {error_msg}")
-            print(f"  You may need to assign it manually:")
+            print("  You may need to assign it manually:")
             print(f"    az role assignment create --assignee {principal_id if 'principal_id' in locals() else '<PRINCIPAL_ID>'} \\")
             print(f"      --role AcrPull --scope {acr_id if 'acr_id' in locals() else '<ACR_ID>'}")
             return False
@@ -441,14 +440,14 @@ def sync_workspace_keys(workspace_name: str, resource_group: str) -> None:
     This command updates the workspace's managed identity credentials and
     ensures that compute instances can access the attached ACR.
     """
-    print(f"  Syncing workspace keys...")
+    print("  Syncing workspace keys...")
     try:
         run_cmd([
             "az", "ml", "workspace", "sync-keys",
             "--name", workspace_name,
             "--resource-group", resource_group,
         ])
-        print(f"  Workspace keys synced")
+        print("  Workspace keys synced")
     except subprocess.CalledProcessError as e:
         # Sync-keys might not be critical if other steps succeeded
         print(f"  WARNING: Could not sync workspace keys: {e.stderr}")
@@ -500,7 +499,7 @@ def create_storage_account(name: str, resource_group: str, location: str) -> str
             "--query", "connectionString",
             "-o", "tsv",
         ]).strip()
-        print(f"  Storage account created")
+        print("  Storage account created")
         return conn_str
     except subprocess.CalledProcessError as e:
         print(f"  WARNING: Could not create storage account: {e.stderr}")
@@ -585,7 +584,7 @@ def import_waa_image(acr_name: str, source_image: str = "docker.io/windowsarena/
 
     # Check if image already exists
     try:
-        output = run_cmd([
+        run_cmd([
             "az", "acr", "repository", "show",
             "--name", acr_name,
             "--repository", "winarena",
@@ -602,7 +601,7 @@ def import_waa_image(acr_name: str, source_image: str = "docker.io/windowsarena/
         pass
 
     # Import the image
-    print(f"  Importing WAA image from Docker Hub (this may take a few minutes)...")
+    print("  Importing WAA image from Docker Hub (this may take a few minutes)...")
     try:
         run_cmd([
             "az", "acr", "import",
@@ -642,7 +641,7 @@ def delete_service_principal(name: str) -> bool:
 
         print(f"  Deleting service principal '{name}' (appId: {app_id})...")
         run_cmd(["az", "ad", "sp", "delete", "--id", app_id])
-        print(f"  Service principal deleted")
+        print("  Service principal deleted")
         return True
     except subprocess.CalledProcessError as e:
         print(f"  WARNING: Could not delete service principal: {e.stderr}")
@@ -660,7 +659,7 @@ def delete_resource_group(name: str) -> bool:
     print(f"  Deleting resource group '{name}' (this may take a few minutes)...")
     try:
         run_cmd(["az", "group", "delete", "--name", name, "--yes", "--no-wait"])
-        print(f"  Resource group deletion started (running in background)")
+        print("  Resource group deletion started (running in background)")
         return True
     except subprocess.CalledProcessError as e:
         print(f"  ERROR: Could not delete resource group: {e.stderr}")
@@ -818,7 +817,7 @@ def run_cleanup(args: argparse.Namespace) -> None:
         print("  Already logged in")
 
     # Confirm before proceeding
-    print(f"\n  Resources to delete:")
+    print("\n  Resources to delete:")
     print(f"    - Resource group: {args.resource_group}")
     print(f"    - Service principal: {args.sp_name}")
     print(f"    - Credentials in: {args.env_file}")
@@ -1025,34 +1024,34 @@ Examples:
     # Step 9: Import WAA image
     acr_image = None
     if acr_login_server:
-        print(f"\n[9/15] Importing WAA Docker image...")
+        print("\n[9/15] Importing WAA Docker image...")
         acr_image = import_waa_image(args.acr_name)
     else:
-        print(f"\n[9/15] Skipping WAA image import (no ACR)...")
+        print("\n[9/15] Skipping WAA image import (no ACR)...")
 
     # Step 10: Attach ACR to workspace
     if acr_login_server:
-        print(f"\n[10/15] Attaching ACR to ML workspace...")
+        print("\n[10/15] Attaching ACR to ML workspace...")
         attach_acr_to_workspace(args.acr_name, args.resource_group, args.workspace, subscription_id)
     else:
-        print(f"\n[10/15] Skipping ACR attachment (no ACR)...")
+        print("\n[10/15] Skipping ACR attachment (no ACR)...")
 
     # Step 11: Grant AcrPull role to workspace managed identity
     if acr_login_server:
-        print(f"\n[11/15] Configuring ACR authentication...")
+        print("\n[11/15] Configuring ACR authentication...")
         grant_acr_pull_role(args.acr_name, args.resource_group, args.workspace, subscription_id)
     else:
-        print(f"\n[11/15] Skipping ACR authentication (no ACR)...")
+        print("\n[11/15] Skipping ACR authentication (no ACR)...")
 
     # Step 12: Sync workspace keys
     if acr_login_server:
-        print(f"\n[12/15] Syncing workspace credentials...")
+        print("\n[12/15] Syncing workspace credentials...")
         sync_workspace_keys(args.workspace, args.resource_group)
     else:
-        print(f"\n[12/15] Skipping workspace sync (no ACR)...")
+        print("\n[12/15] Skipping workspace sync (no ACR)...")
 
     # Step 13: Request GPU quota
-    print(f"\n[13/15] Requesting GPU quota...")
+    print("\n[13/15] Requesting GPU quota...")
     print("  Checking current GPU quotas...")
     quotas = check_gpu_quota(args.location)
 
@@ -1071,7 +1070,7 @@ Examples:
     )
 
     # Step 14: Create storage account for async inference
-    print(f"\n[14/15] Creating storage account for inference queue...")
+    print("\n[14/15] Creating storage account for inference queue...")
     storage_account_name = "openadaptmlstorage"  # Must be unique, lowercase, no hyphens
     storage_connection_string = create_storage_account(
         storage_account_name,
@@ -1085,14 +1084,14 @@ Examples:
     comparisons_container = "comparisons"
 
     if storage_connection_string:
-        print(f"\n[15/15] Creating inference queue and blob containers...")
+        print("\n[15/15] Creating inference queue and blob containers...")
         create_queue(storage_connection_string, inference_queue_name)
         create_blob_containers(
             storage_connection_string,
             [checkpoints_container, comparisons_container]
         )
     else:
-        print(f"\n[15/15] Skipping queue/container creation (no storage account)...")
+        print("\n[15/15] Skipping queue/container creation (no storage account)...")
 
     # Write to .env
     print("\n[✓] Writing credentials to .env...")

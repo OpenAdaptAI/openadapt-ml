@@ -18,7 +18,6 @@ from openadapt_ml.experiments.demo_prompt.run_experiment import (
     DemoPromptExperiment,
 )
 
-
 # Hand-crafted demo for "Turn off Night Shift" on macOS
 # This represents what the human actually did
 DEMO_TURN_OFF_NIGHTSHIFT = """DEMONSTRATION:

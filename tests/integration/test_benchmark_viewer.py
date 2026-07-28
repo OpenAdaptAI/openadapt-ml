@@ -9,7 +9,9 @@ Usage:
 """
 
 from pathlib import Path
+
 from openadapt_ml.training.benchmark_viewer import generate_benchmark_viewer
+
 
 def main():
     # Test with the existing test_run_phase1 data
