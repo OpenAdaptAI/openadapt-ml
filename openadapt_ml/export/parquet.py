@@ -127,12 +127,22 @@ def to_parquet(
 
 
 def _write_summary(episodes: list[Episode], output_path: str) -> None:
-    """Write episode-level summary Parquet file."""
+    """Write episode-level summary Parquet file.
+
+    Raises:
+        ImportError: If pyarrow is unavailable. Previously this returned
+            silently, so ``to_parquet(..., include_summary=True)`` reported
+            success while writing no summary file at all -- the caller had no
+            way to tell an empty summary from a missing one.
+    """
     try:
         import pyarrow as pa
         import pyarrow.parquet as pq
-    except ImportError:
-        return
+    except ImportError as e:
+        raise ImportError(
+            "Parquet summary export requires pyarrow. "
+            "Install with: pip install 'openadapt-ml[parquet]'"
+        ) from e
 
     summary_rows = []
     for episode in episodes:

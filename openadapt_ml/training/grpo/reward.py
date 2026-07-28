@@ -20,6 +20,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class MilestoneEvaluationError(RuntimeError):
+    """Raised when milestone rewards could not be computed.
+
+    This exists so that "the agent did not reach any milestone" (reward 0.0)
+    and "this evaluation could not run" are different outcomes. Returning 0.0
+    for the second case makes an infrastructure failure look like a training
+    signal: the trainer would compute advantages, take a gradient step, and
+    log a reward mean, all from a number that measures nothing.
+    """
+
+
 def binary_task_success(score: float, threshold: float = 0.5) -> float:
     """Convert evaluator score to binary reward.
 
@@ -91,34 +102,57 @@ def evaluate_milestones_screenshot(
         vlm_provider: VLM provider (``"openai"`` or ``"anthropic"``).
 
     Returns:
-        Fraction of screenshot milestones that passed (0.0 to 1.0).
-        Returns 0.0 if there are no milestones or no screenshot milestones.
+        Fraction of screenshot milestones that passed (0.0 to 1.0). 0.0 means
+        every screenshot milestone was evaluated and none passed.
+
+    Raises:
+        MilestoneEvaluationError: If the evaluation could not be run at all --
+            no milestones, no locally evaluable milestones, ``openadapt-evals``
+            missing, a milestone with no description, or a VLM judge failure.
+            These used to return (or silently contribute) 0.0, which is
+            indistinguishable from a genuine failed rollout and would be fed
+            straight into the GRPO advantage computation as if it were a
+            measurement. Callers that want to continue must catch this and
+            decide explicitly what to do with the missing measurement.
     """
     milestones = getattr(task_config, "milestones", None)
     if not milestones:
-        return 0.0
+        raise MilestoneEvaluationError(
+            f"Task config {getattr(task_config, 'id', task_config)!r} has no "
+            "milestones, so there is nothing to score. This is not a reward "
+            "of 0.0."
+        )
 
     # Only evaluate screenshot-type milestones locally
     screenshot_milestones = [
         ms for ms in milestones if getattr(ms.check, "check", None) == "screenshot"
     ]
     if not screenshot_milestones:
-        return 0.0
+        raise MilestoneEvaluationError(
+            f"Task config {getattr(task_config, 'id', task_config)!r} has "
+            f"{len(milestones)} milestone(s) but none of type 'screenshot'. "
+            "Local screenshot evaluation cannot score this task; use the WAA "
+            "/evaluate endpoint instead."
+        )
 
     try:
         from openadapt_evals.vlm_evaluator import vlm_judge
-    except ImportError:
-        logger.warning(
-            "openadapt-evals is not installed; cannot evaluate screenshot "
-            "milestones. Install with: pip install openadapt-evals"
-        )
-        return 0.0
+    except ImportError as exc:
+        raise MilestoneEvaluationError(
+            "openadapt-evals is not installed; screenshot milestones cannot be "
+            "evaluated. Install with: pip install openadapt-evals"
+        ) from exc
 
     passed = 0
     for ms in screenshot_milestones:
         description = getattr(ms.check, "description", None) or ""
         if not description:
-            continue
+            raise MilestoneEvaluationError(
+                f"Milestone {getattr(ms, 'name', '?')!r} is a screenshot "
+                "milestone with no description, so the VLM judge has nothing "
+                "to check. Skipping it would leave it in the denominator and "
+                "silently depress the reward."
+            )
         try:
             success, _confidence = vlm_judge(
                 screenshot_bytes,
@@ -126,22 +160,21 @@ def evaluate_milestones_screenshot(
                 model=vlm_model,
                 provider=vlm_provider,
             )
-            if success:
-                passed += 1
-            logger.debug(
-                "Milestone '%s': %s",
-                getattr(ms, "name", "?"),
-                "PASS" if success else "FAIL",
-            )
         except Exception as exc:
-            logger.warning(
-                "Milestone '%s' evaluation failed: %s",
-                getattr(ms, "name", "?"),
-                exc,
-            )
+            raise MilestoneEvaluationError(
+                f"VLM judge failed on milestone {getattr(ms, 'name', '?')!r}: "
+                f"{exc}. A judge failure is not a failed milestone."
+            ) from exc
+        if success:
+            passed += 1
+        logger.debug(
+            "Milestone '%s': %s",
+            getattr(ms, "name", "?"),
+            "PASS" if success else "FAIL",
+        )
 
     total = len(screenshot_milestones)
-    score = passed / total if total > 0 else 0.0
+    score = passed / total
     logger.info(
         "Milestone evaluation: %d/%d screenshot milestones passed (%.2f)",
         passed,

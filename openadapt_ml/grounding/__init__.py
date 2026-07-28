@@ -23,6 +23,7 @@ Functions:
 """
 
 from openadapt_ml.grounding.base import (
+    GroundingError,
     GroundingModule,
     OracleGrounder,
     RegionCandidate,
@@ -35,6 +36,7 @@ from openadapt_ml.grounding.detector import (
 )
 
 __all__ = [
+    "GroundingError",
     "GroundingModule",
     "OracleGrounder",
     "RegionCandidate",

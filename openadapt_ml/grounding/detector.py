@@ -17,7 +17,11 @@ import re
 from typing import TYPE_CHECKING
 
 from openadapt_ml.config import settings
-from openadapt_ml.grounding.base import GroundingModule, RegionCandidate
+from openadapt_ml.grounding.base import (
+    GroundingError,
+    GroundingModule,
+    RegionCandidate,
+)
 
 if TYPE_CHECKING:
     from PIL import Image
@@ -98,7 +102,14 @@ class GeminiGrounder(GroundingModule):
             image_height: Image height for normalization.
 
         Returns:
-            List of RegionCandidate objects.
+            List of RegionCandidate objects. Empty means the model replied
+            with a well-formed but empty match set.
+
+        Raises:
+            GroundingError: If the response could not be parsed. An
+                unparseable reply is not "no elements matched"; nothing was
+                read at all, and returning an empty list would let the caller
+                score it as a grounding miss.
         """
         candidates = []
 
@@ -106,7 +117,10 @@ class GeminiGrounder(GroundingModule):
         # Look for JSON array or object in the response
         json_match = re.search(r"\[[\s\S]*\]|\{[\s\S]*\}", response_text)
         if not json_match:
-            return candidates
+            raise GroundingError(
+                "Gemini response contained no JSON array or object; the model "
+                f"reply could not be read at all. Reply was: {response_text!r:.500}"
+            )
 
         try:
             data = json.loads(json_match.group())
@@ -165,8 +179,11 @@ class GeminiGrounder(GroundingModule):
                         )
                     )
 
-        except (json.JSONDecodeError, KeyError, TypeError):
-            pass
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            raise GroundingError(
+                f"Could not parse Gemini bbox response ({type(e).__name__}: {e}). "
+                f"Reply was: {response_text!r:.500}"
+            ) from e
 
         return candidates
 
@@ -184,7 +201,12 @@ class GeminiGrounder(GroundingModule):
             k: Maximum number of candidates to return.
 
         Returns:
-            List of RegionCandidate objects sorted by confidence.
+            List of RegionCandidate objects sorted by confidence. Empty means
+            Gemini looked and matched nothing.
+
+        Raises:
+            GroundingError: If the Gemini call or its response could not be
+                completed. Never reported as an empty candidate list.
         """
         model = self._get_model()
 
@@ -230,10 +252,16 @@ Return ONLY the JSON array, no other text."""
             candidates.sort(key=lambda c: c.confidence, reverse=True)
             return candidates[:k]
 
+        except GroundingError:
+            raise
         except Exception as e:
-            # Log error but don't crash
-            print(f"Gemini grounding error: {e}")
-            return []
+            # Previously: printed the error and returned []. `evaluate_grounder`
+            # scores [] as best_iou=0.0 / centroid_hit=False, so a rate-limited
+            # or unreachable API silently became a reported grounding failure.
+            raise GroundingError(
+                f"Gemini grounding call failed for {target_description!r} "
+                f"({type(e).__name__}: {e})"
+            ) from e
 
     @property
     def supports_batch(self) -> bool:
@@ -283,6 +311,9 @@ def extract_ui_elements(
     Raises:
         ImportError: If google-generativeai package not installed.
         ValueError: If GOOGLE_API_KEY not set.
+        GroundingError: If the extraction call or its response could not be
+            completed. An empty list is reserved for "the screenshot has no
+            interactive elements".
     """
     try:
         import google.generativeai as genai
@@ -384,12 +415,19 @@ Example output format:
 
         return normalized_elements
 
+    # Previously both handlers printed and returned []. An empty list is the
+    # legitimate answer for "this screenshot has no interactive elements", so a
+    # quota error, a network failure, or a truncated reply became an assertion
+    # that the screen was empty -- and Set-of-Marks callers overlaid nothing.
     except (json.JSONDecodeError, KeyError, TypeError) as e:
-        print(f"Failed to parse Gemini response: {e}")
-        return []
+        raise GroundingError(
+            f"Could not parse the Gemini element-extraction response "
+            f"({type(e).__name__}: {e})"
+        ) from e
     except Exception as e:
-        print(f"Error extracting UI elements: {e}")
-        return []
+        raise GroundingError(
+            f"Gemini element extraction failed ({type(e).__name__}: {e})"
+        ) from e
 
 
 def overlay_element_marks(
