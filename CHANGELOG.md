@@ -1,6 +1,224 @@
 # CHANGELOG
 
 
+## v0.16.2 (2026-07-28)
+
+### Bug Fixes
+
+- Stop reporting evaluation and grounding failures as empty results
+  ([#70](https://github.com/OpenAdaptAI/openadapt-ml/pull/70),
+  [`91c7c48`](https://github.com/OpenAdaptAI/openadapt-ml/commit/91c7c484173519abf60dd38dfba251cacaea5acd))
+
+A failure rendered as a successful empty result is the defect class this project exists to catch in
+  other people's software. This repository produces GRPO rewards, grounding metrics and exported
+  artifacts, so here the same shape does not raise -- it yields a wrong number.
+
+Each site below could not tell "I looked and the answer is empty/zero" from "I could not look", and
+  returned the first for the second. Each fix makes the distinction representable rather than
+  logged.
+
+GRPO milestone reward (openadapt_ml/training/grpo/reward.py) -- highest blast radius, it is the
+  training signal: * openadapt-evals not installed -> logged a warning and returned reward 0.0. *
+  VLM judge raised -> caught per milestone; the milestone stayed in the denominator, so a 429
+  depressed the reward exactly like an unmet milestone. * Milestone with no description ->
+  `continue`d past but still counted, so the task could never score 1.0 and nothing said why. * No
+  milestones / none of type "screenshot" -> returned 0.0. All now raise MilestoneEvaluationError.
+  GRPOTrainer catches it at the one place that can decide, and returns None ("no measurement, keep
+  the existing reward"), which the caller already handles -- rather than feeding an invented 0.0
+  into compute_group_advantages and taking a gradient step on it. GRPOTrainer's unused
+  `_compute_milestone_reward` raised the same 0.0 for an unknown task_id; it now raises KeyError,
+  matching its sibling.
+
+Grounding (openadapt_ml/grounding/): `GeminiGrounder.ground` printed the error and returned [];
+  `_parse_bbox_response` swallowed JSONDecodeError/KeyError/ TypeError; `extract_ui_elements` did
+  both. [] is the legitimate answer for "I looked and matched nothing", and evaluate_grounder scores
+  it as best_iou 0.0 / centroid_hit False -- so a rate limit or a bad key was recorded as a
+  grounding miss the model never made. These now raise GroundingError; the honest empty result still
+  returns [].
+
+Grounding metrics (openadapt_ml/evals/grounding.py): a step whose screenshot could not be opened was
+  `continue`d past. Every GroundingMetrics property divides by len(results), so the sample left the
+  denominator and the reported hit rate stayed high over a silently smaller sample. Now raises.
+
+Parquet summary (openadapt_ml/export/parquet.py): `except ImportError: return` made
+  `include_summary=True` a no-op that returned None exactly like success.
+
+Azure login probe (scripts/setup_azure.py): an unrecognised az error returned True -- "I could not
+  tell, so assume you are logged in". Now re-raises.
+
+Also: PR #69 fixed `task_dir` being declared twice in GRPOConfig (PIE794) and
+
+kept the correct, documented declaration. Nothing in the configured rule set `B,E,F,I,W` catches a
+  duplicated class field, so the defect could return the moment the audit stopped. PIE794 is adopted
+  as a single rule (repository count: 0) and tests/test_failure_is_not_success.py adds an AST guard
+  over every dataclass in the package.
+
+Every test in tests/test_failure_is_not_success.py is mutation-checked: with the production file
+  reverted to its pre-fix form the matching test fails with "DID NOT RAISE" (behaviour, not a
+  missing import -- the new exception types are resolved dynamically for exactly that reason).
+
+Claude-Session: https://claude.ai/code/session_01NyCHrzA1psrKMFfroYbzaM
+
+Co-authored-by: Claude Opus 5 <noreply@anthropic.com>
+
+### Build System
+
+- Bound ruff to >=0.16,<0.17 and make lint config explicit
+  ([#69](https://github.com/OpenAdaptAI/openadapt-ml/pull/69),
+  [`ab43a9d`](https://github.com/OpenAdaptAI/openadapt-ml/commit/ab43a9dd6a7b5f07ae335679ed1ae092a121c02a))
+
+`ruff>=0.1.0` with no `[tool.ruff]` section at all meant every lint decision in this repository was
+  inherited from whatever ruff version a runner happened to resolve. ruff 0.16.0 (2026-07-23) then
+  changed both halves of that implicit contract at once:
+
+* the default rule set grew from 59 rules to 413, taking `ruff check openadapt_ml/` from 0 findings
+  to 1035; and * the default `include` gained `*.md`, so `ruff format` began rewriting Python code
+  blocks inside README/USAGE documentation (3 files).
+
+Neither needed a commit here to land. `main` is still green only because uv.lock happens to pin ruff
+  0.14.9.
+
+Changes:
+
+* dev dependency bounded to `ruff>=0.16,<0.17`, and uv.lock relocked so CI actually runs 0.16.0
+  against the new gate. The relock also repairs a lockfile that predated the `build` and
+  `openadapt-types` dependencies; the only version changes are ruff and this package's own stale
+  self-version, with no downgrades and no removals. * explicit `[tool.ruff]`: `line-length = 88`
+  (what the tree already uses), `target-version = "py310"`, and `include` pinned to 0.16's default
+  list minus `*.md`, so a future addition to either default is inert until someone edits this file.
+  * explicit `select = ["B", "E", "F", "I", "W"]` with `ignore = ["E501"]`. This is the OpenAdapt
+  house set plus flake8-bugbear, and is wider than what this repository actually enforced before
+  (ruff's old default was effectively `E4,E7,E9,F`). Full 0.16 defaults were rejected: 1035 findings
+  is not honestly reviewable, and ~90% of it is `UP` typing churn, `BLE001` on deliberately blind
+  status probes, and `PLW1510`, whose fixes are all behaviour changes. Reasons are recorded inline.
+  * `ruff check` in CI widened from `openadapt_ml/` to the whole repository, because every genuine
+  defect the audit surfaced was in scripts/ or tests/, outside the old gate.
+
+Defects fixed:
+
+* scripts/generate_vm_screenshots_simple.py: two bare `except:` around PIL font loading also
+  swallowed KeyboardInterrupt and SystemExit, so Ctrl-C during font load silently fell through to
+  the fallback font instead of exiting. Narrowed to `except OSError`. *
+  openadapt_ml/training/grpo/config.py: `task_dir` was declared twice in the same dataclass, with
+  the documented declaration shadowed by a later bare one. Both defaulted to None so behaviour was
+  unchanged, but editing the documented default would silently have had no effect. *
+  scripts/p0_validate_demo_persistence.py: three `"Episode"` annotations referenced a name the
+  module never imports. `from __future__ import annotations` keeps this from raising at import time,
+  but the annotations were unresolvable to any runtime introspection. Imported under TYPE_CHECKING.
+  * 10 x B904: exception chaining restored (`from e`) so a friendly "install X" ImportError no
+  longer hides the underlying cause. * 16 x B905: every `zip()` now declares its intent.
+  `strict=True` only where equality is already guaranteed by an adjacent guard or by construction,
+  so it can never fire; `strict=False` with an inline reason where truncation is genuinely
+  tolerated. The one substantive case is representation_shootout/evaluator.py, where a short
+  `model_outputs` could silently shrink the sample set the aggregated metrics are computed over; its
+  docstring already declared the correspondence, which is now enforced. * 5 x F811 redundant `import
+  os` shadowing the module-level import, 4 x F841 dead bindings, 3 x E712 `== True/False` in
+  assertions.
+
+Reviewed and deliberately not changed: 33 S110/S112 sites are all best-effort dashboard, telemetry
+  and VM-status probes that degrade to a default; none swallows a credential or decision-path
+  failure. 7 RUF012 sites are read-only class-level registries. No B006 mutable default arguments
+  exist in this tree.
+
+`build:` rather than `fix:`: nothing in the shipped `openadapt_ml` package changes behaviour for a
+  user. The bare-except and undefined-name defects are both in `scripts/`, which is not packaged,
+  and the duplicate dataclass field had identical defaults. This should not burn a release.
+
+Verified locally with ruff 0.16.0: `ruff check .` clean repository-wide, `ruff format --check
+  openadapt_ml/` clean, 454 passed / 2 skipped.
+
+Claude-Session: https://claude.ai/code/session_01NyCHrzA1psrKMFfroYbzaM
+
+Co-authored-by: Claude Opus 5 <noreply@anthropic.com>
+
+### Chores
+
+- Gitignore .private/ ([#68](https://github.com/OpenAdaptAI/openadapt-ml/pull/68),
+  [`e1ff03e`](https://github.com/OpenAdaptAI/openadapt-ml/commit/e1ff03eadf8900cda26c3928f387da03ae9b5d06))
+
+`.private/` is the workspace-wide convention for material that must never be published. It was not
+  ignored here, so a directory created inside this checkout was one stray `git add` from being
+  committed. Ignore it mechanically rather than relying on that never happening.
+
+Claude-Session: https://claude.ai/code/session_01NyCHrzA1psrKMFfroYbzaM
+
+Co-authored-by: Claude Opus 5 <noreply@anthropic.com>
+
+### Documentation
+
+- Add lifecycle status banner ([#66](https://github.com/OpenAdaptAI/openadapt-ml/pull/66),
+  [`1e295f8`](https://github.com/OpenAdaptAI/openadapt-ml/commit/1e295f800662aa7f79ee6de503029401c65dc92d))
+
+Adds the standard lifecycle banner used across the org (matching the banner wave on
+  openadapt-capture, openadapt-grounding, etc.), derived from this repo's classification in the
+  repository lifecycle registry (OpenAdaptAI/.github repository-lifecycle.yml, reviewed 2026-07-15):
+  Research.
+
+Existing README content is unchanged below the banner.
+
+Co-authored-by: Claude Fable 5 <noreply@anthropic.com>
+
+- Refresh README with honest research positioning
+  ([#67](https://github.com/OpenAdaptAI/openadapt-ml/pull/67),
+  [`0a1d05c`](https://github.com/OpenAdaptAI/openadapt-ml/commit/0a1d05c4348a5aec062ca46c3f9f7006eb6fa72a))
+
+Align openadapt-ml's README with the OpenAdapt house positioning and its actual, current maturity as
+  experimental research code.
+
+- Frame the product as a governed demonstration compiler (openadapt-flow) whose healthy replay path
+  makes zero model calls; position this repo as the upstream research and cost-optimization (Phase
+  2) surface. - Add an honest training status section: base VLMs cannot operate Windows without SFT;
+  GRPO standalone backend is the default prototyping path while the verl backend is an integration
+  stub raising NotImplementedError; SFT via TRL SFTTrainer is the most exercised path. - Update the
+  architecture tree to match the current package layout (grpo, perception, export, baselines,
+  segmentation, evals, providers). - Cross-link docs.openadapt.ai and the OpenAdaptAI/openadapt
+  launcher; note private hardening corpora and recipes are kept out of this repo. - Remove
+  em-dash-style separators throughout.
+
+Claude-Session: https://claude.ai/code/session_01NyCHrzA1psrKMFfroYbzaM
+
+Co-authored-by: Claude Opus 4.8 <noreply@anthropic.com>
+
+### Refactoring
+
+- Make openadapt-ml a leaf; break ml<->evals import cycle
+  ([#65](https://github.com/OpenAdaptAI/openadapt-ml/pull/65),
+  [`7f62c18`](https://github.com/OpenAdaptAI/openadapt-ml/commit/7f62c1812c7f920befeb5a84277bb893c4864962))
+
+* refactor: make openadapt-ml a leaf; break ml<->evals cycle
+
+Phase 1 of the evals->ml refactor.
+
+Fork A: import the Benchmark* vocabulary (Task/Observation/Action/Agent) from openadapt-types
+  instead of openadapt-evals. Removes the one hard, unconditional module-level ml->evals import in
+  benchmarks/agent.py.
+
+Fork B: add a thin RolloutEnv Protocol (reset/step/observe/collect_rollout /screen_size) in
+  training/grpo/rollout_env.py. The GRPO collector/trainer type against this interface; the concrete
+  WAA env/adapters stay in openadapt-evals and implement it structurally.
+
+Also convert the remaining guarded module-level openadapt-evals imports (rollout_collector,
+  verl_backend, trainer TaskConfig) to lazy in-function imports so openadapt-ml has zero
+  module-level openadapt-evals imports.
+
+Adds openadapt-types as a dependency (>=0.2.0) with a local editable uv source until the
+  openadapt-types release is published.
+
+Tests: tests/ (excl. integration) 451 passed, 5 skipped.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_01CKrVJJy5jWVCkXAqgUqtqZ
+
+* chore: pin openadapt-types>=0.3.0 (published w/ benchmark), drop local editable source
+
+* style: ruff format verl_backend.py (lazy-import refactor)
+
+---------
+
+Co-authored-by: Claude Opus 4.8 <noreply@anthropic.com>
+
+
 ## v0.16.1 (2026-06-12)
 
 ### Bug Fixes
