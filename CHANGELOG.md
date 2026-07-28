@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.16.3 (2026-07-28)
+
+### Bug Fixes
+
+- Preserve benchmark agent failures
+  ([`4090310`](https://github.com/OpenAdaptAI/openadapt-ml/commit/4090310a38ee91394d1a04bb1ef635727a0868a0))
+
+Preserve provider and parser failures as failures across the benchmark agents.
+
+### Chores
+
+- **release**: Enforce source-policy boundary
+  ([`7246d98`](https://github.com/OpenAdaptAI/openadapt-ml/commit/7246d984730ba811ebf69684a086e123cad95a43))
+
+Add the generated fail-closed source-policy guard. Validate the tracked repository tree and built
+  wheel and sdist artifacts before release.
+
+
 ## v0.16.2 (2026-07-28)
 
 ### Bug Fixes

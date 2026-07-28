@@ -1,6 +1,6 @@
 [project]
 name = "openadapt-ml"
-version = "0.16.2"
+version = "0.16.3"
 description = "Model-agnostic, domain-agnostic ML engine for GUI automation agents"
 readme = "README.md"
 requires-python = ">=3.10"
