@@ -318,7 +318,7 @@ Think step by step, then output the action on a new line starting with "ACTION:"
         except Exception as e:
             logger.error(f"API error: {e}")
             return BenchmarkAction(
-                type="done",
+                type="error",
                 raw_action={"error": str(e)},
             )
 
@@ -473,7 +473,7 @@ Think step by step, then output the action on a new line starting with "ACTION:"
 
         if not action_line:
             raw_action["parse_error"] = "No action pattern found"
-            return BenchmarkAction(type="done", raw_action=raw_action)
+            return BenchmarkAction(type="error", raw_action=raw_action)
 
         # Parse CLICK with element ID
         click_id_match = re.match(
@@ -538,7 +538,7 @@ Think step by step, then output the action on a new line starting with "ACTION:"
             return BenchmarkAction(type="done", raw_action=raw_action)
 
         raw_action["parse_error"] = f"Unknown action format: {action_line}"
-        return BenchmarkAction(type="done", raw_action=raw_action)
+        return BenchmarkAction(type="error", raw_action=raw_action)
 
     def reset(self) -> None:
         """Reset agent state between episodes."""

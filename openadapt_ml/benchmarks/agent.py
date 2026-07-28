@@ -325,7 +325,7 @@ Then output the action on a new line starting with "ACTION:"
         try:
             response = adapter.generate(sample, max_new_tokens=self.max_tokens)
         except Exception as e:
-            return BenchmarkAction(type="done", raw_action={"error": str(e)})
+            return BenchmarkAction(type="error", raw_action={"error": str(e)})
 
         return self._parse_response(response, observation)
 
@@ -451,7 +451,7 @@ Then output the action on a new line starting with "ACTION:"
 
         if not action_line:
             raw_action["parse_error"] = "No action pattern found"
-            return BenchmarkAction(type="done", raw_action=raw_action)
+            return BenchmarkAction(type="error", raw_action=raw_action)
 
         # Parse CLICK([id])
         click_match = re.match(
@@ -557,7 +557,7 @@ Then output the action on a new line starting with "ACTION:"
             )
 
         raw_action["parse_error"] = f"Unknown action format: {action_line}"
-        return BenchmarkAction(type="done", raw_action=raw_action)
+        return BenchmarkAction(type="error", raw_action=raw_action)
 
     def reset(self) -> None:
         """Reset agent state."""
@@ -661,7 +661,7 @@ class UnifiedBaselineAgent(BenchmarkAgent):
         except Exception as e:
             if self.verbose:
                 print(f"[UnifiedBaselineAgent] Adapter error: {e}")
-            return BenchmarkAction(type="done", raw_action={"error": str(e)})
+            return BenchmarkAction(type="error", raw_action={"error": str(e)})
 
         return self._parsed_to_benchmark_action(parsed_action, observation)
 
@@ -693,7 +693,7 @@ class UnifiedBaselineAgent(BenchmarkAgent):
 
         if not parsed_action.is_valid:
             raw_action["parse_error"] = parsed_action.parse_error
-            return BenchmarkAction(type="done", raw_action=raw_action)
+            return BenchmarkAction(type="error", raw_action=raw_action)
 
         action_type = parsed_action.action_type
 
@@ -743,7 +743,7 @@ class UnifiedBaselineAgent(BenchmarkAgent):
             )
 
         raw_action["unknown_action"] = action_type
-        return BenchmarkAction(type="done", raw_action=raw_action)
+        return BenchmarkAction(type="error", raw_action=raw_action)
 
     def reset(self) -> None:
         """Reset agent state."""
