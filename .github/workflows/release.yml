@@ -46,7 +46,9 @@ jobs:
 
       - name: Build package
         if: steps.check_skip.outputs.skip != 'true' && steps.release.outputs.released == 'true'
-        run: uv build
+        run: |
+          uv build
+          python scripts/check_source_boundary.py --require-dist
 
       - name: Publish to PyPI
         if: steps.check_skip.outputs.skip != 'true' && steps.release.outputs.released == 'true'
