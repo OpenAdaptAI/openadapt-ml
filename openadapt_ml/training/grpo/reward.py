@@ -15,7 +15,11 @@ the standalone GRPO trainer when ``--task-dir`` is set.
 
 from __future__ import annotations
 
+import io
 import logging
+import math
+
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +35,18 @@ class MilestoneEvaluationError(RuntimeError):
     """
 
 
+def _unit_interval(value: object, name: str) -> float:
+    """Return a finite numeric value in the closed unit interval."""
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or not 0.0 <= value <= 1.0
+    ):
+        raise ValueError(f"{name} must be a finite number in [0, 1]")
+    return float(value)
+
+
 def binary_task_success(score: float, threshold: float = 0.5) -> float:
     """Convert evaluator score to binary reward.
 
@@ -41,7 +57,9 @@ def binary_task_success(score: float, threshold: float = 0.5) -> float:
     Returns:
         1.0 if score >= threshold, else 0.0.
     """
-    return 1.0 if score >= threshold else 0.0
+    measured_score = _unit_interval(score, "score")
+    measured_threshold = _unit_interval(threshold, "threshold")
+    return 1.0 if measured_score >= measured_threshold else 0.0
 
 
 def compute_group_advantages(rewards: list[float]) -> list[float]:
@@ -64,8 +82,13 @@ def compute_group_advantages(rewards: list[float]) -> list[float]:
     if n == 0:
         return []
 
-    mean = sum(rewards) / n
-    variance = sum((r - mean) ** 2 for r in rewards) / n
+    measured_rewards = [
+        _unit_interval(reward, f"rewards[{index}]")
+        for index, reward in enumerate(rewards)
+    ]
+
+    mean = sum(measured_rewards) / n
+    variance = sum((reward - mean) ** 2 for reward in measured_rewards) / n
     std = variance**0.5
     eps = 1e-8
 
@@ -73,7 +96,7 @@ def compute_group_advantages(rewards: list[float]) -> list[float]:
     if std < eps:
         return [0.0] * n
 
-    return [(r - mean) / (std + eps) for r in rewards]
+    return [(reward - mean) / (std + eps) for reward in measured_rewards]
 
 
 def evaluate_milestones_screenshot(
@@ -122,6 +145,17 @@ def evaluate_milestones_screenshot(
             "milestones, so there is nothing to score. This is not a reward "
             "of 0.0."
         )
+    if not screenshot_bytes:
+        raise MilestoneEvaluationError(
+            "Screenshot milestone evaluation requires non-empty screenshot bytes"
+        )
+    try:
+        with Image.open(io.BytesIO(screenshot_bytes)) as screenshot:
+            screenshot.verify()
+    except Exception as exc:
+        raise MilestoneEvaluationError(
+            "Screenshot milestone evaluation requires decodable image evidence"
+        ) from exc
 
     # Only evaluate screenshot-type milestones locally
     screenshot_milestones = [
@@ -154,7 +188,7 @@ def evaluate_milestones_screenshot(
                 "silently depress the reward."
             )
         try:
-            success, _confidence = vlm_judge(
+            success, confidence = vlm_judge(
                 screenshot_bytes,
                 description,
                 model=vlm_model,
@@ -164,6 +198,18 @@ def evaluate_milestones_screenshot(
             raise MilestoneEvaluationError(
                 f"VLM judge failed on milestone {getattr(ms, 'name', '?')!r}: "
                 f"{exc}. A judge failure is not a failed milestone."
+            ) from exc
+        if not isinstance(success, bool):
+            raise MilestoneEvaluationError(
+                f"VLM judge returned a non-boolean success value for milestone "
+                f"{getattr(ms, 'name', '?')!r}"
+            )
+        try:
+            _unit_interval(confidence, "VLM judge confidence")
+        except ValueError as exc:
+            raise MilestoneEvaluationError(
+                f"VLM judge returned invalid confidence for milestone "
+                f"{getattr(ms, 'name', '?')!r}"
             ) from exc
         if success:
             passed += 1

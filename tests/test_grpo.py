@@ -94,6 +94,22 @@ def test_binary_reward_custom_threshold():
     assert binary_task_success(0.29, threshold=0.3) == 0.0
 
 
+@pytest.mark.parametrize("score", [True, float("nan"), float("inf"), -0.1, 1.1])
+def test_binary_reward_rejects_invalid_score(score):
+    from openadapt_ml.training.grpo.reward import binary_task_success
+
+    with pytest.raises(ValueError, match="score"):
+        binary_task_success(score)
+
+
+@pytest.mark.parametrize("threshold", [False, float("nan"), -0.1, 1.1])
+def test_binary_reward_rejects_invalid_threshold(threshold):
+    from openadapt_ml.training.grpo.reward import binary_task_success
+
+    with pytest.raises(ValueError, match="threshold"):
+        binary_task_success(0.5, threshold=threshold)
+
+
 def test_group_advantages_mixed():
     """Mixed rewards produce positive/negative advantages."""
     from openadapt_ml.training.grpo.reward import compute_group_advantages
@@ -145,6 +161,16 @@ def test_group_advantages_normalized():
     advantages = compute_group_advantages(rewards)
     mean_adv = sum(advantages) / len(advantages)
     assert abs(mean_adv) < 1e-6  # Mean should be ~0
+
+
+@pytest.mark.parametrize(
+    "rewards", [[0.0, True], [0.0, float("nan")], [-0.1, 1.0], [0.0, 1.1]]
+)
+def test_group_advantages_reject_invalid_reward(rewards):
+    from openadapt_ml.training.grpo.reward import compute_group_advantages
+
+    with pytest.raises(ValueError, match=r"rewards\[1\]|rewards\[0\]"):
+        compute_group_advantages(rewards)
 
 
 # ---------------------------------------------------------------------------
@@ -396,22 +422,42 @@ def test_parse_click_custom_screen_size():
     assert action.y == 400
 
 
-def test_parse_click_clamps_negative():
-    """_parse_vlm_output_to_action clamps negative coordinates to 0."""
+def test_parse_click_inclusive_normalized_edge_stays_inside_viewport():
     from openadapt_ml.training.grpo.trainer import _parse_vlm_output_to_action
 
-    action = _parse_vlm_output_to_action("CLICK(x=-0.1, y=-0.2)")
-    assert action.x == 0
-    assert action.y == 0
+    action = _parse_vlm_output_to_action(
+        "CLICK(x=1.0, y=1.0)", screen_size=(1920, 1080)
+    )
+    assert (action.x, action.y) == (1919, 1079)
 
 
-def test_parse_click_clamps_above_one():
-    """_parse_vlm_output_to_action clamps coordinates above 1.0."""
-    from openadapt_ml.training.grpo.trainer import _parse_vlm_output_to_action
+@pytest.mark.parametrize("coordinates", ["-0.1, y=-0.2", "1.5, y=2.0"])
+def test_parse_click_rejects_out_of_range_coordinates(coordinates):
+    from openadapt_ml.training.grpo.trainer import (
+        ActionParseError,
+        _parse_vlm_output_to_action,
+    )
 
-    action = _parse_vlm_output_to_action("CLICK(x=1.5, y=2.0)")
-    assert action.x == 1920
-    assert action.y == 1080
+    with pytest.raises(ActionParseError, match="fractions"):
+        _parse_vlm_output_to_action(f"CLICK(x={coordinates})")
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        '{"action_type":"click","coordinate":[0.5,400]}',
+        '{"action_type":"click","coordinate":["NaN",0.5]}',
+        '{"action_type":"click","coordinate":[1920,1080]}',
+    ],
+)
+def test_parse_json_click_rejects_unsafe_coordinate_units(payload):
+    from openadapt_ml.training.grpo.trainer import (
+        ActionParseError,
+        _parse_vlm_output_to_action,
+    )
+
+    with pytest.raises(ActionParseError):
+        _parse_vlm_output_to_action(payload)
 
 
 def test_parse_type_action():
@@ -432,6 +478,20 @@ def test_parse_type_action_single_quotes():
     assert action.text == "hello world"
 
 
+def test_parse_json_type_requires_explicit_text():
+    from openadapt_ml.training.grpo.trainer import (
+        ActionParseError,
+        _parse_vlm_output_to_action,
+    )
+
+    with pytest.raises(ActionParseError, match="explicit string text"):
+        _parse_vlm_output_to_action('{"action_type":"type"}')
+
+    action = _parse_vlm_output_to_action('{"action_type":"type","text":""}')
+    assert action.type == "type"
+    assert action.text == ""
+
+
 def test_parse_wait_action():
     """_parse_vlm_output_to_action correctly parses WAIT actions."""
     from openadapt_ml.training.grpo.trainer import _parse_vlm_output_to_action
@@ -448,12 +508,305 @@ def test_parse_done_action():
     assert action.type == "done"
 
 
-def test_parse_fallback_to_done():
-    """_parse_vlm_output_to_action falls back to DONE for unparseable output."""
-    from openadapt_ml.training.grpo.trainer import _parse_vlm_output_to_action
+def test_unparseable_output_is_not_task_completion():
+    from openadapt_ml.training.grpo.trainer import (
+        ActionParseError,
+        _parse_vlm_output_to_action,
+    )
 
-    action = _parse_vlm_output_to_action("I don't know what to do")
-    assert action.type == "done"
+    with pytest.raises(ActionParseError):
+        _parse_vlm_output_to_action("I don't know what to do")
+
+
+def test_parser_requires_one_complete_action_envelope():
+    from openadapt_ml.training.grpo.trainer import (
+        ActionParseError,
+        _parse_vlm_output_to_action,
+    )
+
+    valid = _parse_vlm_output_to_action(
+        "Thought: use the visible target\nAction: CLICK(x=0.5, y=0.25)"
+    )
+    assert valid.type == "click"
+
+    invalid_outputs = [
+        "CLICK(x=0.5, y=0.25)\nDONE()",
+        "Action: WAIT()\nAction: DONE()",
+        '{"action_type":"wait"} {"action_type":"done"}',
+        "Action: WAIT()\nthen CLICK(x=0.5, y=0.5)",
+    ]
+    for output in invalid_outputs:
+        with pytest.raises(ActionParseError):
+            _parse_vlm_output_to_action(output)
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        '{"action_type":"done","action_type":"click","coordinate":[0.5,0.5]}',
+        '{"action_type":"done","coordinate":[0.5,0.5]}',
+        '{"action_type":"click","coordinate":[0.5,0.5],"coords":[0.5,0.5]}',
+        '{"action_type":"click","coordinate":[0.5,0.5],"coordinate_mode":"normalized","coordinate_space":"normalized"}',
+        '{"action_type":"type","text":"hello","coordinate":[0.5,0.5]}',
+        '{"action_type":"wait","text":"ignored"}',
+    ],
+)
+def test_json_parser_rejects_duplicate_competing_or_extra_fields(output):
+    from openadapt_ml.training.grpo.trainer import (
+        ActionParseError,
+        _parse_vlm_output_to_action,
+    )
+
+    with pytest.raises(ActionParseError):
+        _parse_vlm_output_to_action(output)
+
+
+def test_incomplete_checkpoint_fails_validation(tmp_path):
+    import torch
+    from safetensors.torch import save_file
+
+    from scripts.validate_grpo_waa import _missing_checkpoints
+
+    checkpoint = tmp_path / "step_1"
+    checkpoint.mkdir()
+    assert _missing_checkpoints(str(tmp_path), [1, 2, 3]) == [1, 2, 3]
+
+    (checkpoint / "adapter_config.json").write_text("not json")
+    (checkpoint / "adapter_model.safetensors").write_bytes(b"weights")
+    assert _missing_checkpoints(str(tmp_path), [1]) == [1]
+
+    (checkpoint / "adapter_config.json").write_text("{}")
+    assert _missing_checkpoints(str(tmp_path), [1]) == [1]
+
+    (checkpoint / "adapter_config.json").write_text('{"peft_type":"LORA"}')
+    (checkpoint / "adapter_model.safetensors").write_bytes(b"")
+    assert _missing_checkpoints(str(tmp_path), [1]) == [1]
+
+    (checkpoint / "adapter_model.safetensors").write_bytes(b"arbitrary bytes")
+    assert _missing_checkpoints(str(tmp_path), [1]) == [1]
+
+    save_file(
+        {"base_model.model.layer.lora_A.weight": torch.tensor([float("nan")])},
+        checkpoint / "adapter_model.safetensors",
+    )
+    assert _missing_checkpoints(str(tmp_path), [1]) == [1]
+
+    save_file(
+        {"base_model.model.layer.lora_A.weight": torch.ones(1, 1)},
+        checkpoint / "adapter_model.safetensors",
+    )
+    assert _missing_checkpoints(str(tmp_path), [1, 2, 3]) == [2, 3]
+
+    (checkpoint / "adapter_model.safetensors").unlink()
+    (checkpoint / "adapter_model.bin").write_bytes(b"arbitrary bytes")
+    assert _missing_checkpoints(str(tmp_path), [1]) == [1]
+
+    torch.save(
+        {"base_model.model.layer.lora_A.weight": torch.tensor([float("inf")])},
+        checkpoint / "adapter_model.bin",
+    )
+    assert _missing_checkpoints(str(tmp_path), [1]) == [1]
+
+    torch.save(
+        {"base_model.model.layer.lora_A.weight": torch.ones(1, 1)},
+        checkpoint / "adapter_model.bin",
+    )
+    assert _missing_checkpoints(str(tmp_path), [1, 2, 3]) == [2, 3]
+
+
+def test_training_step_rejects_empty_rollout_group():
+    from openadapt_ml.training.grpo.config import GRPOConfig
+    from openadapt_ml.training.grpo.trainer import GRPOTrainer, RolloutLossError
+
+    trainer = GRPOTrainer(GRPOConfig())
+    with pytest.raises(RolloutLossError, match="empty rollout group"):
+        trainer._training_step([])
+
+
+@pytest.mark.parametrize(
+    "probe_status, probe_body",
+    [(503, b"unavailable"), (200, b"")],
+)
+def test_connectivity_requires_live_evaluator_probe(
+    monkeypatch, probe_status, probe_body
+):
+    from types import SimpleNamespace
+
+    from scripts.validate_grpo_waa import phase1_connectivity
+
+    responses = iter(
+        [
+            SimpleNamespace(status_code=200, content=b"screenshot" * 20),
+            SimpleNamespace(status_code=probe_status, content=probe_body),
+        ]
+    )
+    monkeypatch.setattr("requests.get", lambda *args, **kwargs: next(responses))
+
+    assert phase1_connectivity("http://waa", "http://evaluator") is False
+
+
+def test_evaluator_auto_detection_requires_canonical_service(monkeypatch):
+    from scripts.validate_grpo_waa import _detect_evaluator_url
+
+    class Response:
+        status_code = 200
+
+        def __init__(self, payload):
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    responses = iter(
+        [
+            Response({"status": "ok", "service": "waa"}),
+            Response({"status": "ok", "service": "evaluate_server"}),
+        ]
+    )
+    requested = []
+
+    def get(url, **kwargs):
+        requested.append(url)
+        return next(responses)
+
+    monkeypatch.setattr("requests.get", get)
+
+    assert (
+        _detect_evaluator_url("http://worker.example:5000", None)
+        == "http://worker.example:5051"
+    )
+    assert requested == [
+        "http://worker.example:5050/probe",
+        "http://worker.example:5051/probe",
+    ]
+
+
+@pytest.mark.parametrize(
+    "metrics, expected",
+    [
+        (
+            [
+                {
+                    "skipped": False,
+                    "reward_mean": 0.5,
+                    "loss": 0.2,
+                    "gradient_norm": 0.3,
+                    "num_gradient_terms": 2,
+                    "optimizer_step_applied": True,
+                }
+            ],
+            True,
+        ),
+        ([{"skipped": True}], False),
+        (
+            [
+                {
+                    "skipped": False,
+                    "reward_mean": 0.5,
+                    "loss": 0.2,
+                    "gradient_norm": 0.0,
+                    "num_gradient_terms": 2,
+                    "optimizer_step_applied": True,
+                }
+            ],
+            False,
+        ),
+    ],
+)
+def test_training_validation_requires_measured_optimizer_update(metrics, expected):
+    from types import SimpleNamespace
+
+    from scripts.validate_grpo_waa import _has_measured_training_update
+
+    assert (
+        _has_measured_training_update(SimpleNamespace(training_metrics=metrics))
+        is expected
+    )
+
+
+def test_training_validation_requires_an_update_for_each_expected_step():
+    from types import SimpleNamespace
+
+    from scripts.validate_grpo_waa import _has_measured_training_update
+
+    def metric(step, *, skipped=False):
+        return {
+            "step": step,
+            "skipped": skipped,
+            "reward_mean": 0.5,
+            "loss": 0.2,
+            "gradient_norm": 0.3,
+            "num_gradient_terms": 2,
+            "optimizer_step_applied": True,
+        }
+
+    trainer = SimpleNamespace(
+        training_metrics=[metric(0), metric(1, skipped=True), metric(2)]
+    )
+    assert not _has_measured_training_update(trainer, expected_steps={0, 1, 2})
+
+    trainer.training_metrics[1] = metric(1)
+    assert _has_measured_training_update(trainer, expected_steps={0, 1, 2})
+
+
+def test_single_rollout_requires_measured_evaluator(monkeypatch):
+    import sys
+    from types import ModuleType, SimpleNamespace
+
+    from scripts.validate_grpo_waa import phase2_single_rollout
+
+    class FakeAdapter:
+        def close(self):
+            pass
+
+    class FakeAction:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    class FakeResetConfig:
+        def __init__(self, task_id):
+            self.task_id = task_id
+
+    observed_actions = []
+
+    class FakeEnvironment:
+        screen_size = (1280, 720)
+
+        def __init__(self, adapter):
+            self.adapter = adapter
+
+        def reset(self, config):
+            return SimpleNamespace(screenshot=b"screen")
+
+        def step(self, action):
+            observed_actions.append(action)
+            return SimpleNamespace(reward=0.0, done=False)
+
+        def evaluate(self):
+            raise RuntimeError("evaluator offline")
+
+    modules = {
+        "openadapt_evals": ModuleType("openadapt_evals"),
+        "openadapt_evals.adapters": ModuleType("openadapt_evals.adapters"),
+        "openadapt_evals.adapters.waa": ModuleType("openadapt_evals.adapters.waa"),
+        "openadapt_evals.adapters.waa.mock": ModuleType(
+            "openadapt_evals.adapters.waa.mock"
+        ),
+        "openadapt_evals.adapters.base": ModuleType("openadapt_evals.adapters.base"),
+        "openadapt_evals.adapters.rl_env": ModuleType(
+            "openadapt_evals.adapters.rl_env"
+        ),
+    }
+    modules["openadapt_evals.adapters.waa.mock"].WAAMockAdapter = FakeAdapter
+    modules["openadapt_evals.adapters.base"].BenchmarkAction = FakeAction
+    modules["openadapt_evals.adapters.rl_env"].ResetConfig = FakeResetConfig
+    modules["openadapt_evals.adapters.rl_env"].RLEnvironment = FakeEnvironment
+    for name, module in modules.items():
+        monkeypatch.setitem(sys.modules, name, module)
+
+    assert phase2_single_rollout("http://waa", None, "mock_notepad_001", True) is False
+    assert len(observed_actions) == 1
+    assert observed_actions[0].type == "wait"
 
 
 # ---------------------------------------------------------------------------
@@ -533,6 +886,18 @@ def test_format_type_escapes_quotes():
     assert result == 'TYPE(text="say \\"hi\\"")'
 
 
+def test_format_type_requires_explicit_text():
+    from types import SimpleNamespace
+
+    from openadapt_ml.training.grpo.trainer import (
+        ActionParseError,
+        _format_action_as_text,
+    )
+
+    with pytest.raises(ActionParseError, match="explicit string text"):
+        _format_action_as_text(SimpleNamespace(type="type", text=None))
+
+
 def test_format_wait_action():
     """_format_action_as_text formats WAIT."""
     from dataclasses import dataclass
@@ -567,11 +932,13 @@ def test_format_done_action():
     assert _format_action_as_text(FakeAction()) == "DONE()"
 
 
-def test_format_unknown_defaults_to_done():
-    """_format_action_as_text defaults to DONE for unknown types."""
+def test_format_unknown_action_is_not_task_completion():
     from dataclasses import dataclass
 
-    from openadapt_ml.training.grpo.trainer import _format_action_as_text
+    from openadapt_ml.training.grpo.trainer import (
+        ActionParseError,
+        _format_action_as_text,
+    )
 
     @dataclass
     class FakeAction:
@@ -581,7 +948,32 @@ def test_format_unknown_defaults_to_done():
         text: str = None
         key: str = None
 
-    assert _format_action_as_text(FakeAction()) == "DONE()"
+    with pytest.raises(ActionParseError, match="unsupported action"):
+        _format_action_as_text(FakeAction())
+
+
+def test_format_click_refuses_missing_coordinates():
+    from types import SimpleNamespace
+
+    from openadapt_ml.training.grpo.trainer import (
+        ActionParseError,
+        _format_action_as_text,
+    )
+
+    with pytest.raises(ActionParseError, match="without x and y"):
+        _format_action_as_text(SimpleNamespace(type="click", x=None, y=10))
+
+
+def test_format_click_refuses_coordinates_outside_viewport():
+    from types import SimpleNamespace
+
+    from openadapt_ml.training.grpo.trainer import (
+        ActionParseError,
+        _format_action_as_text,
+    )
+
+    with pytest.raises(ActionParseError, match="outside the screen"):
+        _format_action_as_text(SimpleNamespace(type="click", x=1920, y=10))
 
 
 def test_format_roundtrip_click():
