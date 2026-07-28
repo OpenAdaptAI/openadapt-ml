@@ -82,7 +82,9 @@ dev = [
 ]
 # Benchmark evaluation (depends on openadapt-evals)
 benchmarks = [
-    "openadapt-evals>=0.1.1",
+    # Keep ML on the tested Evals 0.90 contract lane. Evals is still pre-1.0,
+    # so the next minor release is an explicit compatibility review boundary.
+    "openadapt-evals>=0.90,<0.91",
 ]
 
 [project.urls]

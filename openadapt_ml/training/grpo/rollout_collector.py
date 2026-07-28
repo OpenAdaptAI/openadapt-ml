@@ -12,6 +12,7 @@ openadapt-evals PoolManager is future work.
 from __future__ import annotations
 
 import logging
+import math
 import random
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
@@ -28,6 +29,10 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from openadapt_evals.adapters import WAALiveAdapter
 
 logger = logging.getLogger(__name__)
+
+
+class RolloutCollectionError(RuntimeError):
+    """The environment did not produce a measurable rollout."""
 
 
 @dataclass
@@ -155,8 +160,22 @@ class GRPORolloutCollector:
                 task_id=task_id,
             )
 
+            if not steps:
+                raise RolloutCollectionError(
+                    f"Task {task_id!r} produced no rollout steps"
+                )
+
             # Extract terminal score from the last step's reward
-            raw_score = steps[-1].reward if steps else 0.0
+            raw_score = steps[-1].reward
+            if (
+                isinstance(raw_score, bool)
+                or not isinstance(raw_score, (int, float))
+                or not math.isfinite(raw_score)
+                or not 0.0 <= raw_score <= 1.0
+            ):
+                raise RolloutCollectionError(
+                    f"Task {task_id!r} returned invalid terminal score {raw_score!r}"
+                )
             reward = binary_task_success(raw_score)
 
             # CR-01: Extract task instruction from the environment's

@@ -30,7 +30,9 @@ Key design decisions:
 from __future__ import annotations
 
 import io
+import json
 import logging
+import math
 import re
 import time
 from pathlib import Path
@@ -58,6 +60,36 @@ from openadapt_ml.training.grpo.rollout_collector import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_SCREEN_SIZE: tuple[int, int] = (1920, 1080)
+
+
+class ActionParseError(ValueError):
+    """Model output did not contain one valid explicit action."""
+
+
+class RolloutLossError(RuntimeError):
+    """A rollout did not contain the evidence required to compute loss."""
+
+
+def _strict_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Build one JSON object while refusing duplicate keys."""
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ActionParseError(f"JSON action contains duplicate key: {key!r}")
+        result[key] = value
+    return result
+
+
+def _normalized_point_to_pixels(
+    x: float,
+    y: float,
+    screen_size: tuple[int, int],
+) -> tuple[int, int]:
+    """Map inclusive normalized coordinates to valid viewport indices."""
+    width, height = screen_size
+    if width <= 0 or height <= 0:
+        raise ActionParseError("Screen dimensions must be positive")
+    return min(int(x * width), width - 1), min(int(y * height), height - 1)
 
 
 # ---------------------------------------------------------------------------
@@ -166,44 +198,136 @@ def _parse_vlm_output_to_action(
     # Log raw output for debugging zero-reward issues
     logger.debug("Parsing VLM output (%d chars): %.200s", len(text), text)
 
-    # Extract action from "Thought: ...\nAction: ..." format (SFT output)
-    action_match = re.search(r"Action:\s*(.+)", text, re.IGNORECASE)
-    if action_match:
-        text = action_match.group(1).strip()
+    # Accept an optional thought followed by exactly one explicit action envelope.
+    action_markers = list(re.finditer(r"\bAction:\s*", text, re.IGNORECASE))
+    if len(action_markers) > 1:
+        raise ActionParseError("Model output contains more than one Action envelope")
+    if action_markers:
+        marker = action_markers[0]
+        prefix = text[: marker.start()].strip()
+        if prefix and not re.match(r"^Thought:\s*", prefix, re.IGNORECASE):
+            raise ActionParseError("Only a Thought may precede the Action envelope")
+        text = text[marker.end() :].strip()
 
-    # Try JSON format: {"action_type": "click", "coordinate": [x, y]}
-    json_match = re.search(r'\{[^}]*"action_type"[^}]*\}', text)
-    if json_match:
+    # JSON must occupy the complete action envelope.
+    if text.startswith("{") or text.endswith("}"):
         try:
-            import json as _json
+            action_data = json.loads(text, object_pairs_hook=_strict_json_object)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise ActionParseError("JSON action envelope is malformed") from exc
+        if not isinstance(action_data, dict):
+            raise ActionParseError("JSON action envelope must be an object")
 
-            action_data = _json.loads(json_match.group())
-            atype = action_data.get("action_type", "").lower()
+        atype_value = action_data.get("action_type")
+        if not isinstance(atype_value, str):
+            raise ActionParseError("JSON action requires an action_type string")
+        atype = atype_value.lower()
+        try:
             coord = action_data.get("coordinate", action_data.get("coords", []))
-            if atype == "click" and len(coord) >= 2:
+            if atype == "click":
+                coordinate_fields = {"coordinate", "coords"} & action_data.keys()
+                mode_fields = {
+                    "coordinate_mode",
+                    "coordinate_space",
+                } & action_data.keys()
+                if len(coordinate_fields) != 1:
+                    raise ActionParseError(
+                        "Click requires exactly one coordinate field"
+                    )
+                if len(mode_fields) > 1:
+                    raise ActionParseError(
+                        "Click permits at most one coordinate-mode field"
+                    )
+                allowed_fields = {
+                    "action_type",
+                    *coordinate_fields,
+                    *mode_fields,
+                }
+                if action_data.keys() - allowed_fields:
+                    raise ActionParseError("Click action contains unsupported fields")
+                if not isinstance(coord, (list, tuple)) or len(coord) != 2:
+                    raise ActionParseError("Click requires exactly two coordinates")
                 x_val, y_val = float(coord[0]), float(coord[1])
-                # Handle both normalized (0-1) and pixel coordinates
-                if x_val <= 1.0 and y_val <= 1.0:
-                    x_val, y_val = x_val * width, y_val * height
+                if not math.isfinite(x_val) or not math.isfinite(y_val):
+                    raise ActionParseError("Click coordinates must be finite")
+
+                coordinate_mode = action_data.get(
+                    "coordinate_mode", action_data.get("coordinate_space")
+                )
+                if coordinate_mode is not None:
+                    coordinate_mode = str(coordinate_mode).lower()
+                normalized = 0.0 <= x_val <= 1.0 and 0.0 <= y_val <= 1.0
+                pixels = 0.0 <= x_val < width and 0.0 <= y_val < height
+                if coordinate_mode == "normalized":
+                    if not normalized:
+                        raise ActionParseError(
+                            "Normalized click coordinates must be in [0, 1]"
+                        )
+                    x_px, y_px = _normalized_point_to_pixels(x_val, y_val, screen_size)
+                    return BenchmarkAction(type="click", x=x_px, y=y_px)
+                elif coordinate_mode in ("pixel", "pixels"):
+                    if not pixels:
+                        raise ActionParseError(
+                            "Pixel click coordinates must be inside the viewport"
+                        )
+                elif coordinate_mode is None and normalized:
+                    x_px, y_px = _normalized_point_to_pixels(x_val, y_val, screen_size)
+                    return BenchmarkAction(type="click", x=x_px, y=y_px)
+                elif (
+                    coordinate_mode is None
+                    and 1.0 < x_val < width
+                    and 1.0 < y_val < height
+                ):
+                    pass
+                else:
+                    raise ActionParseError(
+                        "Click coordinates are out of range or mix normalized and "
+                        "pixel units"
+                    )
                 return BenchmarkAction(type="click", x=int(x_val), y=int(y_val))
             if atype == "type":
-                return BenchmarkAction(type="type", text=action_data.get("text", ""))
+                if action_data.keys() != {"action_type", "text"}:
+                    raise ActionParseError(
+                        "TYPE requires exactly action_type and explicit string text fields"
+                    )
+                if "text" not in action_data or not isinstance(
+                    action_data["text"], str
+                ):
+                    raise ActionParseError(
+                        "TYPE requires an explicit string text field"
+                    )
+                return BenchmarkAction(type="type", text=action_data["text"])
             if atype in ("done", "wait"):
+                if action_data.keys() != {"action_type"}:
+                    raise ActionParseError(
+                        f"{atype.upper()} does not accept additional fields"
+                    )
                 return BenchmarkAction(type=atype)
-        except Exception:
-            pass  # Fall through to regex parsing
+        except ActionParseError:
+            raise
+        except (TypeError, ValueError):
+            raise ActionParseError("JSON action contains invalid values") from None
+        raise ActionParseError(f"Unsupported JSON action type: {atype!r}")
 
     # CLICK(x=..., y=...)
-    m = re.search(r"CLICK\(x=(-?[\d.]+),\s*y=(-?[\d.]+)\)", text, re.IGNORECASE)
+    m = re.fullmatch(r"CLICK\(x=(-?[\d.]+),\s*y=(-?[\d.]+)\)", text, re.IGNORECASE)
     if m:
-        x_frac = max(0.0, min(1.0, float(m.group(1))))
-        y_frac = max(0.0, min(1.0, float(m.group(2))))
-        return BenchmarkAction(
-            type="click", x=int(x_frac * width), y=int(y_frac * height)
-        )
+        x_frac = float(m.group(1))
+        y_frac = float(m.group(2))
+        if not (
+            math.isfinite(x_frac)
+            and math.isfinite(y_frac)
+            and 0.0 <= x_frac <= 1.0
+            and 0.0 <= y_frac <= 1.0
+        ):
+            raise ActionParseError(
+                "CLICK coordinates must be finite fractions in [0, 1]"
+            )
+        x_px, y_px = _normalized_point_to_pixels(x_frac, y_frac, screen_size)
+        return BenchmarkAction(type="click", x=x_px, y=y_px)
 
     # TYPE(text="..." or '...')
-    m = re.search(
+    m = re.fullmatch(
         r"""TYPE\(text=["']([^"'\\]*(?:\\.[^"'\\]*)*)["']\)""", text, re.IGNORECASE
     )
     if m:
@@ -212,14 +336,13 @@ def _parse_vlm_output_to_action(
         )
         return BenchmarkAction(type="type", text=typed_text)
 
-    if re.search(r"\bWAIT\s*\(\s*\)", text, re.IGNORECASE):
+    if re.fullmatch(r"WAIT\s*\(\s*\)", text, re.IGNORECASE):
         return BenchmarkAction(type="wait")
 
-    if re.search(r"\bDONE\s*\(\s*\)", text, re.IGNORECASE):
+    if re.fullmatch(r"DONE\s*\(\s*\)", text, re.IGNORECASE):
         return BenchmarkAction(type="done")
 
-    logger.warning("Could not parse VLM output: %s. Defaulting to DONE.", text)
-    return BenchmarkAction(type="done")
+    raise ActionParseError(f"Could not parse VLM output: {text[:200]!r}")
 
 
 def _format_action_as_text(
@@ -227,25 +350,41 @@ def _format_action_as_text(
     screen_size: tuple[int, int] = DEFAULT_SCREEN_SIZE,
 ) -> str:
     """Convert a BenchmarkAction back to DSL text for log-prob computation."""
-    action_type = getattr(action, "type", "done")
+    action_type = getattr(action, "type", None)
     width, height = screen_size
 
     if action_type == "click":
-        x_px = getattr(action, "x", 0) or 0
-        y_px = getattr(action, "y", 0) or 0
+        x_px = getattr(action, "x", None)
+        y_px = getattr(action, "y", None)
+        if x_px is None or y_px is None:
+            raise ActionParseError("Cannot format a click without x and y coordinates")
+        x_px = float(x_px)
+        y_px = float(y_px)
+        if not (
+            math.isfinite(x_px)
+            and math.isfinite(y_px)
+            and 0.0 <= x_px < width
+            and 0.0 <= y_px < height
+        ):
+            raise ActionParseError("Cannot format click coordinates outside the screen")
         x_frac = x_px / width if width > 0 else 0.0
         y_frac = y_px / height if height > 0 else 0.0
         return f"CLICK(x={x_frac:.2f}, y={y_frac:.2f})"
 
     if action_type == "type":
-        text = getattr(action, "text", "") or ""
+        text = getattr(action, "text", None)
+        if not isinstance(text, str):
+            raise ActionParseError("Cannot format TYPE without explicit string text")
         escaped = text.replace("\\", "\\\\").replace('"', '\\"')
         return f'TYPE(text="{escaped}")'
 
     if action_type == "wait":
         return "WAIT()"
 
-    return "DONE()"
+    if action_type == "done":
+        return "DONE()"
+
+    raise ActionParseError(f"Cannot format unsupported action type: {action_type!r}")
 
 
 # Public aliases (the underscore-prefixed versions are kept for backwards compat)
@@ -334,6 +473,7 @@ class GRPOTrainer:
         self._collector: GRPORolloutCollector | None = None
         self._step: int = 0
         self._task_configs: dict[str, Any] = {}
+        self._training_metrics: list[dict[str, Any]] = []
 
         # Load task configs from --task-dir if specified
         if config.task_dir:
@@ -559,6 +699,7 @@ class GRPOTrainer:
         logger.info("  Task configs loaded: %d", len(self._task_configs))
         logger.info("  Rollouts/step: %d", self._config.num_rollouts_per_step)
         logger.info("  Training steps: %d", self._config.num_training_steps)
+        self._training_metrics.clear()
 
         # Setup
         self._model, self._processor = _load_model_and_processor(self._config)
@@ -604,6 +745,7 @@ class GRPOTrainer:
                     "step_time": time.time() - step_start,
                 }
             )
+            self._training_metrics.append(dict(metrics))
             logger.info(
                 "Step %d/%d: reward=%.2f loss=%.4f time=%.1fs",
                 step + 1,
@@ -627,9 +769,24 @@ class GRPOTrainer:
         logger.info("Training complete. Final checkpoint: %s", final_path)
         return final_path
 
-    def _training_step(self, rollouts: list[Rollout]) -> dict[str, float]:
+    @property
+    def training_metrics(self) -> tuple[dict[str, Any], ...]:
+        """Return a snapshot of the measured result for each training step."""
+        return tuple(dict(metrics) for metrics in self._training_metrics)
+
+    def _training_step(self, rollouts: list[Rollout]) -> dict[str, Any]:
         """Single GRPO gradient step from a group of rollouts."""
+        if not rollouts:
+            raise RolloutLossError("Cannot train from an empty rollout group")
         rewards = [r.reward for r in rollouts]
+        if any(
+            isinstance(reward, bool)
+            or not isinstance(reward, (int, float))
+            or not math.isfinite(reward)
+            or not 0.0 <= reward <= 1.0
+            for reward in rewards
+        ):
+            raise RolloutLossError("Cannot train from an invalid rollout reward")
         advantages = compute_group_advantages(rewards)
         reward_mean = sum(rewards) / len(rewards) if rewards else 0.0
 
@@ -648,11 +805,18 @@ class GRPOTrainer:
             loss_val = self._compute_rollout_loss(
                 rollout, advantage, loss_scale=1.0 / n
             )
+            if not math.isfinite(loss_val):
+                self._optimizer.zero_grad()
+                raise RolloutLossError("Rollout produced a non-finite loss")
             total_loss += loss_val
 
-        torch.nn.utils.clip_grad_norm_(
+        gradient_norm = torch.nn.utils.clip_grad_norm_(
             [p for p in self._model.parameters() if p.requires_grad], max_norm=1.0
         )
+        gradient_norm_value = float(gradient_norm)
+        if not math.isfinite(gradient_norm_value):
+            self._optimizer.zero_grad()
+            raise RolloutLossError("Rollout produced non-finite gradients")
         self._optimizer.step()
 
         return {
@@ -661,6 +825,8 @@ class GRPOTrainer:
             "skipped": False,
             "num_rollouts": len(rollouts),
             "num_gradient_terms": n,
+            "gradient_norm": gradient_norm_value,
+            "optimizer_step_applied": True,
         }
 
     def _compute_rollout_loss(
@@ -684,26 +850,37 @@ class GRPOTrainer:
 
         # Gather valid steps
         valid_steps = []
-        for step in rollout.steps:
+        for step_index, step in enumerate(rollout.steps):
             obs = getattr(step, "observation", None)
             action = getattr(step, "action", None)
             if obs is None or action is None:
-                continue
+                raise RolloutLossError(
+                    f"Rollout {rollout.task_id!r} step {step_index} is missing "
+                    "its observation or action"
+                )
             screenshot = getattr(obs, "screenshot", None)
             if not screenshot:
-                continue
-            valid_steps.append((obs, action, screenshot))
+                raise RolloutLossError(
+                    f"Rollout {rollout.task_id!r} step {step_index} is missing "
+                    "its screenshot"
+                )
+            valid_steps.append((step_index, obs, action, screenshot))
 
         if not valid_steps:
-            return 0.0
+            raise RolloutLossError(
+                f"Rollout {rollout.task_id!r} has no trainable observation/action steps"
+            )
 
         num_steps = len(valid_steps)
 
-        for _obs, action, screenshot in valid_steps:
+        for step_index, _obs, action, screenshot in valid_steps:
             try:
                 image = Image.open(io.BytesIO(screenshot)).convert("RGB")
-            except Exception:
-                continue
+            except Exception as exc:
+                raise RolloutLossError(
+                    f"Rollout {rollout.task_id!r} step {step_index} has an "
+                    "unreadable screenshot"
+                ) from exc
 
             messages = _build_agent_messages(instruction, include_image=True)
 
@@ -736,7 +913,9 @@ class GRPOTrainer:
             )["input_ids"]
             action_len = action_ids.shape[1]
             if action_len <= 0:
-                continue
+                raise RolloutLossError(
+                    f"Rollout {rollout.task_id!r} step {step_index} has no action tokens"
+                )
 
             full_ids = torch.cat([prompt_ids, action_ids.to(prompt_ids.device)], dim=1)
             full_inputs = dict(prompt_inputs)
@@ -767,6 +946,11 @@ class GRPOTrainer:
                 step_log_prob.detach().unsqueeze(0),
                 adv_tensor.unsqueeze(0),
             )
+            if not bool(torch.isfinite(step_loss).all()):
+                raise RolloutLossError(
+                    f"Rollout {rollout.task_id!r} step {step_index} produced "
+                    "a non-finite loss"
+                )
 
             # Per-step backward to avoid OOM
             scaled = step_loss * loss_scale / num_steps

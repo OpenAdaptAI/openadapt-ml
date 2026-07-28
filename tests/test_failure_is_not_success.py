@@ -13,11 +13,22 @@ production change makes the matching test fail.
 from __future__ import annotations
 
 import ast
+import io
 import sys
 from dataclasses import fields
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
+
+
+def _png_bytes() -> bytes:
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2), "white").save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def _error_type(module_path: str, name: str) -> type[BaseException]:
@@ -76,9 +87,8 @@ def test_grpo_config_declares_task_dir_exactly_once():
     """
     source = (PACKAGE_ROOT / "training" / "grpo" / "config.py").read_text()
     duplicates = _duplicate_annotated_fields(ast.parse(source))
-    assert duplicates == [], (
-        "GRPOConfig re-declares dataclass field(s): "
-        + ", ".join(f"{cls}.{name} at line {line}" for cls, name, line in duplicates)
+    assert duplicates == [], "GRPOConfig re-declares dataclass field(s): " + ", ".join(
+        f"{cls}.{name} at line {line}" for cls, name, line in duplicates
     )
 
 
@@ -104,6 +114,74 @@ def test_grpo_config_task_dir_keeps_its_documented_meaning():
     assert "task_dir: Path to a directory of YAML task config files" in (
         GRPOConfig.__doc__ or ""
     )
+
+
+def test_grpo_loss_refuses_missing_or_unreadable_rollout_evidence():
+    """Missing screenshots must not become a successful zero-loss update."""
+    from openadapt_ml.training.grpo.config import GRPOConfig
+    from openadapt_ml.training.grpo.rollout_collector import Rollout
+    from openadapt_ml.training.grpo.trainer import GRPOTrainer, RolloutLossError
+
+    trainer = object.__new__(GRPOTrainer)
+    trainer._config = GRPOConfig()
+    trainer._collector = None
+    trainer._model = MagicMock()
+    parameter = MagicMock(device="cpu")
+    trainer._model.parameters.return_value = iter([parameter])
+
+    with pytest.raises(RolloutLossError, match="no trainable"):
+        trainer._compute_rollout_loss(Rollout(task_id="empty"), advantage=1.0)
+
+    trainer._model.parameters.return_value = iter([parameter])
+    broken = Rollout(
+        task_id="broken",
+        steps=[
+            SimpleNamespace(
+                observation=SimpleNamespace(screenshot=b"not an image"),
+                action=SimpleNamespace(type="click", x=1, y=1),
+            )
+        ],
+    )
+    with pytest.raises(RolloutLossError, match="unreadable screenshot"):
+        trainer._compute_rollout_loss(broken, advantage=1.0)
+
+
+def test_grpo_collector_does_not_score_an_empty_rollout_as_zero():
+    from openadapt_ml.training.grpo.config import GRPOConfig
+    from openadapt_ml.training.grpo.rollout_collector import (
+        GRPORolloutCollector,
+        RolloutCollectionError,
+    )
+
+    collector = object.__new__(GRPORolloutCollector)
+    collector._config = GRPOConfig(
+        task_ids=["task-1"],
+        num_rollouts_per_step=1,
+    )
+    collector._task_configs = {}
+    collector._env = MagicMock()
+    collector._env.collect_rollout.return_value = []
+
+    with pytest.raises(RolloutCollectionError, match="no rollout steps"):
+        collector.collect_group(agent_fn=MagicMock(), task_id="task-1")
+
+
+@pytest.mark.parametrize("score", [float("nan"), float("inf"), -0.1, 1.1])
+def test_grpo_collector_rejects_invalid_terminal_score(score):
+    from openadapt_ml.training.grpo.config import GRPOConfig
+    from openadapt_ml.training.grpo.rollout_collector import (
+        GRPORolloutCollector,
+        RolloutCollectionError,
+    )
+
+    collector = object.__new__(GRPORolloutCollector)
+    collector._config = GRPOConfig(task_ids=["task-1"], num_rollouts_per_step=1)
+    collector._task_configs = {}
+    collector._env = MagicMock()
+    collector._env.collect_rollout.return_value = [SimpleNamespace(reward=score)]
+
+    with pytest.raises(RolloutCollectionError, match="invalid terminal score"):
+        collector.collect_group(agent_fn=MagicMock(), task_id="task-1")
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +223,7 @@ def test_milestone_reward_raises_when_evals_package_is_missing(monkeypatch):
     config = _TaskConfig([_Milestone()])
 
     with pytest.raises(MilestoneEvaluationError, match="openadapt-evals"):
-        evaluate_milestones_screenshot(config, b"png-bytes")
+        evaluate_milestones_screenshot(config, _png_bytes())
 
 
 def test_milestone_reward_raises_when_the_vlm_judge_fails(monkeypatch):
@@ -173,7 +251,7 @@ def test_milestone_reward_raises_when_the_vlm_judge_fails(monkeypatch):
     config = _TaskConfig([_Milestone("m1"), _Milestone("m2")])
 
     with pytest.raises(MilestoneEvaluationError, match="not a failed milestone"):
-        evaluate_milestones_screenshot(config, b"png-bytes")
+        evaluate_milestones_screenshot(config, _png_bytes())
 
 
 def test_milestone_reward_raises_on_a_milestone_with_no_description(monkeypatch):
@@ -199,7 +277,7 @@ def test_milestone_reward_raises_on_a_milestone_with_no_description(monkeypatch)
     )
 
     with pytest.raises(MilestoneEvaluationError, match="no description"):
-        evaluate_milestones_screenshot(config, b"png-bytes")
+        evaluate_milestones_screenshot(config, _png_bytes())
 
 
 def test_milestone_reward_raises_when_there_is_nothing_locally_evaluable():
@@ -211,11 +289,58 @@ def test_milestone_reward_raises_when_there_is_nothing_locally_evaluable():
     )
 
     with pytest.raises(MilestoneEvaluationError, match="no milestones"):
-        evaluate_milestones_screenshot(_TaskConfig([]), b"png-bytes")
+        evaluate_milestones_screenshot(_TaskConfig([]), _png_bytes())
 
     server_only = _TaskConfig([_Milestone("m", _Check(check="http"))])
     with pytest.raises(MilestoneEvaluationError, match="none of type 'screenshot'"):
-        evaluate_milestones_screenshot(server_only, b"png-bytes")
+        evaluate_milestones_screenshot(server_only, _png_bytes())
+
+
+def test_milestone_reward_rejects_empty_screenshot():
+    from openadapt_ml.training.grpo.reward import (
+        MilestoneEvaluationError,
+        evaluate_milestones_screenshot,
+    )
+
+    with pytest.raises(MilestoneEvaluationError, match="non-empty screenshot"):
+        evaluate_milestones_screenshot(_TaskConfig([_Milestone()]), b"")
+
+
+def test_milestone_reward_rejects_undecodable_screenshot():
+    from openadapt_ml.training.grpo.reward import (
+        MilestoneEvaluationError,
+        evaluate_milestones_screenshot,
+    )
+
+    with pytest.raises(MilestoneEvaluationError, match="decodable image"):
+        evaluate_milestones_screenshot(_TaskConfig([_Milestone()]), b"not-an-image")
+
+
+@pytest.mark.parametrize(
+    "judge_result, message",
+    [
+        ((1, 0.9), "non-boolean success"),
+        ((True, float("nan")), "invalid confidence"),
+        ((False, 1.1), "invalid confidence"),
+    ],
+)
+def test_milestone_reward_rejects_invalid_judge_evidence(
+    monkeypatch, judge_result, message
+):
+    import types
+
+    from openadapt_ml.training.grpo.reward import (
+        MilestoneEvaluationError,
+        evaluate_milestones_screenshot,
+    )
+
+    fake = types.ModuleType("openadapt_evals.vlm_evaluator")
+    fake.vlm_judge = lambda *args, **kwargs: judge_result
+    monkeypatch.setitem(sys.modules, "openadapt_evals", types.ModuleType("oe"))
+    monkeypatch.setitem(sys.modules, "openadapt_evals.vlm_evaluator", fake)
+
+    with pytest.raises(MilestoneEvaluationError, match=message):
+        evaluate_milestones_screenshot(_TaskConfig([_Milestone()]), _png_bytes())
 
 
 def test_milestone_reward_still_returns_a_real_score(monkeypatch):
@@ -236,7 +361,7 @@ def test_milestone_reward_still_returns_a_real_score(monkeypatch):
     monkeypatch.setitem(sys.modules, "openadapt_evals.vlm_evaluator", fake)
 
     config = _TaskConfig([_Milestone("a"), _Milestone("b")])
-    assert evaluate_milestones_screenshot(config, b"png-bytes") == 0.5
+    assert evaluate_milestones_screenshot(config, _png_bytes()) == 0.5
     assert len(calls) == 2
 
 
@@ -293,7 +418,7 @@ def test_gemini_grounder_raises_on_an_unreadable_response(monkeypatch):
 def test_gemini_grounder_still_returns_an_empty_list_for_a_real_no_match(
     monkeypatch,
 ):
-    """"I looked and matched nothing" must keep returning []."""
+    """ "I looked and matched nothing" must keep returning []."""
     from PIL import Image
 
     from openadapt_ml.grounding.detector import GeminiGrounder
