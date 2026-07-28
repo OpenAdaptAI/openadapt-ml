@@ -210,6 +210,10 @@ def evaluate_grounder_on_episode(
 
     Returns:
         GroundingMetrics for click actions with bboxes.
+
+    Raises:
+        ValueError: If a step records a screenshot path that cannot be opened.
+            Dropping it would shrink the metric denominator without saying so.
     """
     from PIL import Image
 
@@ -242,11 +246,24 @@ def evaluate_grounder_on_episode(
         if step.observation.screenshot_path is None:
             continue
 
-        # Load image
+        # Load image.
+        #
+        # Previously `except Exception: continue`. Every metric on
+        # GroundingMetrics divides by len(self.results), so a screenshot that
+        # cannot be opened used to disappear from the denominator: the reported
+        # hit rate stayed high and nothing said it was computed over fewer
+        # samples than the episode contains. An episode that records a
+        # screenshot path it cannot read is a broken episode, not a smaller one.
         try:
             image = Image.open(step.observation.screenshot_path)
-        except Exception:
-            continue
+        except Exception as e:
+            raise ValueError(
+                f"Episode {getattr(episode, 'episode_id', '?')!r} step "
+                f"{getattr(step, 'step_index', '?')} references screenshot "
+                f"{step.observation.screenshot_path!r}, which could not be "
+                f"opened ({type(e).__name__}: {e}). Refusing to score the "
+                "episode over a silently reduced sample set."
+            ) from e
 
         # Create target description from reasoning or action coordinates
         coords_x, coords_y = None, None

@@ -17,6 +17,18 @@ if TYPE_CHECKING:
     from PIL import Image
 
 
+class GroundingError(RuntimeError):
+    """Raised when a grounding call could not be completed.
+
+    Grounding returns an empty candidate list to mean "I looked and nothing
+    matched". That is a real, scoreable outcome: `evaluate_grounder` counts it
+    as a miss. An API error, a missing key, or an unparseable model response is
+    a different thing entirely -- nothing was looked at -- and must not be
+    reported with the same empty list, because the evaluation would then record
+    a grounding failure that the grounder never actually made.
+    """
+
+
 @dataclass
 class RegionCandidate:
     """A candidate region for action execution.
@@ -138,7 +150,12 @@ class GroundingModule(ABC):
 
         Returns:
             List of candidate regions, sorted by confidence descending.
-            Returns empty list if no candidates found.
+            An empty list means the grounder looked and found no match. It
+            must not be used to report that the grounder could not run.
+
+        Raises:
+            GroundingError: If the grounding call could not be completed
+                (backend error, missing credentials, unparseable response).
         """
         pass
 

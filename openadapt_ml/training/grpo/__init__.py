@@ -49,6 +49,7 @@ from openadapt_ml.training.grpo.cot_warmup import (
     generate_cot_annotations,
 )
 from openadapt_ml.training.grpo.reward import (
+    MilestoneEvaluationError,
     binary_task_success,
     compute_group_advantages,
     evaluate_milestones_screenshot,
@@ -84,6 +85,7 @@ __all__ = [
     "GRPOConfig",
     "GRPOTrainer",
     "GRPORolloutCollector",
+    "MilestoneEvaluationError",
     "Rollout",
     "binary_task_success",
     "compute_group_advantages",

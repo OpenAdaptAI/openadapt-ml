@@ -71,6 +71,10 @@ def check_az_logged_in() -> bool:
     """Check if user is logged into Azure CLI with valid token.
 
     We verify by actually making an API call, not just checking cached credentials.
+
+    Returns True only for a call that succeeded, and False only for an error we
+    positively recognised as "not logged in". Any other CalledProcessError
+    propagates: this function reports what it checked, never what it guessed.
     """
     try:
         # Try to list resource groups - this validates the token is still valid
@@ -83,8 +87,11 @@ def check_az_logged_in() -> bool:
         # Check if it's an auth issue
         if "az login" in str(e.stderr).lower():
             return False
-        # Other errors might be permission issues, but user is logged in
-        return True
+        # Anything else is an answer we do not have. Returning True here used
+        # to mean "I could not tell, so assume you are logged in", and the
+        # caller then skipped `az login` and failed further down with an
+        # unrelated error. Re-raise so the real failure is the one reported.
+        raise
 
 
 def get_subscriptions() -> list[dict]:

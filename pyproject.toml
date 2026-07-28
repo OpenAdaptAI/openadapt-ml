@@ -175,6 +175,12 @@ include = [
 # a reviewable number and it guards code paths that pair model outputs with
 # ground truth, where a silent length mismatch is exactly the kind of quiet
 # wrong answer this project cares about.
+#
+# `PIE794` is added as a single rule, not the `PIE` family. The ruff 0.16 audit
+# found `task_dir` declared twice in `GRPOConfig`; nothing in `B,E,F,I,W`
+# catches a duplicated class field, so that defect could return the moment the
+# audit stopped. The rest of `PIE` is style and is not adopted here. Repository
+# count at the time of adoption: 0.
 ignore = [
     # Line length is left to the formatter. `ruff format` already wraps what it
     # can; the residue is long string literals, URLs and comments that E501
@@ -182,7 +188,7 @@ ignore = [
     # ignores E501 for this reason.
     "E501",
 ]
-select = ["B", "E", "F", "I", "W"]
+select = ["B", "E", "F", "I", "PIE794", "W"]
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]

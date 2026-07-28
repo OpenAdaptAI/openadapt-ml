@@ -46,6 +46,7 @@ from PIL import Image
 from openadapt_ml.datasets.next_action import SYSTEM_PROMPT
 from openadapt_ml.training.grpo.config import GRPOConfig
 from openadapt_ml.training.grpo.reward import (
+    MilestoneEvaluationError,
     compute_group_advantages,
     evaluate_milestones_screenshot,
 )
@@ -395,8 +396,7 @@ class GRPOTrainer:
         """Compute milestone-based reward for a task using VLM judge.
 
         Evaluates screenshot-type milestones locally without needing the
-        WAA /evaluate endpoint.  Falls back to 0.0 if the task has no
-        milestones or the task_id is not found in loaded configs.
+        WAA /evaluate endpoint.
 
         Args:
             task_id: The task ID to look up in loaded configs.
@@ -404,10 +404,18 @@ class GRPOTrainer:
 
         Returns:
             Fraction of screenshot milestones passed (0.0 to 1.0).
+
+        Raises:
+            KeyError: If ``task_id`` has no loaded task config. An unknown task
+                is a configuration error, not a rollout that scored zero.
+            MilestoneEvaluationError: If the evaluation could not be run.
         """
         task_config = self._task_configs.get(task_id)
         if task_config is None:
-            return 0.0
+            raise KeyError(
+                f"No task config loaded for task_id {task_id!r}; loaded ids are "
+                f"{sorted(self._task_configs)}. Cannot compute a milestone reward."
+            )
         return evaluate_milestones_screenshot(task_config, screenshot_bytes)
 
     def _compute_milestone_reward_from_rollout(
@@ -416,8 +424,11 @@ class GRPOTrainer:
     ) -> float | None:
         """Extract the last screenshot from a rollout and compute milestone reward.
 
-        Returns None if no task config or no screenshot is available,
-        signalling the caller to keep the existing reward.
+        Returns None -- not 0.0 -- when no milestone measurement exists: no task
+        config, no milestones, no screenshot, or an evaluation that could not
+        run. None tells the caller "there is no measurement here, keep the
+        reward you already have"; 0.0 would claim the rollout was measured and
+        scored nothing, and would then be normalised into a GRPO advantage.
         """
         task_config = self._task_configs.get(rollout.task_id)
         if task_config is None or not getattr(task_config, "milestones", None):
@@ -436,7 +447,18 @@ class GRPOTrainer:
         if not screenshot_bytes:
             return None
 
-        return evaluate_milestones_screenshot(task_config, screenshot_bytes)
+        try:
+            return evaluate_milestones_screenshot(task_config, screenshot_bytes)
+        except MilestoneEvaluationError:
+            # Deliberate: no measurement, so no override. The rollout keeps the
+            # reward the environment already gave it and the operator sees why.
+            logger.warning(
+                "Milestone evaluation could not run for task %r; keeping the "
+                "existing rollout reward instead of scoring it 0.0.",
+                rollout.task_id,
+                exc_info=True,
+            )
+            return None
 
     def _make_agent_fn(self) -> Callable:
         """Create agent closure: observation -> BenchmarkAction.
