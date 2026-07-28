@@ -22,8 +22,8 @@ Features:
 
 import subprocess
 from pathlib import Path
+
 from PIL import Image, ImageDraw, ImageFont
-import textwrap
 
 # Project root directory
 SCRIPT_DIR = Path(__file__).parent
@@ -75,17 +75,16 @@ def render_terminal_output(
     # Terminal color scheme (dark theme)
     bg_color = (30, 30, 30)  # Dark gray background
     text_color = (220, 220, 220)  # Light gray text
-    accent_color = (100, 200, 100)  # Green for success
 
     # Try to load a monospace font
     try:
         # Try Monaco (macOS)
         font = ImageFont.truetype("/System/Library/Fonts/Monaco.dfont", font_size)
-    except:
+    except OSError:
         try:
             # Try Courier New (cross-platform)
             font = ImageFont.truetype("Courier New", font_size)
-        except:
+        except OSError:
             # Fallback to default
             font = ImageFont.load_default()
 
@@ -153,7 +152,7 @@ def main():
     print("=" * 70)
 
     print(f"\n📁 Output directory: {SCREENSHOTS_DIR.relative_to(PROJECT_ROOT)}")
-    print(f"🎯 Generating screenshots with mock data (no VM required)")
+    print("🎯 Generating screenshots with mock data (no VM required)")
 
     # Screenshot 1: Full monitor dashboard (default)
     generate_screenshot(

@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # CLI argument parsing tests
 # ---------------------------------------------------------------------------
@@ -98,7 +97,7 @@ class TestBundleUpload:
 
     def test_upload_bundle_calls_modal_volume_put(self):
         """Test that upload invokes 'modal volume create' then 'modal volume put'."""
-        from openadapt_ml.cloud.modal_cloud import upload_bundle_to_volume, VOLUME_NAME
+        from openadapt_ml.cloud.modal_cloud import VOLUME_NAME, upload_bundle_to_volume
 
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create the required file
@@ -157,8 +156,8 @@ class TestDownloadResults:
     def test_download_calls_modal_volume_get(self):
         """Test that download invokes 'modal volume get' with correct args."""
         from openadapt_ml.cloud.modal_cloud import (
-            download_results_from_volume,
             VOLUME_NAME,
+            download_results_from_volume,
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -468,9 +467,6 @@ class TestServeCLI:
             mock_app.run.return_value.__exit__ = MagicMock(return_value=False)
 
             # The serve command blocks on the while loop, so we use KeyboardInterrupt
-            import time as _time
-
-            original_sleep = _time.sleep
             call_count = [0]
 
             def mock_sleep(t):

@@ -317,7 +317,7 @@ class DemoRetriever:
         embeddings = self._compute_embeddings(texts)
 
         # Store embeddings in demo metadata
-        for demo, emb in zip(self._demos, embeddings):
+        for demo, emb in zip(self._demos, embeddings, strict=True):
             demo.embedding = emb
 
         # Build FAISS index if available

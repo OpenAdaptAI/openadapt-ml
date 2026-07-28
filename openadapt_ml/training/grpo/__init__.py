@@ -44,6 +44,10 @@ from __future__ import annotations
 
 # Lightweight imports (no torch required)
 from openadapt_ml.training.grpo.config import GRPOConfig
+from openadapt_ml.training.grpo.cot_warmup import (
+    build_cot_sft_samples,
+    generate_cot_annotations,
+)
 from openadapt_ml.training.grpo.reward import (
     binary_task_success,
     compute_group_advantages,
@@ -52,10 +56,6 @@ from openadapt_ml.training.grpo.reward import (
 from openadapt_ml.training.grpo.rollout_collector import (
     GRPORolloutCollector,
     Rollout,
-)
-from openadapt_ml.training.grpo.cot_warmup import (
-    build_cot_sft_samples,
-    generate_cot_annotations,
 )
 from openadapt_ml.training.grpo.verl_backend import (
     build_vagen_config,

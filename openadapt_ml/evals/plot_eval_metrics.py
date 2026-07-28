@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import Any, Dict, List
 
-import json
-
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
-
 
 METRIC_KEYS = [
     ("action_type_accuracy", "Action Type Accuracy"),
@@ -84,7 +82,7 @@ def plot_eval_metrics(
         colors: List[str] = []
         hatches: List[str] = []
 
-        for m, label in zip(metrics_list, labels):
+        for m, label in zip(metrics_list, labels, strict=True):
             v = m.get(key)
             if v is None:
                 values.append(0.0)
@@ -101,7 +99,7 @@ def plot_eval_metrics(
         )
 
         # Apply hatch patterns
-        for bar, hatch in zip(bars, hatches):
+        for bar, hatch in zip(bars, hatches, strict=True):
             bar.set_hatch(hatch)
 
         ax.set_title(title, fontsize=11, fontweight="bold")

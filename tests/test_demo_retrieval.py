@@ -10,26 +10,22 @@ Tests cover:
 
 from __future__ import annotations
 
-import json
 import tempfile
 from pathlib import Path
 from typing import List
-from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 
 from openadapt_ml.retrieval import (
-    DemoRetriever,
     DemoMetadata,
+    DemoRetriever,
     RetrievalResult,
-    TFIDFEmbedder,
     TextEmbedder,
+    TFIDFEmbedder,
     create_embedder,
 )
-from openadapt_ml.retrieval.embeddings import BaseEmbedder
 from openadapt_ml.schema import Action, ActionType, Episode, Observation, Step
-
 
 # =============================================================================
 # Fixtures

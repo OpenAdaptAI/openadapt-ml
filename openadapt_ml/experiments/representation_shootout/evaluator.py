@@ -524,7 +524,7 @@ class DriftEvaluator:
             EvaluationResult with aggregated metrics.
         """
         sample_results = []
-        for sample, output in zip(samples, model_outputs):
+        for sample, output in zip(samples, model_outputs, strict=True):
             result = self.evaluate_sample(condition, sample, drift_config, output)
             sample_results.append(result)
 

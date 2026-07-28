@@ -32,21 +32,20 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
 
 # Add project to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Load .env file
 from dotenv import load_dotenv
+
 env_path = Path(__file__).parent.parent / ".env"
 if env_path.exists():
     load_dotenv(env_path)
@@ -439,8 +438,9 @@ def _execute_action(action: str, dry_run: bool = False) -> bool:
     Returns:
         True if executed successfully, False otherwise.
     """
-    import pyautogui
     import re
+
+    import pyautogui
 
     # Enable failsafe (move mouse to corner to abort)
     pyautogui.FAILSAFE = True
@@ -718,7 +718,7 @@ class P1Validator:
                     else:
                         result.step_of_failure = step_num
                         result.failure_class = FailureClass.DRIFT.value
-                        logger.info(f"    ✗ Agent said DONE but task not verified")
+                        logger.info("    ✗ Agent said DONE but task not verified")
                     break
                 elif action_type == "fail":
                     result.step_of_failure = step_num
@@ -764,7 +764,7 @@ class P1Validator:
         logger.info("P1 A/B TEST: Episode Success Delta")
         logger.info("=" * 60)
         logger.info(f"Tasks: {len(tasks)}")
-        logger.info(f"Conditions: zero_shot, demo_conditioned")
+        logger.info("Conditions: zero_shot, demo_conditioned")
         logger.info("-" * 60)
 
         # Run zero-shot condition

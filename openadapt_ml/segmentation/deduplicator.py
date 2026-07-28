@@ -38,6 +38,7 @@ class OpenAIEmbedder:
     def _get_client(self):
         if self._client is None:
             import openai
+
             from openadapt_ml.config import settings
 
             api_key = self._api_key or settings.openai_api_key
@@ -71,8 +72,8 @@ class LocalEmbedder:
     def _load_model(self):
         if self._model is None:
             try:
-                from transformers import AutoModel, AutoTokenizer
                 import torch
+                from transformers import AutoModel, AutoTokenizer
 
                 self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
                 self._model = AutoModel.from_pretrained(self.model_name)
@@ -89,11 +90,11 @@ class LocalEmbedder:
                     self._model = self._model.to(self.device)
 
                 self._model.eval()
-            except ImportError:
+            except ImportError as e:
                 raise ImportError(
                     "LocalEmbedder requires transformers and torch. "
                     "Install with: pip install transformers torch"
-                )
+                ) from e
 
     def embed(self, texts: list[str]) -> NDArray[np.float32]:
         """Generate embeddings for texts."""
@@ -237,7 +238,15 @@ class WorkflowDeduplicator:
             for canonical in existing_library.episodes:
                 # Create synthetic Episode from CanonicalEpisode
                 for i, (rec_id, seg_id) in enumerate(
-                    zip(canonical.source_recordings, canonical.source_episode_ids)
+                    # strict=False: the schema documents these as "recording IDs
+                    # containing this workflow" and "original episode IDs that
+                    # were merged" — related but not declared parallel, so they
+                    # can legitimately differ in length.
+                    zip(
+                        canonical.source_recordings,
+                        canonical.source_episode_ids,
+                        strict=False,
+                    )
                 ):
                     synthetic = Episode(
                         episode_id=seg_id,

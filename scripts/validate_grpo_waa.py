@@ -81,7 +81,7 @@ def phase2_single_rollout(
         )
 
     from openadapt_evals.adapters.base import BenchmarkAction
-    from openadapt_evals.adapters.rl_env import RLEnvironment, ResetConfig
+    from openadapt_evals.adapters.rl_env import ResetConfig, RLEnvironment
 
     env = RLEnvironment(adapter)
 
@@ -269,7 +269,7 @@ def phase5_multi_step_training(
 
         trainer = GRPOTrainer(config)
         t0 = time.time()
-        checkpoint_path = trainer.train()
+        trainer.train()
         elapsed = time.time() - t0
 
         logger.info("  3 training steps completed in %.1fs", elapsed)

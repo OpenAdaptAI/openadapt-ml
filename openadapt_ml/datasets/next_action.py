@@ -10,7 +10,6 @@ except ImportError:
 
 from openadapt_ml.schema import Action, ActionType, Episode, Step, UIElement
 
-
 # Coordinate-based DSL system prompt (original)
 SYSTEM_PROMPT = (
     "You are a GUI automation agent. Given a screenshot and a user goal, "

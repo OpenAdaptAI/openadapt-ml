@@ -5,8 +5,8 @@ improves VLM agent performance on similar tasks.
 """
 
 from openadapt_ml.experiments.demo_prompt.format_demo import (
-    format_episode_as_demo,
     format_action,
+    format_episode_as_demo,
 )
 from openadapt_ml.experiments.demo_prompt.run_experiment import (
     DemoPromptExperiment,

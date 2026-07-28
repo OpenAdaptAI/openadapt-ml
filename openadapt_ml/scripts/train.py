@@ -16,15 +16,15 @@ Usage:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 import yaml
 
 from openadapt_ml.ingest.synthetic import generate_synthetic_episodes
 from openadapt_ml.training.trl_trainer import (
     TRLTrainingConfig,
-    train_with_trl,
     train_from_jsonl,
+    train_with_trl,
 )
 
 

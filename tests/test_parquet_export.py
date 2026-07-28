@@ -1,7 +1,7 @@
 """Tests for Parquet export functionality."""
 
+
 import pytest
-from pathlib import Path
 
 
 @pytest.fixture
@@ -132,7 +132,6 @@ class TestParquetExport:
     def test_empty_episodes(self, tmp_path):
         """Test exporting empty episode list."""
         from openadapt_ml.export import to_parquet
-        from openadapt_ml.schema import Episode
 
         output_path = tmp_path / "empty.parquet"
         to_parquet([], str(output_path))

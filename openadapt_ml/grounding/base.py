@@ -166,7 +166,7 @@ class GroundingModule(ABC):
 
         return [
             self.ground(img, desc, k=k)
-            for img, desc in zip(images, target_descriptions)
+            for img, desc in zip(images, target_descriptions, strict=True)
         ]
 
     @property

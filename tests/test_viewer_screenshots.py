@@ -10,11 +10,11 @@ import pytest
 pytest.importorskip("openadapt_viewer", reason="openadapt-viewer not installed (optional dependency)")
 
 from openadapt_ml.training.viewer_components import (
+    correctness_badge,
+    generate_comparison_summary,
+    playback_controls,
     screenshot_with_predictions,
     training_metrics,
-    playback_controls,
-    generate_comparison_summary,
-    correctness_badge,
 )
 
 

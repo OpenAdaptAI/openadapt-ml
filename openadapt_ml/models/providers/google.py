@@ -10,8 +10,8 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from openadapt_ml.models.providers.base import (
-    BaseAPIProvider,
     AuthenticationError,
+    BaseAPIProvider,
     ModelNotFoundError,
     ProviderError,
     RateLimitError,

@@ -24,10 +24,11 @@ def test_trl_training_config() -> None:
 
 def test_convert_samples_to_trl_format() -> None:
     """Test sample conversion to TRL format."""
-    from openadapt_ml.training.trl_trainer import _convert_samples_to_trl_format
-    from openadapt_ml.datasets.next_action import build_next_action_sft_samples
     import tempfile
     from pathlib import Path
+
+    from openadapt_ml.datasets.next_action import build_next_action_sft_samples
+    from openadapt_ml.training.trl_trainer import _convert_samples_to_trl_format
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # Generate synthetic episodes with images
@@ -64,9 +65,10 @@ def test_train_with_trl_integration() -> None:
 
     Run manually with: pytest tests/test_training_dummy.py -k test_train_with_trl_integration --no-skip
     """
-    from openadapt_ml.training.trl_trainer import train_with_trl, TRLTrainingConfig
     import tempfile
     from pathlib import Path
+
+    from openadapt_ml.training.trl_trainer import TRLTrainingConfig, train_with_trl
 
     with tempfile.TemporaryDirectory() as tmpdir:
         episodes = generate_synthetic_episodes(

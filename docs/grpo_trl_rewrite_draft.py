@@ -329,7 +329,7 @@ def make_rollout_func(
     """
     # Deferred import: openadapt-evals is optional at install time
     from openadapt_evals.adapters import WAALiveAdapter, WAALiveConfig
-    from openadapt_evals.adapters.rl_env import RLEnvironment, ResetConfig
+    from openadapt_evals.adapters.rl_env import ResetConfig, RLEnvironment
 
     # Create adapter and environment (reused across rollouts)
     adapter = WAALiveAdapter(WAALiveConfig(server_url=waa_config.server_url))

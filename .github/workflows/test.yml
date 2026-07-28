@@ -33,9 +33,17 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras
 
+      # Whole repository, not just openadapt_ml/. Every defect the ruff 0.16
+      # audit surfaced (an undefined name, two bare `except:`, four dead
+      # bindings, five shadowed imports) was in scripts/ or tests/, i.e.
+      # outside the old gate. Ruff runs in well under a second, so widening the
+      # path costs no measurable CI time.
       - name: Run ruff linter (check)
-        run: uv run ruff check openadapt_ml/
+        run: uv run ruff check .
 
+      # Formatting stays scoped to openadapt_ml/. 37 files under scripts/,
+      # tests/ and examples/ have never been formatted; normalising them is a
+      # separate, purely cosmetic change and does not belong in this one.
       - name: Run ruff formatter (check)
         run: uv run ruff format --check openadapt_ml/
 

@@ -9,10 +9,7 @@ Tests for:
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import MagicMock
-
-import pytest
 
 from openadapt_ml.training.trl_trainer import TRLTrainingConfig, _OpenAdaptCallback
 

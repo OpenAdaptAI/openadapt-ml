@@ -64,6 +64,7 @@ class GeminiBackend(VLMBackend):
     def _get_client(self):
         if self._client is None:
             import google.generativeai as genai
+
             from openadapt_ml.config import settings
 
             api_key = self._api_key or settings.google_api_key
@@ -142,6 +143,7 @@ class ClaudeBackend(VLMBackend):
     def _get_client(self):
         if self._client is None:
             import anthropic
+
             from openadapt_ml.config import settings
 
             api_key = self._api_key or settings.anthropic_api_key
@@ -250,6 +252,7 @@ class OpenAIBackend(VLMBackend):
     def _get_client(self):
         if self._client is None:
             import openai
+
             from openadapt_ml.config import settings
 
             api_key = self._api_key or settings.openai_api_key
@@ -557,7 +560,12 @@ Guidelines:
             batch_results = []
             uncached_indices = []
 
-            for i, (img, action) in enumerate(zip(batch_images, batch_actions)):
+            # strict=False: _load_recording() has four backends (capture.db,
+            # events.json, single JSON, screenshot directory) and none of them
+            # guarantees one action event per frame, so a short tail is expected.
+            for i, (img, action) in enumerate(
+                zip(batch_images, batch_actions, strict=False)
+            ):
                 cache_key = self._cache_key(img, action)
                 cached = self._load_cached(cache_key)
                 if cached:
@@ -585,14 +593,17 @@ Guidelines:
                     self._get_user_prompt(frames_data),
                 )
 
-                for i, desc in zip(uncached_indices, descriptions):
+                # strict=False: describe_batch() parses a free-form VLM response
+                # and can return fewer descriptions than images. Dropping the
+                # tail degrades one recording; raising would lose the whole run.
+                for i, desc in zip(uncached_indices, descriptions, strict=False):
                     batch_results.append((i, desc))
                     cache_key = self._cache_key(batch_images[i], batch_actions[i])
                     self._save_cached(cache_key, desc)
 
             # Sort by index and create FrameDescriptions
             batch_results.sort(key=lambda x: x[0])
-            for i, (idx, desc) in enumerate(batch_results):
+            for idx, desc in batch_results:
                 frame_idx = batch_start + idx
                 action = batch_actions[idx]
                 timestamp = action.get("timestamp", 0)

@@ -8,8 +8,13 @@ Tests for:
 
 from __future__ import annotations
 
-import pytest
-
+from openadapt_ml.experiments.waa_demo.demos import (
+    DEMOS,
+    format_demo_for_prompt,
+    get_complete_demos,
+    get_demo,
+    get_placeholder_demos,
+)
 from openadapt_ml.experiments.waa_demo.tasks import (
     TASKS,
     Difficulty,
@@ -20,14 +25,6 @@ from openadapt_ml.experiments.waa_demo.tasks import (
     get_task,
     get_tasks_by_method,
 )
-from openadapt_ml.experiments.waa_demo.demos import (
-    DEMOS,
-    format_demo_for_prompt,
-    get_complete_demos,
-    get_demo,
-    get_placeholder_demos,
-)
-
 
 # =============================================================================
 # TASKS.PY TESTS

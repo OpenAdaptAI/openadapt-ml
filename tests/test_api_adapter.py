@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 from typing import Any, Dict
-
-import builtins
-import io
 from unittest import mock
 
 import pytest
@@ -12,7 +9,7 @@ from openadapt_ml.models.api_adapter import ApiVLMAdapter
 
 # Check if optional dependencies are available
 try:
-    import anthropic
+    import anthropic  # noqa: F401  # the import IS the availability probe
     HAS_ANTHROPIC = True
 except ImportError:
     HAS_ANTHROPIC = False

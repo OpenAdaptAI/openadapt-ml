@@ -54,18 +54,18 @@ See Also:
 
 # Main retrieval class (recommended)
 from openadapt_ml.retrieval.demo_retriever import (
-    DemoRetriever,
     DemoMetadata,
+    DemoRetriever,
     RetrievalResult,
 )
 
 # Embedders
 from openadapt_ml.retrieval.embeddings import (
     BaseEmbedder,
-    TFIDFEmbedder,
-    TextEmbedder,  # Alias for TFIDFEmbedder (backward compat)
-    SentenceTransformerEmbedder,
     OpenAIEmbedder,
+    SentenceTransformerEmbedder,
+    TextEmbedder,  # Alias for TFIDFEmbedder (backward compat)
+    TFIDFEmbedder,
     create_embedder,
 )
 

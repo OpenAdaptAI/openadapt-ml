@@ -5,22 +5,21 @@ Tests provider factory, model alias resolution, and image encoding for each prov
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-import io
 import base64
+from unittest.mock import MagicMock, patch
 
 import pytest
 from PIL import Image
 
 from openadapt_ml.models.providers import (
+    MODEL_ALIASES,
+    PROVIDERS,
+    AnthropicProvider,
+    BaseAPIProvider,
+    GoogleProvider,
+    OpenAIProvider,
     get_provider,
     resolve_model_alias,
-    PROVIDERS,
-    MODEL_ALIASES,
-    AnthropicProvider,
-    OpenAIProvider,
-    GoogleProvider,
-    BaseAPIProvider,
 )
 
 

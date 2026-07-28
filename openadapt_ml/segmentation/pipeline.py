@@ -10,14 +10,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Union
 
+from openadapt_ml.segmentation.deduplicator import WorkflowDeduplicator
+from openadapt_ml.segmentation.frame_describer import FrameDescriber
 from openadapt_ml.segmentation.schemas import (
     ActionTranscript,
     EpisodeExtractionResult,
     EpisodeLibrary,
 )
-from openadapt_ml.segmentation.frame_describer import FrameDescriber
 from openadapt_ml.segmentation.segment_extractor import SegmentExtractor
-from openadapt_ml.segmentation.deduplicator import WorkflowDeduplicator
 
 logger = logging.getLogger(__name__)
 

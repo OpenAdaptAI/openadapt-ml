@@ -9,16 +9,16 @@ import pytest
 from PIL import Image
 
 from openadapt_ml.baselines import (
+    MODELS,
     BaselineConfig,
+    ModelSpec,
+    ParsedAction,
+    PromptBuilder,
     TrackConfig,
     TrackType,
-    ModelSpec,
-    MODELS,
-    get_model_spec,
-    get_default_model,
-    ParsedAction,
     UnifiedResponseParser,
-    PromptBuilder,
+    get_default_model,
+    get_model_spec,
 )
 
 

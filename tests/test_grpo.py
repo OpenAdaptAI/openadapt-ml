@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Config tests
 # ---------------------------------------------------------------------------
@@ -188,8 +187,8 @@ def test_rollout_collector_requires_evals():
     """GRPORolloutCollector raises ImportError without openadapt-evals."""
     import importlib.util
 
-    from openadapt_ml.training.grpo.rollout_collector import GRPORolloutCollector
     from openadapt_ml.training.grpo import GRPOConfig
+    from openadapt_ml.training.grpo.rollout_collector import GRPORolloutCollector
 
     # The concrete env/adapter are imported lazily inside __init__ (openadapt-ml
     # is a leaf and has no module-level openadapt-evals import). If evals is not
@@ -209,7 +208,6 @@ def test_rollout_collector_requires_evals():
 
 def test_cot_sample_format():
     """build_cot_sft_samples produces correctly structured samples."""
-    from openadapt_ml.training.grpo.cot_warmup import build_cot_sft_samples
     from openadapt_ml.schema import (
         Action,
         ActionType,
@@ -217,6 +215,7 @@ def test_cot_sample_format():
         Observation,
         Step,
     )
+    from openadapt_ml.training.grpo.cot_warmup import build_cot_sft_samples
 
     episode = Episode(
         episode_id="test_ep",
@@ -263,7 +262,6 @@ def test_cot_sample_format():
 
 def test_cot_skips_unsuccessful_episodes():
     """build_cot_sft_samples skips episodes where success=False."""
-    from openadapt_ml.training.grpo.cot_warmup import build_cot_sft_samples
     from openadapt_ml.schema import (
         Action,
         ActionType,
@@ -271,6 +269,7 @@ def test_cot_skips_unsuccessful_episodes():
         Observation,
         Step,
     )
+    from openadapt_ml.training.grpo.cot_warmup import build_cot_sft_samples
 
     episode = Episode(
         episode_id="failed_ep",
@@ -291,7 +290,6 @@ def test_cot_skips_unsuccessful_episodes():
 
 def test_cot_no_reasoning_still_works():
     """Samples without reasoning omit <think> block."""
-    from openadapt_ml.training.grpo.cot_warmup import build_cot_sft_samples
     from openadapt_ml.schema import (
         Action,
         ActionType,
@@ -299,6 +297,7 @@ def test_cot_no_reasoning_still_works():
         Observation,
         Step,
     )
+    from openadapt_ml.training.grpo.cot_warmup import build_cot_sft_samples
 
     episode = Episode(
         episode_id="no_cot",

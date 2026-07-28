@@ -19,6 +19,13 @@ Usage:
 See docs/experiments/representation_shootout_design.md for full documentation.
 """
 
+from openadapt_ml.experiments.representation_shootout.conditions import (
+    ConditionBase,
+    CoordsCuesCondition,
+    MarksCondition,
+    RawCoordsCondition,
+    create_condition,
+)
 from openadapt_ml.experiments.representation_shootout.config import (
     ConditionConfig,
     ConditionName,
@@ -26,13 +33,6 @@ from openadapt_ml.experiments.representation_shootout.config import (
     DriftType,
     ExperimentConfig,
     MetricName,
-)
-from openadapt_ml.experiments.representation_shootout.conditions import (
-    ConditionBase,
-    CoordsCuesCondition,
-    MarksCondition,
-    RawCoordsCondition,
-    create_condition,
 )
 from openadapt_ml.experiments.representation_shootout.evaluator import (
     DriftEvaluator,

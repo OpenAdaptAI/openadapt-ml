@@ -32,7 +32,6 @@ import argparse
 from pathlib import Path
 
 from openadapt_ml.ingest import load_episodes
-from openadapt_ml.schema import Episode
 
 
 def main():
@@ -154,8 +153,9 @@ def _train_standard_mode(episodes: list, args, use_unsloth: bool) -> None:
     print("  Input: screenshot + task")
     print("  Output: next action")
 
-    from openadapt_ml.training.trl_trainer import TRLTrainingConfig, train_with_trl
     import os
+
+    from openadapt_ml.training.trl_trainer import train_with_trl
 
     Path(args.output).mkdir(parents=True, exist_ok=True)
 
@@ -190,9 +190,10 @@ def _train_demo_conditioned_mode(episodes: list, args, use_unsloth: bool) -> Non
     print("  Output: next action")
     print("  Note: Full demo-conditioning requires custom prompt formatting.")
 
-    from openadapt_ml.training.trl_trainer import TRLTrainingConfig, train_with_trl
     import os
     import random
+
+    from openadapt_ml.training.trl_trainer import train_with_trl
 
     # Split episodes: some for retrieval library, rest for training
     random.seed(42)

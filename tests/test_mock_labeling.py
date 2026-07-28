@@ -7,12 +7,12 @@ This script:
 3. Opens both in browser for visual verification
 """
 
-from pathlib import Path
 import json
 import shutil
-import webbrowser
+from pathlib import Path
 
 from openadapt_ml.training.benchmark_viewer import generate_benchmark_viewer
+
 
 def main():
     benchmark_dir = Path("benchmark_results")
@@ -78,7 +78,7 @@ def main():
     print("\nTo view the generated HTML files, open them in your browser:")
     print(f"  - Mock: file://{mock_viewer.absolute()}")
     print(f"  - Real: file://{real_viewer.absolute()}")
-    print(f"\nNote: The temporary real run directory can be deleted with:")
+    print("\nNote: The temporary real run directory can be deleted with:")
     print(f"  rm -rf {real_run}")
 
 if __name__ == "__main__":

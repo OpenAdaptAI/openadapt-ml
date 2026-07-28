@@ -464,7 +464,7 @@ def test_e2e_training_loop_mock(
         total_loss = 0.0
         valid_count = 0
 
-        for rollout, advantage in zip(rollouts, advantages):
+        for rollout, advantage in zip(rollouts, advantages, strict=True):
             if abs(advantage) < 1e-8:
                 continue
             # Compute log-probs for each step in rollout
@@ -700,14 +700,14 @@ def test_e2e_rollout_collection_mock(artifact_dir: Path) -> None:
 
     # Verify structure
     assert len(rollouts) == num_rollouts
-    for r_idx, rollout in enumerate(rollouts):
+    for rollout in rollouts:
         assert rollout.task_id == "mock_task_001"
         assert rollout.num_steps == steps_per_rollout
         assert len(rollout.steps) == steps_per_rollout
         assert rollout.reward in (0.0, 1.0)
         assert rollout.instruction == "Open Notepad and type Hello World"
 
-        for s_idx, step in enumerate(rollout.steps):
+        for step in rollout.steps:
             assert step.observation is not None
             assert step.observation.screenshot is not None
             assert step.action is not None
@@ -728,7 +728,7 @@ def test_e2e_rollout_collection_mock(artifact_dir: Path) -> None:
     mean_adv = sum(advantages) / len(advantages)
     assert abs(mean_adv) < 1e-6, f"Mean advantage should be ~0, got {mean_adv}"
     # Positive rewards should have positive advantages
-    for r, a in zip(rewards, advantages):
+    for r, a in zip(rewards, advantages, strict=True):
         if r > 0.5:
             assert a > 0, f"Reward {r} should have positive advantage, got {a}"
         elif r < 0.5:
@@ -830,7 +830,7 @@ def test_e2e_policy_gradient_loss_convergence(artifact_dir: Path) -> None:
     loss_history: list[float] = []
     policy_history: list[list[float]] = []
 
-    for step in range(num_steps):
+    for _step in range(num_steps):
         optimizer.zero_grad()
 
         # Current normalized log-probs
@@ -982,7 +982,7 @@ def test_e2e_model_weight_diff(
     model.train()
     optimizer.zero_grad()
 
-    for rollout, advantage in zip(rollouts, advantages):
+    for rollout, advantage in zip(rollouts, advantages, strict=True):
         if abs(advantage) < 1e-8:
             continue
         for rstep in rollout.steps:

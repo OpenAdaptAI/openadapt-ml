@@ -234,9 +234,9 @@ def _load_standard_model(config: TRLTrainingConfig):
     model class (Qwen2VLForConditionalGeneration for VL models,
     AutoModelForCausalLM for text-only models).
     """
-    from transformers import AutoConfig, AutoProcessor, BitsAndBytesConfig
-    from peft import LoraConfig, get_peft_model
     import torch
+    from peft import LoraConfig, get_peft_model
+    from transformers import AutoConfig, AutoProcessor, BitsAndBytesConfig
 
     # 4-bit quantization config
     quant_config = None
@@ -376,7 +376,7 @@ def _run_sft_training(
     Returns:
         Path to saved checkpoint.
     """
-    from trl import SFTTrainer, SFTConfig
+    from trl import SFTConfig, SFTTrainer
 
     callback = _make_callback(config)
 
@@ -509,6 +509,7 @@ def train_with_trl(
         Path to saved checkpoint
     """
     from datasets import Dataset
+
     from openadapt_ml.datasets.next_action import build_next_action_sft_samples
 
     config = config or TRLTrainingConfig()
@@ -556,6 +557,7 @@ def train_from_jsonl(
         Path to saved checkpoint.
     """
     import json
+
     from datasets import Dataset
 
     config = config or TRLTrainingConfig()

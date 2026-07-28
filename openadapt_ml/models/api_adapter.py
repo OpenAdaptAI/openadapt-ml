@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
-
 import base64
 import os
+from typing import Any, Dict, List, Optional
 
 try:
     import torch

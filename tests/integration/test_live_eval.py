@@ -14,7 +14,6 @@ Usage:
     # Navigate to the Benchmarks tab to see live progress
 """
 
-import time
 from pathlib import Path
 
 from openadapt_evals import (
@@ -47,7 +46,7 @@ def main():
     )
 
     print(f"Live tracking file: {config.live_tracking_file}")
-    print(f"Evaluating 5 mock tasks with random agent...")
+    print("Evaluating 5 mock tasks with random agent...")
     print()
 
     # Create output directory

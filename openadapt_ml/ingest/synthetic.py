@@ -10,7 +10,6 @@ from PIL import Image, ImageDraw, ImageFont
 
 from openadapt_ml.schema import Action, ActionType, Episode, Observation, Step
 
-
 IMG_WIDTH = 800
 IMG_HEIGHT = 600
 

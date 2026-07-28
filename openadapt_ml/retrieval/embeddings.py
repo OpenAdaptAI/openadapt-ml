@@ -277,11 +277,11 @@ class SentenceTransformerEmbedder(BaseEmbedder):
 
         try:
             from sentence_transformers import SentenceTransformer
-        except ImportError:
+        except ImportError as e:
             raise ImportError(
                 "sentence-transformers is required for SentenceTransformerEmbedder. "
                 "Install with: pip install sentence-transformers"
-            )
+            ) from e
 
         logger.info(f"Loading sentence-transformers model: {self.model_name}")
         self._model = SentenceTransformer(
@@ -360,7 +360,7 @@ class SentenceTransformerEmbedder(BaseEmbedder):
             )
 
             # Cache new embeddings
-            for text, embedding in zip(uncached_texts, new_embeddings):
+            for text, embedding in zip(uncached_texts, new_embeddings, strict=True):
                 cache_key = self._get_cache_key(text)
                 self._embedding_cache[cache_key] = embedding
 
@@ -469,11 +469,11 @@ class OpenAIEmbedder(BaseEmbedder):
 
         try:
             from openai import OpenAI
-        except ImportError:
+        except ImportError as e:
             raise ImportError(
                 "openai is required for OpenAIEmbedder. "
                 "Install with: pip install openai"
-            )
+            ) from e
 
         self._client = OpenAI(api_key=self.api_key)
         return self._client

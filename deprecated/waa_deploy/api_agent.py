@@ -212,10 +212,10 @@ class ApiAgent:
                 from anthropic import Anthropic
 
                 self._client = Anthropic(api_key=self.api_key)
-            except ImportError:
+            except ImportError as e:
                 raise RuntimeError(
                     "anthropic package required. Install with: pip install anthropic"
-                )
+                ) from e
 
         elif provider == "openai":
             self.api_key = api_key or os.getenv("OPENAI_API_KEY")
@@ -228,10 +228,10 @@ class ApiAgent:
                 from openai import OpenAI
 
                 self._client = OpenAI(api_key=self.api_key)
-            except ImportError:
+            except ImportError as e:
                 raise RuntimeError(
                     "openai package required. Install with: pip install openai"
-                )
+                ) from e
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 

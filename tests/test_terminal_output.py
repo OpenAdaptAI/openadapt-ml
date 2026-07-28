@@ -2,6 +2,7 @@
 """Test terminal output streaming functionality."""
 
 from pathlib import Path
+
 from openadapt_ml.training.stub_provider import StubTrainingProvider
 
 # Create stub provider and run short training
