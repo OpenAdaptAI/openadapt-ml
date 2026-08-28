@@ -26,7 +26,7 @@ openadapt_ml/
 ├── benchmarks/      # ML-specific benchmark agents (PolicyAgent, API, unified)
 ├── evals/           # Evaluation metrics (grounding, trajectory matching)
 ├── export/          # Dataset export (Parquet, CLI)
-├── cloud/           # Cloud GPU training (Lambda Labs, Modal, Azure, vast.ai)
+├── cloud/           # Cloud GPU training (Lambda Labs, Modal, vast.ai)
 ├── config.py        # Settings via pydantic-settings
 └── scripts/         # CLI entry points (train, eval, compare, demo)
 ```
@@ -66,8 +66,9 @@ through Set-of-Marks overlays. See [gemini_grounding.md](gemini_grounding.md).
 **Recording segmentation.** Turn a raw recording into described, deduplicated
 segments.
 
-**Cloud GPU training.** One-command pipelines for Lambda Labs, Modal, Azure, and
-vast.ai, plus local CUDA and Apple Silicon. See
+**Cloud GPU training.** One-command pipelines for Lambda Labs, Modal, and
+vast.ai, plus local CUDA and Apple Silicon. The Azure module here is an async
+inference queue, not a trainer. See
 [cloud_gpu_training.md](cloud_gpu_training.md).
 
 **Synthetic data.** Configurable login and registration scenarios with layout
