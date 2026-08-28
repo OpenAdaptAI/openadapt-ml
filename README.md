@@ -1,5 +1,14 @@
 # openadapt-ml
 
+> [!IMPORTANT]
+> **Status: Research. Not required by the product.** This package trains and
+> runs vision-language model agents for GUI automation. You do not need it to
+> record, compile, or replay a workflow. That is
+> [openadapt-flow](https://github.com/OpenAdaptAI/openadapt-flow), installed by
+> the [OpenAdapt](https://github.com/OpenAdaptAI/OpenAdapt) launcher. Lifecycle
+> labels for every repository are in the
+> [repository lifecycle registry](https://github.com/OpenAdaptAI/.github/blob/main/REPOSITORY_LIFECYCLE.md).
+
 [![Tests](https://github.com/OpenAdaptAI/openadapt-ml/actions/workflows/test.yml/badge.svg)](https://github.com/OpenAdaptAI/openadapt-ml/actions/workflows/test.yml)
 [![PyPI](https://img.shields.io/pypi/v/openadapt-ml.svg)](https://pypi.org/project/openadapt-ml/)
 [![Python](https://img.shields.io/pypi/pyversions/openadapt-ml.svg)](https://pypi.org/project/openadapt-ml/)
@@ -46,12 +55,13 @@ sample from it, and runs it through the policy:
 [user] Goal: Log in with username 'user0' and password 'pass0123'
 This is step 1 of 6 (no actions completed yet).
 
-Predicted action: type=<ActionType.DONE: 'done'> coordinates=None text=None
+Predicted action: type=<ActionType.DONE: 'done'> coordinates=None text=None ...
 Thought: None
 Raw output: DONE()
 ```
 
-Real output from 0.16.3 on macOS, trimmed. `DONE()` is the whole point of the
+Real output from 0.16.3 on macOS. `Action` carries 19 fields and all but three
+are cut from that line. `DONE()` is the whole point of the
 dummy backend: it returns a fixed action so the run proves the wiring, not the
 model. Swap `--backend qwen3` and it downloads Qwen3-VL-8B and predicts for
 real.
@@ -116,6 +126,15 @@ demo_001 2 1.0.0
 
 ## Train
 
+The `--config` paths below are repo-relative, so training needs the checkout
+rather than the wheel:
+
+```bash
+git clone https://github.com/OpenAdaptAI/openadapt-ml.git
+cd openadapt-ml
+UV_NO_SOURCES=1 uv sync --extra training
+```
+
 ```bash
 # Synthetic data, no recordings needed
 python -m openadapt_ml.scripts.train --config configs/qwen3vl_synthetic.yaml
@@ -126,9 +145,10 @@ python -m openadapt_ml.scripts.train \
   --capture ~/captures/my-workflow --open
 ```
 
-Training runs on a GPU box you rent by the hour. Lambda Labs, Modal, Azure, and
-vast.ai each get a one-command wrapper under `openadapt_ml.cloud`, and
+Training runs on a GPU box you rent by the hour. Lambda Labs, Modal, and
+vast.ai each get a one-command training wrapper under `openadapt_ml.cloud`, and
 `openadapt_ml.cloud.local` does the same thing against CUDA or Apple Silicon.
+The Azure module there is an async inference queue, not a trainer.
 The guide is [docs/cloud_gpu_training.md](docs/cloud_gpu_training.md). Unsloth
 is separate, see the
 [Unsloth install guide](https://docs.unsloth.ai/get-started/installation).
@@ -147,16 +167,18 @@ Coordinate mode on the synthetic login scenario, from
 
 Read the last column first. Not one configuration finished a single episode.
 Fine-tuning moves individual-step accuracy and it moves click precision, and
-neither of those got any model through a six-step login. Switching from
-coordinates to Set-of-Marks element ids does finish episodes: 32 episodes, 384
-steps, 100% on action type, element choice, and episode success, retained in
+neither of those got any model through the login. Switching from coordinates to
+Set-of-Marks element ids does finish episodes, on the registration scenario: 32
+episodes, 384 steps, 100% on action type, element choice, and episode success,
+retained in
 [`experiments/qwen_login/registration_som_eval.json`](experiments/qwen_login/registration_som_eval.json).
 
-That's a procedurally generated form with roughly three interactive elements.
-It shows the pipeline trains and evaluates end to end. It says nothing about a
-real desktop. The later hardened re-runs kept under
-`experiments/qwen_login/2b_dev/eval/` report different figures again, on n=32
-and n=4, which is about what you'd expect from samples that small.
+That's a procedurally generated form with six interactive elements. It shows
+the pipeline trains and evaluates end to end. It says nothing about a real
+desktop. The hardened login re-runs report different figures again, n=32 under
+`experiments/qwen_login/2b_dev/eval/` and n=4 under
+`experiments/qwen_login/8b_hero/eval/`, which is about what you'd expect from
+samples that small.
 
 ## Where this breaks
 
@@ -179,7 +201,7 @@ and n=4, which is about what you'd expect from samples that small.
 ```bash
 git clone https://github.com/OpenAdaptAI/openadapt-ml.git
 cd openadapt-ml
-uv sync --extra dev --extra training
+UV_NO_SOURCES=1 uv sync --extra dev --extra training
 uv run pytest
 uv run ruff check .
 ```
