@@ -1,12 +1,11 @@
 # openadapt-ml
 
 > [!IMPORTANT]
-> **Status: Research. Not required by the product.** This package trains and
-> runs vision-language model agents for GUI automation. You do not need it to
-> record, compile, or replay a workflow. That is
-> [openadapt-flow](https://github.com/OpenAdaptAI/openadapt-flow), installed by
-> the [OpenAdapt](https://github.com/OpenAdaptAI/OpenAdapt) launcher. Lifecycle
-> labels for every repository are in the
+> **Research. Optional VLM training. Not the OpenAdapt product.** This package
+> is not required to record, compile, or replay a workflow. The product is a
+> compiled program:
+> [openadapt-flow](https://github.com/OpenAdaptAI/openadapt-flow) via
+> `pip install openadapt`. Lifecycle labels for every repository are in the
 > [repository lifecycle registry](https://github.com/OpenAdaptAI/.github/blob/main/REPOSITORY_LIFECYCLE.md).
 
 [![Tests](https://github.com/OpenAdaptAI/openadapt-ml/actions/workflows/test.yml/badge.svg)](https://github.com/OpenAdaptAI/openadapt-ml/actions/workflows/test.yml)
