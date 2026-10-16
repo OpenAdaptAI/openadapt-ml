@@ -1,12 +1,8 @@
 # openadapt-ml
 
-> [!IMPORTANT]
-> **Research. Optional VLM training. Not the OpenAdapt product.** This package
-> is not required to record, compile, or replay a workflow. The product is a
-> compiled program:
-> [openadapt-flow](https://github.com/OpenAdaptAI/openadapt-flow) via
-> `pip install openadapt`. Lifecycle labels for every repository are in the
-> [repository lifecycle registry](https://github.com/OpenAdaptAI/.github/blob/main/REPOSITORY_LIFECYCLE.md).
+> [!NOTE]
+> Research: optional VLM training, not needed to record, compile, or run a workflow.
+> The product is [openadapt-flow](https://github.com/OpenAdaptAI/openadapt-flow), installed with `pip install openadapt`.
 
 [![Tests](https://github.com/OpenAdaptAI/openadapt-ml/actions/workflows/test.yml/badge.svg)](https://github.com/OpenAdaptAI/openadapt-ml/actions/workflows/test.yml)
 [![PyPI](https://img.shields.io/pypi/v/openadapt-ml.svg)](https://pypi.org/project/openadapt-ml/)
