@@ -1,0 +1,25 @@
+============================================================
+GRPO E2E TEST REPORT: test_e2e_training_loop_mock
+============================================================
+Status:               passed
+Duration:             0.04s
+Training steps:       2
+Rollouts per step:    4
+Total rollouts:       8
+
+--- Model Weight Change ---
+Weights changed:      True
+Total delta L2 norm:  0.185388
+  embedding.weight: delta=0.025263 (norm 90.3909 -> 90.3893)
+  head.weight: delta=0.180862 (norm 9.1759 -> 9.1803)
+  head.bias: delta=0.031929 (norm 1.6532 -> 1.6515)
+
+--- Training Metrics ---
+  Step 0: loss=0.0000 reward_mean=0.50 grad_norm=1.0000 valid_terms=8
+  Step 1: loss=0.0000 reward_mean=0.50 grad_norm=1.0000 valid_terms=8
+
+--- Checkpoint ---
+Checkpoint path:      test_artifacts/grpo_e2e/20261016_215856/checkpoint/step_2
+Checkpoint loadable:  True
+
+============================================================

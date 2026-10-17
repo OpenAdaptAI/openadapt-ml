@@ -1,0 +1,38 @@
+{
+  "rollout_idx": 0,
+  "task_id": "mock_task_001",
+  "reward": 1.0,
+  "advantage": 0.9999999800000003,
+  "num_steps": 4,
+  "instruction": "Open Notepad and type Hello World",
+  "actions": [
+    {
+      "step_idx": 0,
+      "action_text": "CLICK(x=0.20, y=0.50)",
+      "action_type": "click",
+      "x": 63,
+      "y": 120
+    },
+    {
+      "step_idx": 1,
+      "action_text": "CLICK(x=0.20, y=0.55)",
+      "action_type": "click",
+      "x": 63,
+      "y": 132
+    },
+    {
+      "step_idx": 2,
+      "action_text": "CLICK(x=0.20, y=0.60)",
+      "action_type": "click",
+      "x": 63,
+      "y": 144
+    },
+    {
+      "step_idx": 3,
+      "action_text": "CLICK(x=0.20, y=0.65)",
+      "action_type": "click",
+      "x": 63,
+      "y": 156
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "parameters": {
+    "embedding.weight": {
+      "before_norm": 90.87411499023438,
+      "after_norm": 90.87342071533203,
+      "delta_l2": 0.012669733725488186,
+      "delta_max": 0.0010232925415039062,
+      "delta_mean": 5.214037628320511e-07,
+      "shape": [
+        256,
+        32
+      ],
+      "num_elements": 8192,
+      "grad_norm": 3.2811145782470703,
+      "grad_max": 0.7971603870391846
+    },
+    "head.weight": {
+      "before_norm": 9.232221603393555,
+      "after_norm": 9.232917785644531,
+      "delta_l2": 0.09049731492996216,
+      "delta_max": 0.0010017603635787964,
+      "delta_mean": -0.00018775406351778656,
+      "shape": [
+        256,
+        32
+      ],
+      "num_elements": 8192,
+      "grad_norm": 32.86104965209961,
+      "grad_max": 7.829895496368408
+    },
+    "head.bias": {
+      "before_norm": 1.5759165287017822,
+      "after_norm": 1.576166033744812,
+      "delta_l2": 0.015995899215340614,
+      "delta_max": 0.0010016560554504395,
+      "delta_mean": -7.669492333661765e-06,
+      "shape": [
+        256
+      ],
+      "num_elements": 256,
+      "grad_norm": 3.992352247238159,
+      "grad_max": 2.0116944313049316
+    }
+  },
+  "summary": {
+    "total_params": 16640,
+    "trainable_params": 16640,
+    "changed_param_groups": 3,
+    "total_param_groups": 3
+  }
+}

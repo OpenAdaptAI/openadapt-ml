@@ -9,6 +9,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def _allow_modal_gpu_in_mocked_tests():
+    """These tests mock Modal; the production GPU guard is tested separately."""
+    with (
+        patch("openadapt_ml.cloud.modal_cloud.modal_gpu_refusal", return_value=None),
+        patch("openadapt_ml.cloud.modal_cloud.require_nonprod_modal_gpu"),
+    ):
+        yield
+
 # ---------------------------------------------------------------------------
 # CLI argument parsing tests
 # ---------------------------------------------------------------------------

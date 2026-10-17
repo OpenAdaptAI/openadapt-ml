@@ -1,5 +1,39 @@
 # Cloud GPU Training
 
+## Default: Kaggle (free), not Modal
+
+GPU training runs on Kaggle's free T4/P100 sessions. The production Modal
+workspace hosts OpenAdapt's managed runner, compiler and recorder. On
+2026-10-16 GPU training used up its monthly spend limit, and Modal stopped
+production with it. Modal GPU commands in `openadapt_ml.cloud.modal_cloud` now
+refuse to run unless you set `OPENADAPT_ALLOW_MODAL_GPU=1`, set
+`MODAL_ENVIRONMENT` to a non-production environment, and activate a Modal
+profile that is not in `OPENADAPT_MODAL_PROD_WORKSPACES` (default `abrichr`).
+
+```bash
+# one-time: Kaggle API token (Kaggle → Settings → API → Create New Token) and phone verification
+uv run python -m openadapt_ml.cloud.kaggle_cloud stage --bundle <bundle_dir> --config <train.yaml> --username <kaggle_user>
+uv run python -m openadapt_ml.cloud.kaggle_cloud push --new-dataset    # later runs: push (versions the dataset)
+uv run python -m openadapt_ml.cloud.kaggle_cloud status
+uv run python -m openadapt_ml.cloud.kaggle_cloud pull                  # results → training_output/kaggle/output
+# resume: stage again with --checkpoint training_output/kaggle/output/results
+```
+
+The kernel exits with code 3 if the session has no GPU or no internet, so a
+CPU fallback can't pass for a GPU run. T4s have no bf16; the trainer turns
+bf16 off automatically. Sessions are capped at 12 hours, and the GPU quota is
+weekly.
+
+### Modal workspace budget (production)
+
+In the Modal dashboard, go to **Settings → Usage & Billing** for workspace
+`abrichr` and set a **Workspace budget** and a **spend limit**. The hosted
+services use well under $1/month, so a low cap is enough. Starter-plan budgets
+apply to the whole workspace: a separate environment in the same workspace
+still spends the production budget. Run any Modal GPU work in a separate
+workspace.
+
+
 This guide covers using cloud GPUs for training OpenAdapt-ML models. Two providers are supported:
 
 | Provider | Setup Time | Cost | Best For |
