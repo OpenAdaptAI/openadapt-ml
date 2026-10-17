@@ -1,6 +1,153 @@
 # CHANGELOG
 
 
+## v0.17.0 (2026-10-17)
+
+### Chores
+
+- Ignore every .env variant, not one at a time
+  ([#75](https://github.com/OpenAdaptAI/openadapt-ml/pull/75),
+  [`7916fcc`](https://github.com/OpenAdaptAI/openadapt-ml/commit/7916fccd30de7ab572a49118b3490d82272d8512))
+
+.gitignore covered .env and .env.backup but not .env.bak, .env.local or .env.old. A .env.bak
+  containing populated OpenAI, Anthropic and Google keys sat in a local stash since 2026-07-13,
+  untracked and one `git add -A` away from being committed.
+
+Replace the one-at-a-time entries with a glob and negate the committed .env.example template.
+
+- Sync the published source policy ([#80](https://github.com/OpenAdaptAI/openadapt-ml/pull/80),
+  [`0ed2cfa`](https://github.com/OpenAdaptAI/openadapt-ml/commit/0ed2cfa9e8dffeb6ca10267a1f53ce57ff4fa9a4))
+
+Replace source-policy.public.json with the render of the canonical policy on openadapt-internal main
+  (policy_last_updated 2026-09-03).
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+
+- **ml**: Harden training outcome validation
+  ([`1f32034`](https://github.com/OpenAdaptAI/openadapt-ml/commit/1f320349d69db01755685317e17f0b7ed6afd20e))
+
+Reject ambiguous or unmeasured training outcomes. Require valid evaluator evidence, optimizer
+  updates, and checkpoints. Keep the release version unchanged.
+
+- **policy**: Sync generated source boundary
+  ([#77](https://github.com/OpenAdaptAI/openadapt-ml/pull/77),
+  [`cab99e8`](https://github.com/OpenAdaptAI/openadapt-ml/commit/cab99e8a3d43ea15452ae3713e719d0d779d07ef))
+
+### Continuous Integration
+
+- Pin pypa/gh-action-pypi-publish to a commit SHA
+  ([#74](https://github.com/OpenAdaptAI/openadapt-ml/pull/74),
+  [`714a8f4`](https://github.com/OpenAdaptAI/openadapt-ml/commit/714a8f43709a9327b94678b9af54cc0088c6c4e7))
+
+This workflow referenced the publish action by the floating `release/v1` tag. Every other release
+  pipeline in the org pins a full 40-character commit SHA, so this one could change behaviour with
+  no commit in this repo -- including a change that breaks publishing.
+
+That risk is concrete. v1.14.0 bundles twine 6.1.0 and packaging 25.0, which reject Metadata-Version
+  2.5 -- the version current hatchling emits:
+
+InvalidDistribution: Invalid distribution metadata:
+
+'2.5' is not a valid metadata version
+
+That pin broke the openadapt-evals 0.91.0 release. The tag, the version commit and the GitHub
+  release all landed, then "Publish to PyPI" failed, leaving PyPI stale while every other artifact
+  said the version shipped.
+
+Pin v1.14.2 (twine 7.0.0 + packaging 26.2), the version already proven by live uploads of
+  openadapt-privacy 1.0.3 and openadapt-types 0.10.1.
+
+Co-authored-by: Claude Opus 5 <noreply@anthropic.com>
+
+### Documentation
+
+- Lead the README with research, not VLM-agent training
+  ([#79](https://github.com/OpenAdaptAI/openadapt-ml/pull/79),
+  [`8811400`](https://github.com/OpenAdaptAI/openadapt-ml/commit/88114005827def62e2852db8d1047017047a90dd))
+
+The IMPORTANT banner opened with "trains and runs vision-language model agents". That is this
+  package. It is not the OpenAdapt product.
+
+- Rewrite README for a human reader ([#78](https://github.com/OpenAdaptAI/openadapt-ml/pull/78),
+  [`199df05`](https://github.com/OpenAdaptAI/openadapt-ml/commit/199df05d35a316b2b1bd72902c184ed09b444707))
+
+* docs: rewrite README for a human reader
+
+The README opened with a fifteen-line callout that spent most of its words describing
+  openadapt-flow, so anyone who arrived for the training code read two paragraphs about a
+  demonstration compiler first. That point is true and worth keeping, but it is one sentence, not a
+  wall.
+
+Three documented APIs did not exist. Checked against openadapt-ml 0.16.3 installed from PyPI into a
+  clean venv:
+
+- `AgentPolicy.predict(sample)` is not a method. The real one is
+  `predict_action_from_sample(sample)`, and it returns a 4-tuple of `(Action, thought, state,
+  raw_text)` rather than an object with `.action` and `.thought` attributes. -
+  `QwenVLAdapter(model_name=...)` does not load a model. The constructor takes an already-loaded
+  model and processor; the loading path is `QwenVLAdapter.from_pretrained(model_name)`. - The smoke
+  test cannot run on the core install. `DummyAdapter` raises `ImportError: torch is required` unless
+  the `training` extra is present.
+
+Every example is now a command or a snippet that was executed against that venv, shown with its real
+  output. The benchmark table gains back the episode success column, which is 0% for all four
+  configurations and was the most important number missing from the page.
+
+The architecture tree and the ecosystem table move to docs/repo_layout.md. Nothing was deleted.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+* docs: restore the research banner and fix four claims
+
+AGENTS.md requires a public repo outside the seven product targets to carry a lifecycle state, and
+  records an incident where deleting this banner cost four repos of wasted agent effort. The rewrite
+  removed it. Put it back above the badges.
+
+The Set-of-Marks paragraph introduced a login result and then cited registration_som_eval.json. That
+  artifact is the registration scenario: 384 steps over 32 episodes is 12 steps each, and
+  synthetic.py documents registration as 12 steps and 6 elements. Name the scenario and correct
+  three elements to six.
+
+The n=4 hardened re-runs are under 8b_hero/eval/, not 2b_dev/eval/, whose two files are both n=32.
+
+There is no Azure trainer. cloud/ has train subcommands for lambda_labs, modal_cloud, vast_ai, and
+  local; azure_inference.py is an async inference queue. Drop Azure from the training list and say
+  what it is.
+
+The Action line cut 16 of 19 fields with no ellipsis, so it read as though Action has three. Mark
+  the cut and give the count.
+
+Training reads --config paths relative to the checkout, and tool.uv.sources points openadapt-capture
+  at ../openadapt-capture, so a fresh clone needs UV_NO_SOURCES=1, which is what test.yml sets. Give
+  the clone and the flag.
+
+* docs: repo_layout listed an Azure trainer that does not exist
+
+Same correction as the README. cloud/ has train subcommands for lambda_labs, modal_cloud, vast_ai,
+  and local; azure_inference.py is an inference queue.
+
+---------
+
+Co-authored-by: Claude Opus 5 <noreply@anthropic.com>
+
+- **readme**: Shorten the research banner to two lines
+  ([#81](https://github.com/OpenAdaptAI/openadapt-ml/pull/81),
+  [`cc4b7b6`](https://github.com/OpenAdaptAI/openadapt-ml/commit/cc4b7b6f31754147e30edb4f71f96825877690ee))
+
+Signed-off-by: Richard Abrich <richard.abrich@mldsai.com>
+
+### Features
+
+- **cloud**: Kaggle GPU training path and a guard against Modal GPU on production
+  ([#82](https://github.com/OpenAdaptAI/openadapt-ml/pull/82),
+  [`69c74e3`](https://github.com/OpenAdaptAI/openadapt-ml/commit/69c74e371dd8177c69a221e921fd5960abf34f57))
+
+Kaggle GPU training path; Modal GPU train/serve refuse on the production workspace without an
+  explicit non-prod opt-in.
+
+Signed-off-by: Richard Abrich <richard.abrich@mldsai.com>
+
+
 ## v0.16.3 (2026-07-28)
 
 ### Bug Fixes
