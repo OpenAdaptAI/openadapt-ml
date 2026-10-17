@@ -43,6 +43,11 @@ import sys
 import tempfile
 from pathlib import Path
 
+from openadapt_ml.cloud.modal_gpu_guard import (
+    modal_gpu_refusal,
+    require_nonprod_modal_gpu,
+)
+
 # ---------------------------------------------------------------------------
 # Modal app definition (imported lazily so CLI parsing works without modal)
 # ---------------------------------------------------------------------------
@@ -75,6 +80,7 @@ def _build_app():
     Returns:
         (app, training_image, training_volume)
     """
+    require_nonprod_modal_gpu()
     modal = _get_modal()
 
     app = modal.App(MODAL_APP_NAME)
@@ -281,6 +287,7 @@ def _build_inference_app(
     Returns:
         (app, infer_fn) - the app and the inference function handle.
     """
+    require_nonprod_modal_gpu()
     modal = _get_modal()
 
     app = modal.App(INFERENCE_APP_NAME)
@@ -784,6 +791,10 @@ def _cmd_train(args: argparse.Namespace) -> int:
     3. Run training function remotely
     4. Download results
     """
+    refusal = modal_gpu_refusal()
+    if refusal:
+        print(f"Refusing Modal GPU work: {refusal}")
+        return 1
     modal = _get_modal()
 
     # --- Step 0: Auto-convert demos if --demo-dir provided ---
@@ -924,6 +935,10 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     inference function that clients can call via Modal's .remote() API.
     Alternatively, clients can use the HTTP wrapper in Qwen3VLAgent.
     """
+    refusal = modal_gpu_refusal()
+    if refusal:
+        print(f"Refusing Modal GPU work: {refusal}")
+        return 1
     modal = _get_modal()
 
     adapter_remote = None

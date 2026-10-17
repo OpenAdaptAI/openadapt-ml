@@ -1,0 +1,48 @@
+{
+  "tests": [
+    {
+      "name": "positive_advantage_gradient",
+      "logp": -1.0,
+      "advantage": 1.0,
+      "gradient": -1.0,
+      "expected": "negative (optimizer increases logp)",
+      "passed": true
+    },
+    {
+      "name": "negative_advantage_gradient",
+      "logp": -1.0,
+      "advantage": -1.0,
+      "gradient": 1.0,
+      "expected": "positive (optimizer decreases logp)",
+      "passed": true
+    },
+    {
+      "name": "zero_advantage_gradient",
+      "logp": -1.0,
+      "advantage": 0.0,
+      "gradient": -0.0,
+      "expected": "zero",
+      "passed": true
+    },
+    {
+      "name": "clipping_large_ratio",
+      "ratio": 18.17414536944306,
+      "clipped_ratio": 1.2,
+      "loss": -1.2000000476837158,
+      "expected_loss": -1.2,
+      "passed": true
+    },
+    {
+      "name": "batch_consistency",
+      "individual_losses": [
+        -1.0,
+        0.5,
+        -0.0
+      ],
+      "batch_loss": -0.1666666716337204,
+      "expected_batch_mean": -0.16666666666666666,
+      "passed": true
+    }
+  ],
+  "all_passed": true
+}

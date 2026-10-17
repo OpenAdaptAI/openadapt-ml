@@ -1,0 +1,15 @@
+{
+  "test_name": "test_e2e_training_loop_mock",
+  "start_time": "2026-10-16T21:58:56",
+  "status": "passed",
+  "duration_s": 0.0386500358581543,
+  "num_training_steps": 2,
+  "num_rollouts_per_step": 4,
+  "total_rollouts": 8,
+  "model_weights_changed": true,
+  "total_delta_norm": 0.18538758670094135,
+  "checkpoint_loadable": true,
+  "final_loss": 0.0,
+  "final_reward_mean": 0.5,
+  "final_grad_norm": 0.9999997175711289
+}

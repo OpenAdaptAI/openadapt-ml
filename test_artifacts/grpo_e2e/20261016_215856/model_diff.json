@@ -1,0 +1,22 @@
+{
+  "embedding.weight": {
+    "initial_norm": 90.39092254638672,
+    "final_norm": 90.38932037353516,
+    "delta_norm": 0.025262756273150444,
+    "changed": true
+  },
+  "head.weight": {
+    "initial_norm": 9.175859451293945,
+    "final_norm": 9.180281639099121,
+    "delta_norm": 0.18086151778697968,
+    "changed": true
+  },
+  "head.bias": {
+    "initial_norm": 1.653204321861267,
+    "final_norm": 1.6514724493026733,
+    "delta_norm": 0.03192901238799095,
+    "changed": true
+  },
+  "_total_delta_norm": 0.18538758670094135,
+  "_any_changed": true
+}

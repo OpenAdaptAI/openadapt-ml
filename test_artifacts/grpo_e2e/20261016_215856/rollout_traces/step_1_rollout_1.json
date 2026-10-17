@@ -1,0 +1,20 @@
+{
+  "step": 1,
+  "rollout_idx": 1,
+  "task_id": "mock_task_001",
+  "reward": 0.0,
+  "num_steps": 2,
+  "instruction": "Click the OK button",
+  "actions": [
+    {
+      "step_idx": 0,
+      "action_text": "CLICK(x=0.40, y=0.50)",
+      "action_type": "click"
+    },
+    {
+      "step_idx": 1,
+      "action_text": "CLICK(x=0.40, y=0.55)",
+      "action_type": "click"
+    }
+  ]
+}

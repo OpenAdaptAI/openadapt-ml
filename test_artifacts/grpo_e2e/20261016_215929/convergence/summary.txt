@@ -1,0 +1,22 @@
+GRPO Loss Convergence Test
+========================================
+Steps: 50
+Rewards: [1.0, 0.0, 1.0, 0.0]
+Initial policy (uniform): ['0.2625', '0.2375', '0.2625', '0.2375']
+Final policy:             ['0.4967', '0.0033', '0.4967', '0.0033']
+Good action total prob:   0.9933
+Bad action total prob:    0.0067
+Early avg loss:           0.0000
+Late avg loss:            0.0000
+
+Per-step loss history (every 5th):
+  Step   0: loss=0.0000  policy=[0.262, 0.238, 0.262, 0.238]
+  Step   5: loss=0.0000  policy=[0.323, 0.177, 0.323, 0.177]
+  Step  10: loss=0.0000  policy=[0.375, 0.125, 0.375, 0.125]
+  Step  15: loss=0.0000  policy=[0.416, 0.084, 0.416, 0.084]
+  Step  20: loss=0.0000  policy=[0.445, 0.055, 0.445, 0.055]
+  Step  25: loss=0.0000  policy=[0.465, 0.035, 0.465, 0.035]
+  Step  30: loss=0.0000  policy=[0.478, 0.022, 0.478, 0.022]
+  Step  35: loss=0.0000  policy=[0.487, 0.013, 0.487, 0.013]
+  Step  40: loss=0.0000  policy=[0.492, 0.008, 0.492, 0.008]
+  Step  45: loss=0.0000  policy=[0.495, 0.005, 0.495, 0.005]
